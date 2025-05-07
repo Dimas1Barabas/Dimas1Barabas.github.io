@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Красивый Калькулятор</title>
+    <style>
+        /* CSS Стили */
+        body {
+            font-family: sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .calculator {
+            background-color: #333;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            width: 320px;
+            padding: 10px;
+        }
+
+        .display {
+            background-color: #444;
+            color: #fff;
+            text-align: right;
+            padding: 20px;
+            font-size: 2.5em;
+            height: 60px; /* Фиксированная высота для отображения */
+            overflow: hidden; /* Скрывает текст, если он не помещается */
+            white-space: nowrap; /* Запрещает перенос текста на новую строку */
+            text-overflow: ellipsis; /* Добавляет многоточие, если текст обрезан */
+        }
+
+        .buttons {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .button {
+            background-color: #555;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            font-size: 1.5em;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .button:hover {
+            background-color: #777;
+        }
+
+        .button.operator {
+            background-color: #ffa500;
+        }
+
+        .button.operator:hover {
+            background-color: #ffc107;
+        }
+
+        .button.equal {
+            background-color: #4caf50;
+            grid-column: span 2; /* Занимает 2 колонки */
+        }
+
+        .button.equal:hover {
+            background-color: #66bb6a;
+        }
+
+        .button.clear {
+            background-color: #f44336;
+        }
+
+        .button.clear:hover {
+            background-color: #e57373;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="calculator">
+        <div class="display">0</div>
+        <div class="buttons">
+            <button class="button clear">C</button>
+            <button class="button operator">÷</button>
+            <button class="button operator">×</button>
+            <button class="button">7</button>
+            <button class="button">8</button>
+            <button class="button">9</button>
+            <button class="button operator">-</button>
+            <button class="button">4</button>
+            <button class="button">5</button>
+            <button class="button">6</button>
+            <button class="button operator">+</button>
+            <button class="button">1</button>
+            <button class="button">2</button>
+            <button class="button">3</button>
+            <button class="button">0</button>
+            <button class="button">.</button>
+            <button class="button equal">=</button>
+        </div>
+    </div>
+
+    <script>
+        // JavaScript Логика
+        const display = document.querySelector('.display');
+        const buttons = document.querySelector('.buttons');
+
+        let currentNumber = '';
+        let previousNumber = '';
+        let operator = null;
+
+        function updateDisplay() {
+            display.textContent = currentNumber || '0';  // Показывать "0", если currentNumber пустая
+        }
+
+        function clear() {
+            currentNumber = '';
+            previousNumber = '';
+            operator = null;
+            updateDisplay();
+        }
+
+        function calculate() {
+            if (previousNumber === '' || currentNumber === '' || operator === null) {
+                return; // Ничего не делать, если нет необходимых данных
+            }
+
+            let result = 0;
+            const prev = parseFloat(previousNumber);
+            const curr = parseFloat(currentNumber);
+
+            if (isNaN(prev) || isNaN(curr)) return; // Проверка на NaN
+
+            switch (operator) {
+                case '+':
+                    result = prev + curr;
+                    break;
+                case '-':
+                    result = prev - curr;
+                    break;
+                case '×':
+                    result = prev * curr;
+                    break;
+                case '÷':
+                    if (curr === 0) {
+                        display.textContent = "Ошибка"; // Обработка деления на ноль
+                        return;
+                    }
+                    result = prev / curr;
+                    break;
+                default:
+                    return;
+            }
+
+            currentNumber = result.toString();
+            operator = null;
+            previousNumber = '';
+            updateDisplay();
+        }
+
+        buttons.addEventListener('click', (event) => {
+            const target = event.target;
+
+            if (!target.classList.contains('button')) {
+                return; // Если кликнули не по кнопке, ничего не делаем
+            }
+
+            const value = target.textContent;
+
+            if (target.classList.contains('clear')) {
+                clear();
+                return;
+            }
+
+            if (target.classList.contains('equal')) {
+                calculate();
+                return;
+            }
+
+            if (target.classList.contains('operator')) {
+                if (currentNumber === '') return; // Не даем выбрать оператор, если нет числа
+
+                if (previousNumber !== '') {
+                    calculate(); // Вычисляем предыдущую операцию
+                }
+
+                operator = value;
+                previousNumber = currentNumber;
+                currentNumber = '';
+                updateDisplay();
+                return;
+            }
+
+            // Обработка цифр и точки
+            if (value === '.') {
+                if (currentNumber.includes('.')) return; // Только одна точка
+            }
+
+            currentNumber += value;
+            updateDisplay();
+        });
+
+        // Инициализация дисплея
+        updateDisplay();
+    </script>
+
+</body>
+</html>
