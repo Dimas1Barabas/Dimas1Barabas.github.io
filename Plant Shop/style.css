@@ -31,7 +31,7 @@ main{
   width: auto;
   height: 900px;
   margin: 28px auto 12px;
-  background-image: url(image/Background.png);
+  background-image: url(image/Background.jpg);
   background-size: cover;
   display: flex;
   flex-direction: column;
