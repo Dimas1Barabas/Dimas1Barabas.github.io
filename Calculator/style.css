@@ -1,0 +1,96 @@
+body {
+  font-family: sans-serif;
+  background-color: rgb(240, 240, 240);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  margin: 0;
+}
+
+.calculator {
+  background-color: rgba(5, 4, 1, 1);
+  border-radius: 45px;
+  overflow: hidden;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  height: 639px;
+  width: 312px;
+  padding: 10px;
+  padding-bottom: 30px;
+}
+
+.display {
+  color: rgb(255, 255, 255);
+  text-align: left;
+  padding: 20px;
+  font-size: 56px;
+  height: 214px; 
+  overflow: hidden; 
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding: 10px;
+}
+
+.button {
+  background-color: rgba(56, 56, 56, 1);
+  color: #fff;
+  border: none;
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  font-size: 38px;
+  padding: 15px;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-weight: 700;
+}
+
+.button:hover {
+  background-color: rgb(119, 119, 119);
+}
+
+.button.operator {
+  background-color: rgba(26, 27, 26, 1);
+  color: rgba(129, 129, 129, 1);
+  font-weight: 500;
+}
+
+.button.operator:hover {
+  background-color: rgba(56, 56, 56, 1);
+}
+
+.button.equal {
+  background-color: rgba(255, 252, 10, 1);
+  color: rgb(0, 0, 0);
+}
+
+.button.equal:hover {
+  background-color: rgba(255, 251, 10, 0.808);
+}
+
+.button.clear {
+  background-color: rgba(26, 27, 26, 1);
+  color: rgba(129, 129, 129, 1);
+  font-weight: 500;
+}
+
+.button.clear:hover {
+  background-color: rgba(56, 56, 56, 1);
+}
+
+.button.dot{
+  background-color: rgba(26, 27, 26, 1);
+  color: rgba(129, 129, 129, 1);
+  font-weight: 500;
+}
+
+.button.dot:hover{
+  background-color: rgba(56, 56, 56, 1);
+}
