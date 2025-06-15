@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Location</title>
   <link rel="stylesheet" href="style1.css">
+  <script src="script.js"></script>
 </head>
 <body>
   <main>
@@ -17,7 +18,49 @@
           <a href="">Shop</a>
           <a href="" class="activ-list">Location</a>
         </nav>
-        <button type="button">Check out(0)</button>
+        <button id="openModalBtn" type="button">Check out(0)</button>
+
+        <!-- Модальное окно с вкладками -->
+        <div id="modal" class="modal">
+          <div class="modal-content">
+            <span id="closeModalBtn" class="close">&times;</span>
+
+            <div class="tabs">
+              <button class="tab-button active" data-tab="register">Регистрация</button>
+              <button class="tab-button" data-tab="login">Авторизация</button>
+            </div>
+
+            <div class="tab-content active" id="register">
+              <h2>Регистрация</h2>
+              <form id="register">
+                <label for="reg-username">Имя пользователя:</label>
+                <input type="text" id="reg-username" name="username" required>
+
+                <label for="reg-email">Email:</label>
+                <input type="email" id="reg-email" name="email" required>
+
+                <label for="reg-password">Пароль:</label>
+                <input type="password" id="reg-password" name="password" required>
+
+                <button type="submit">Зарегистрироваться</button>
+              </form>
+            </div>
+
+            <div class="tab-content" id="login">
+              <h2>Авторизация</h2>
+              <form id="login">
+                <label for="login-email">Email:</label>
+                <input type="email" id="login-email" name="email" required>
+
+                <label for="login-password">Пароль:</label>
+                <input type="password" id="login-password" name="password" required>
+
+                <button type="submit">Войти</button>
+              </form>
+            </div>
+
+          </div>
+        </div>
       </header>
 
       <div class="block1_card">

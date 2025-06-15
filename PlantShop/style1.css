@@ -97,6 +97,107 @@ header nav a:hover{
   color: rgba(55, 87, 57, 1);
 }
 
+/* Стили для модального окна */
+
+.modal {
+  display: none; /* по умолчанию скрыто */
+  position: fixed; /* фиксированное позиционирование */
+  z-index: 1000; /* поверх всего */
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto; /* если контента много */
+  background-color: rgba(0,0,0,0.5); /* полупрозрачный фон */
+}
+
+.modal-content {
+  background-color: #fff;
+  margin: 10% auto; /* вертикальный отступ и центрирование */
+  padding: 20px;
+  border-radius: 8px;
+  width: 300px;
+  position: relative;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+
+.close {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  font-size: 24px;
+  font-weight: bold;
+  color: #333;
+  cursor: pointer;
+}
+
+form label {
+  display: block;
+  margin-top: 15px;
+  font-weight: 600;
+}
+
+form input {
+  width: 100%;
+  padding: 8px;
+  margin-top: 5px;
+  box-sizing: border-box;
+}
+
+form button {
+  margin-top: 20px;
+  width: 100%;
+  padding: 10px;
+  background-color: #4caf50;
+  border: none;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+form button:hover {
+  background-color: #45a049;
+}
+
+/* Стили вкладок */
+
+.tabs {
+  display: flex;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #ddd;
+}
+
+.tab-button {
+  flex: 1;
+  padding: 10px 0;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.3s;
+  font-size: 16px;
+}
+
+.tab-button:hover {
+  border-bottom-color: #4caf50;
+}
+
+.tab-button.active {
+  border-bottom-color: #4caf50;
+  color: #4caf50;
+  font-weight: 700;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
 /* ////////BLOCK1//////// */
 /* ////////BLOCK1//////// */
 

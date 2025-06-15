@@ -7,7 +7,7 @@ const cookieParser = require('cookie-parser');
 
 const app = express();
 const PORT = 3000;
-const JWT_SECRET = 'your_jwt_secret_key'; // Замените на сложный ключ
+const JWT_SECRET = 'your_jwt_secret_key'; // Замените на сложный ключ                              nodemon server.js
 
 // Подключение к MongoDB
 mongoose.connect('mongodb://localhost:27017/plantapp', {
@@ -27,7 +27,7 @@ const User = mongoose.model('User', UserSchema);
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:5500', // Адрес вашего фронтенда
+  origin: 'http://127.0.0.1:5500', // Адрес вашего фронтенда
   credentials: true
 }));
 app.use(express.json());
