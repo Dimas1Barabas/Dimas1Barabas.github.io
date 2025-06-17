@@ -1,4 +1,4 @@
-
+    
 document.addEventListener("DOMContentLoaded", function() {
   // Получаем элементы DOM
   const openModalBtn = document.getElementById('openModalBtn');
@@ -13,13 +13,36 @@ document.addEventListener("DOMContentLoaded", function() {
   logoutButton.style.display = 'none'; // Скрываем кнопку
   logoutButton.textContent = 'Выйти';
 
-  // Добавляем кнопку "Выйти" в header
-  const headerNav = document.querySelector('header nav'); // Находим nav
-  headerNav.parentNode.insertBefore(logoutButton, headerNav.nextSibling); // Вставляем кнопку после nav
+  // Удаляем добавление кнопки "Выйти" в header, так как она будет внутри модального окна пользователя
+  // const headerNav = document.querySelector('header nav'); // Находим nav
+  // headerNav.parentNode.insertBefore(logoutButton, headerNav.nextSibling); // Вставляем кнопку после nav
 
   // Функция для открытия модального окна
   openModalBtn.addEventListener('click', () => {
-    modal.style.display = 'block';
+    const username = localStorage.getItem('username');
+    if (!username) {
+      modal.style.display = 'block'; // Открываем окно регистрации/авторизации
+    } else {
+      // Заполняем данные пользователя (здесь можно заменить на реальные данные)
+      userNameDisplay.textContent = username;
+      userEmailDisplay.textContent = localStorage.getItem('email') || 'user@example.com';
+      userStatusDisplay.textContent = 'Активен';
+
+      // Пример заказов
+      const orders = [
+        { id: 1, item: 'Роза', status: 'Доставлен' },
+        { id: 2, item: 'Кактус', status: 'В обработке' }
+      ];
+      userOrdersList.innerHTML = '';
+      orders.forEach(order => {
+        const li = document.createElement('li');
+        li.textContent = `Заказ #${order.id}: ${order.item} - ${order.status}`;
+        userOrdersList.appendChild(li);
+      });
+
+      userModal.classList.remove('hidden');
+      userModal.style.display = 'block';
+    }
   });
 
   // Функция для закрытия модального окна
@@ -31,6 +54,10 @@ document.addEventListener("DOMContentLoaded", function() {
   window.addEventListener('click', (event) => {
     if (event.target === modal) {
       modal.style.display = 'none';
+    }
+    if (event.target === userModal) {
+        userModal.classList.add('hidden');
+      userModal.style.display = 'none';
     }
   });
 
@@ -91,10 +118,66 @@ document.addEventListener("DOMContentLoaded", function() {
   // Обновление кнопки в header с именем пользователя и отображение кнопки выхода
   function updateUserButton(username) {
     openModalBtn.textContent = username;
-    openModalBtn.disabled = true;
+    openModalBtn.disabled = false;
     logoutButton.style.display = 'inline'; // Делаем кнопку "Выйти" видимой
     localStorage.setItem('username', username); // Сохраняем в localStorage
   }
+
+  // Добавляем модальное окно пользователя с кнопкой "Выйти" внутри
+  const userModal = document.createElement('div');
+  userModal.id = 'userModal';
+  userModal.className = 'modal hidden';
+  userModal.innerHTML = `
+    <div class="modal-content user-content">
+      <span id="closeUserModal" class="close">&times;</span>
+      <h2>Пользователь</h2>
+      <div id="userInfo">
+        <p><strong>Имя:</strong> <span id="userNameDisplay"></span></p>
+        <p><strong>Email:</strong> <span id="userEmailDisplay"></span></p>
+        <h3>Заказы</h3>
+        <ul id="userOrdersList"></ul>
+        <p><strong>Статус:</strong> <span id="userStatusDisplay"></span></p>
+        <button id="logout-button" type="button">Выйти</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(userModal);
+
+  const userNameDisplay = document.getElementById('userNameDisplay');
+  const userEmailDisplay = document.getElementById('userEmailDisplay');
+  const userOrdersList = document.getElementById('userOrdersList');
+  const userStatusDisplay = document.getElementById('userStatusDisplay');
+  const closeUserModal = document.getElementById('closeUserModal');
+
+  openModalBtn.addEventListener('click', () => {
+    const username = localStorage.getItem('username');
+    if (username) {
+      // Заполняем данные пользователя (здесь можно заменить на реальные данные)
+      userNameDisplay.textContent = username;
+      userEmailDisplay.textContent = localStorage.getItem('email') || 'user@example.com';
+      userStatusDisplay.textContent = 'Активен';
+
+      // Пример заказов
+      const orders = [
+        { id: 1, item: 'Роза', status: 'Доставлен' },
+        { id: 2, item: 'Кактус', status: 'В обработке' }
+      ];
+      userOrdersList.innerHTML = '';
+      orders.forEach(order => {
+        const li = document.createElement('li');
+        li.textContent = `Заказ #${order.id}: ${order.item} - ${order.status}`;
+        userOrdersList.appendChild(li);
+      });
+
+      userModal.classList.remove('hidden');
+      userModal.style.display = 'block';
+    }
+  });
+
+  closeUserModal.addEventListener('click', () => {
+    userModal.classList.add('hidden');
+    userModal.style.display = 'none';
+  });
 
   // Проверка авторизации при загрузке страницы
   async function checkAuth() {
@@ -122,16 +205,18 @@ document.addEventListener("DOMContentLoaded", function() {
   }
 
   // Обработчик кнопки "Выйти"
-  logoutButton.addEventListener('click', async () => {
+  document.getElementById('logout-button').addEventListener('click', async () => {
     try {
       const response = await fetch('http://localhost:3000/api/logout', {
         method: 'POST'
       });
 
       if (response.ok) {
-        openModalBtn.textContent = 'Check out(0)'; // Возвращаем текст кнопки по умолчанию
+        openModalBtn.textContent = 'Войти'; // Меняем текст кнопки на "Войти" после выхода
         openModalBtn.disabled = false; // Делаем кнопку активной
-        logoutButton.style.display = 'none'; // Скрываем кнопку "Выйти"
+        // Скрываем модальное окно пользователя после выхода
+        userModal.classList.add('hidden');
+        userModal.style.display = 'none';
         localStorage.removeItem('username'); // Удаляем имя пользователя из localStorage
         checkAuth(); // Обновляем отображение
       } else {
