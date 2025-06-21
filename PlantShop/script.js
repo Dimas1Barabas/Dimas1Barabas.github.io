@@ -6,29 +6,25 @@ document.addEventListener("DOMContentLoaded", function() {
   const closeModalBtn = document.getElementById('closeModalBtn');
   const tabButtons = document.querySelectorAll('.tab-button');
   const tabContents = document.querySelectorAll('.tab-content');
-  const registerForm = document.querySelector('#register form'); // Форма регистрации
-  const loginForm = document.querySelector('#login form'); // Форма входа
-  const logoutButton = document.createElement('button'); // Создаем кнопку "Выйти"
+  const registerForm = document.querySelector('#register form'); 
+  const loginForm = document.querySelector('#login form'); 
+  const logoutButton = document.createElement('button'); 
   logoutButton.id = 'logout-button';
-  logoutButton.style.display = 'none'; // Скрываем кнопку
+  logoutButton.style.display = 'none'; 
   logoutButton.textContent = 'Выйти';
 
-  // Удаляем добавление кнопки "Выйти" в header, так как она будет внутри модального окна пользователя
-  // const headerNav = document.querySelector('header nav'); // Находим nav
-  // headerNav.parentNode.insertBefore(logoutButton, headerNav.nextSibling); // Вставляем кнопку после nav
 
-  // Функция для открытия модального окна
+  
   openModalBtn.addEventListener('click', () => {
     const username = localStorage.getItem('username');
     if (!username) {
-      modal.style.display = 'block'; // Открываем окно регистрации/авторизации
+      modal.style.display = 'block'; 
     } else {
-      // Заполняем данные пользователя (здесь можно заменить на реальные данные)
+    
       userNameDisplay.textContent = username;
       userEmailDisplay.textContent = localStorage.getItem('email') || 'user@example.com';
       userStatusDisplay.textContent = 'Активен';
 
-      // Пример заказов
       const orders = [
         { id: 1, item: 'Роза', status: 'Доставлен' },
         { id: 2, item: 'Кактус', status: 'В обработке' }
@@ -45,12 +41,12 @@ document.addEventListener("DOMContentLoaded", function() {
     }
   });
 
-  // Функция для закрытия модального окна
+  
   closeModalBtn.addEventListener('click', () => {
     modal.style.display = 'none';
   });
 
-  // Закрытие модального окна при клике вне его
+  
   window.addEventListener('click', (event) => {
     if (event.target === modal) {
       modal.style.display = 'none';
@@ -61,7 +57,7 @@ document.addEventListener("DOMContentLoaded", function() {
     }
   });
 
-  // Переключение вкладок
+  
   tabButtons.forEach(button => {
     button.addEventListener('click', () => {
       const tab = button.getAttribute('data-tab');
@@ -72,7 +68,7 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   });
 
-  // Обработчик отправки формы регистрации
+  
   registerForm.addEventListener('submit', async (e) => {
     e.preventDefault(); // Предотвращаем перезагрузку страницы
 
@@ -115,12 +111,12 @@ document.addEventListener("DOMContentLoaded", function() {
     }
   });
 
-  // Обновление кнопки в header с именем пользователя и отображение кнопки выхода
+  
   function updateUserButton(username) {
     openModalBtn.textContent = username;
     openModalBtn.disabled = false;
-    logoutButton.style.display = 'inline'; // Делаем кнопку "Выйти" видимой
-    localStorage.setItem('username', username); // Сохраняем в localStorage
+    logoutButton.style.display = 'inline'; 
+    localStorage.setItem('username', username); 
   }
 
   // Добавляем модальное окно пользователя с кнопкой "Выйти" внутри
