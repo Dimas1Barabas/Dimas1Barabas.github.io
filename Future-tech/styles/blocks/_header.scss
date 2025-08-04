@@ -1,0 +1,70 @@
+@use '../helpers' as *;
+
+.header {
+  &__promo {
+    padding-block: rem(20);
+    text-align: center;
+    border-bottom: var(--border);
+    
+    @include mobile {
+      padding-block: rem(14);
+    }
+  }
+  
+  &__body {
+    padding-block: rem(24);
+    background-color: var(--color-dark-10);
+    
+    &-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      column-gap: 1rem;
+      
+    }
+  }
+  
+  &__overlay {
+    @include mobile-above {
+      display: contents;
+    }
+    
+    @include mobile {
+      &:not(.is-active) {
+        @include hide;
+        
+        translate: 100%;
+      }
+    }
+  }
+  
+  &__menu {
+    &-list{
+      display: flex;
+      align-items: center;
+      column-gap: rem(16);
+      
+      @include laptop {
+        column-gap: rem(6);
+      }
+    }
+    
+    &-link{
+      padding: rem(14) rem(24);
+      color:  var(--color-gray-50);
+      
+      @include laptop {
+        padding: rem(10) rem(18);
+      }
+      
+      &.is-active {
+        color: var(--color-light);
+        font-weight: 500;
+        background-color: var(--color-dark);
+        border: var(--border);
+        border-radius: rem(10);
+        pointer-events: none;
+      }
+    }
+  }
+}

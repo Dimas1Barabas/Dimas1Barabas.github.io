@@ -56,7 +56,7 @@ $mobile-s: 480.98;
 @mixin hover($hasActiveEffectOnMobile: true) {
   @media (any-hover: hover) {
     &:hover {
-      @contents
+      @content;
     }
   }
   
