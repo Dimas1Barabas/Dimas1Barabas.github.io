@@ -1,0 +1,20 @@
+@use '../helpers' as *;
+
+.soc1als {
+  &__list {
+    display: flex;
+    column-gap: rem(20);
+    
+    @include laptop {
+      column-gap: rem(14);
+    }
+  }
+  
+  &__item {
+    display: flex;        //ЗАКОНИЛ ЗДЕСЬ  2 29 30
+  }
+  
+  &__link {
+    color: var(--color-light);
+  }
+}

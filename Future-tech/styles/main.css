@@ -228,6 +228,11 @@ svg * {
   --color-gray-60: #98989A;
   --color-accent: #FFD11A;
   --color-red: #FF5500;
+  --gradient: linear-gradient(
+    45deg,
+    var(--color-dark-15) 64%,
+    var(--color-accent) 136%
+  );
   --border: 0.0625rem solid var(--color-dark-15);
   --font-family-base: "Inter", sans-serif;
   --font-family-accent: "Kumbh Sens", sans-serif ;
@@ -272,12 +277,22 @@ svg * {
   }
 }
 
+html.is-lock {
+  overflow: hidden;
+}
+
 body {
   font-size: clamp(0.875rem, 0.7944214876rem + 0.3305785124vw, 1.125rem);
+  display: flex;
+  flex-direction: column;
   font-family: var(--font-family-base);
   letter-spacing: -0.03em;
   color: var(--color-gray-50);
   background-color: var(--color-dark);
+}
+
+main {
+  flex-grow: 1;
 }
 
 h1, .h1,
@@ -492,9 +507,24 @@ button[aria-label]::before {
   width: 55%;
 }
 
+.header {
+  position: sticky;
+  z-index: 100;
+  top: 0;
+  animation-name: scrolling-header;
+  animation-fill-mode: both;
+  animation-timeline: scroll();
+  animation-range: 6.25rem 12.5rem;
+}
+@keyframes scrolling-header {
+  to {
+    box-shadow: 0 0 1rem var(--color-dark-40);
+  }
+}
 .header__promo {
   padding-block: 1.25rem;
   text-align: center;
+  background-color: var(--color-dark);
   border-bottom: var(--border);
 }
 @media (width <= 47.99875rem) {
@@ -505,6 +535,11 @@ button[aria-label]::before {
 .header__body {
   padding-block: 1.5rem;
   background-color: var(--color-dark-10);
+}
+@media (width <= 47.99875rem) {
+  .header__body {
+    padding-block: 1.25rem;
+  }
 }
 .header__body-inner {
   display: flex;
@@ -518,10 +553,26 @@ button[aria-label]::before {
   }
 }
 @media (width <= 47.99875rem) {
+  .header__overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    row-gap: 3rem;
+    padding: 1rem;
+    background-color: var(--color-dark-10);
+    transition-duration: var(--transition-duration);
+  }
   .header__overlay:not(.is-active) {
     opacity: 0;
     visibility: hidden;
     translate: 100%;
+  }
+}
+@media (width <= 47.99875rem) {
+  .header__menu {
+    overflow-y: auto;
   }
 }
 .header__menu-list {
@@ -532,6 +583,12 @@ button[aria-label]::before {
 @media (width <= 90.06125rem) {
   .header__menu-list {
     column-gap: 0.375rem;
+  }
+}
+@media (width <= 47.99875rem) {
+  .header__menu-list {
+    flex-direction: column;
+    column-gap: 1rem;
   }
 }
 .header__menu-link {
@@ -550,6 +607,96 @@ button[aria-label]::before {
   border: var(--border);
   border-radius: 0.625rem;
   pointer-events: none;
+}
+@media (width <= 47.99875rem) {
+  .header__contact-us-link {
+    width: 100%;
+    max-width: 18.75rem;
+    align-self: center;
+  }
+}
+
+.badge {
+  display: inline-flex;
+  padding: clamp(0.1875rem, 0.1673553719rem + 0.0826446281vw, 0.25rem) clamp(0.625rem, 0.5444214876rem + 0.3305785124vw, 0.875rem);
+  font-size: 1rem;
+  color: var(--color-light);
+  background: linear-gradient(var(--color-dark-10), var(--color-dark-10)) padding-box, var(--gradient) border-box;
+  border: 0.0625rem solid transparent;
+  border-radius: 0.375rem;
+}
+@media (width <= 90.06125rem) {
+  .badge {
+    font-size: 0.875rem;
+    border-radius: 0.25rem;
+  }
+}
+
+.soc1als__list {
+  display: flex;
+  column-gap: 1.25rem;
+}
+@media (width <= 90.06125rem) {
+  .soc1als__list {
+    column-gap: 0.875rem;
+  }
+}
+.soc1als__item {
+  display: flex;
+}
+.soc1als__link {
+  color: var(--color-light);
+}
+
+.footer {
+  color: var(--color-dark-40);
+}
+.footer__body {
+  padding-block: clamp(2.5rem, 1.694214876rem + 3.305785124vw, 5rem);
+  border-bottom: var(--border);
+}
+.footer__menu {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: start;
+  column-gap: clamp(1.25rem, 0.041322314rem + 4.958677686vw, 5rem);
+}
+.footer__menu-column {
+  display: grid;
+  row-gap: clamp(1rem, 0.597107438rem + 1.652892562vw, 2.25rem);
+}
+.footer__menu-list {
+  display: flex;
+  flex-direction: column;
+  row-gap: clamp(0.5rem, 0.298553719rem + 0.826446281vw, 1.125rem);
+}
+.footer__menu-item {
+  display: flex;
+  align-items: center;
+  column-gap: 0.5rem;
+}
+.footer__extra {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  column-gap: 1rem;
+  padding-block: 2.5rem;
+}
+@media (width <= 90.06125rem) {
+  .footer__extra {
+    padding-block: 1.5rem;
+  }
+}
+.footer__extra-menu-list {
+  display: flex;
+}
+.footer__extra-menu-item:not(:last-child)::after {
+  content: "|";
+  margin-inline: 0.6875rem;
+}
+
+.header {
+  display: none !important;
 }
 
 /*# sourceMappingURL=main.css.map */
