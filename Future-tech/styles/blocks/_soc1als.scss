@@ -11,10 +11,18 @@
   }
   
   &__item {
-    display: flex;        //ЗАКОНИЛ ЗДЕСЬ  2 29 30
+    display: flex;
   }
   
   &__link {
+    --size: #{rem(24)};
+    
+    @include square(var(--size));
+    
     color: var(--color-light);
+    
+    @include laptop {
+      --size: rem(20);
+    }
   }
 }
