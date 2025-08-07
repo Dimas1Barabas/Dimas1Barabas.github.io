@@ -17,8 +17,14 @@
 @use 'blocks/resources-preview';
 @use 'blocks/advantage-card';
 @use 'blocks/hero';
+@use 'blocks/tag';
+@use 'blocks/section';
+@use 'blocks/list';
+@use 'blocks/tile';
+@use 'blocks/card';
 
 .header,
+main > *:not(:last-child),
 .footer {
   display: none !important;
 }
