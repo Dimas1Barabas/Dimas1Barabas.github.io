@@ -5,6 +5,22 @@
     padding-block: fluid(120, 40);
     background-color: var(--color-dark-10);
     
+    &-inner {
+      &:has(.section__link) {
+        display: grid;
+        align-items: center;
+        column-gap: 1rem;
+        
+        @include mobile-above{
+          grid-template-columns: 1fr auto;
+        }
+        
+        @include mobile {
+          row-gap: rem(30);
+        }
+      }
+    }
+    
     &-info {
       display: grid;
       align-items: start;
