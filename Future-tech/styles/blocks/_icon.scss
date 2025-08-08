@@ -27,4 +27,9 @@
     }
   }
   
+  &--yellow-eye {
+    &::after {
+      background-image: url('../../icons/eye-yellow.svg');
+    }
+  }
 }
