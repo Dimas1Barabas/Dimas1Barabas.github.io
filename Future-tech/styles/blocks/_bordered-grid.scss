@@ -9,7 +9,39 @@
   
   &--2-cols {
     --columns: 2;
-    //--itemPaddingX: #{rem(50)};
+    --itemPaddingX: #{rem(80)};
+    
+    @include laptop {
+      --itemPaddingX: #{rem(50)};
+    }
+    
+    @include mobile-above {
+      .bordered-grid__item {
+        &:nth-child(odd) {
+          padding-right: var(--itemPaddingX);
+          border-right: var(--border);
+        }
+        
+        &:nth-child(even) {
+          @include full-vw-centered-line(
+              bottom,
+              auto,
+              100%
+              50%
+          );
+          
+          padding-left: var(--itemPaddingX);
+        }
+      }
+    }
+    
+    @include mobile {
+      --columns: 1;
+      
+      .bordered-grid__item:not(:last-child) {
+        border-bottom: var(--border);
+      }
+    }
   }
   
   &--3-cols {
