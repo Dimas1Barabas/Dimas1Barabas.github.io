@@ -5,7 +5,7 @@ class VideoPlayer {
     root: rootSelector,
     video: '[data-js-video-player-video]',
     panel: '[data-js-video-player-panel]',
-    playButton: '[data-js-video-player-player-button]',
+    playButton: '[data-js-video-player-play-button]',
   }
   
   stateClasses = {
