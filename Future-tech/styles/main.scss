@@ -4,6 +4,7 @@
 @use 'utils';
 @use 'globals';
 
+@use 'blocks/expandable-content';
 @use 'blocks/icon';
 @use 'blocks/logo';
 @use 'blocks/button';
@@ -38,9 +39,11 @@
 @use 'blocks/news';
 @use 'blocks/video-player';
 @use 'blocks/video-card';
+@use 'blocks/table-of-contents';
+@use 'blocks/blog-details';
 
-//.header,
-//main > *:not(:last-child),
-//.footer {
-//  display: none !important;
-//}
+.header,
+main > *:not(:last-child),
+.footer {
+  display: none !important;
+}
