@@ -6,6 +6,7 @@
   <meta http-equiv="X-UA-Compatible" content="ie-edge">
   <title>Future Tech | Contacts</title>
   <link rel="stylesheet" href="./styles/main.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/imask/7.6.1/imask.min.js" defer></script>
   <script src="./scripts/main.js" type="module" defer></script>
 </head>
 <body>
@@ -241,11 +242,89 @@
                   <div class="feedback-form__cell field">
                     <label for="phoneNumber" class="field__label">Phone Number</label>
                     <div class="field__body">
-                      <div class="select">SELECT</div>
+                      <div class="select" data-js-select>
+                        <label
+                          for="phoneNumberPrefix"
+                          id="phone-number-prefix-select-label"
+                          class="select__label visually-hidden"
+                        >
+                          Phone number prefix
+                        </label>
+                        <select
+                          id="phoneNumberPrefix"
+                          class="select__original-control field__control"
+                          tabindex="-1"
+                          data-js-select-original-control
+                        >
+                          <option value="+7" selected>+7</option>
+                          <option value="+1">+1</option>
+                          <option value="+2">+2</option>
+                          <option value="+3">+3</option>
+                        </select>
+                        <div class="select__body">
+                          <div
+                            class="select__button field__control"
+                            tabindex="0"
+                            role="combobox"
+                            aria-expanded="false"
+                            aria-haspopup="listbox"
+                            aria-controls="phone-number-prefix-select-dropdown"
+                            aria-labelledby="phone-number-prefix-select-label"
+                            data-js-select-button
+                          >
+                            +7
+                          </div>
+                          <div
+                            class="select__dropdown"
+                            id="phone-number-prefix-select-dropdown"
+                            role="listbox"
+                            aria-labelledby="phone-number-prefix-select-label"
+                            data-js-select-dropdown
+                          >
+                            <div
+                              class="select__option is-selected is-current"
+                              id="phone-number-prefix-select-option-1"
+                              role="option"
+                              aria-selected="true"
+                              data-js-select-option
+                            >
+                              +7
+                            </div>
+                            <div
+                              class="select__option"
+                              id="phone-number-prefix-select-option-2"
+                              role="option"
+                              aria-selected="false"
+                              data-js-select-option
+                            >
+                              +1
+                            </div>
+                            <div
+                              class="select__option"
+                              id="phone-number-prefix-select-option-3"
+                              role="option"
+                              aria-selected="false"
+                              data-js-select-option
+                            >
+                              +2
+                            </div>
+                            <div
+                              class="select__option"
+                              id="phone-number-prefix-select-option-4"
+                              role="option"
+                              aria-selected="false"
+                              data-js-select-option
+                            >
+                              +3
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                       <input
                         class="field__control"
                         id="phoneNumber"
                         placeholder="(999) 999-99-99"
+                        data-js-input-mask="(000) 000-00-00"
                       >
                     </div>
                   </div>
@@ -441,6 +520,55 @@
             </div>
           </div>
         </div>
+      </div>
+    </section>
+    
+    <section class="about" aria-labelledby="about-title">
+      <div class="about__inner container">
+        <header class="about__header">
+          <img
+            src="./images/about/icon.svg"
+            alt=""
+            class="about__icon"
+            width="150" height="150" loading="lazy"
+          >
+          <div class="about__info">
+            <p class="about__subtitle tag">Learn, Connect, and Innovate</p>
+            <h2 class="about__title" id="about-title">Be Part of the Future Tech Revolution</h2>
+          </div>
+          <div class="about__description">
+            <p>Immerse yourself in the world of future technology.
+              Explore our comprehensive resources, connect with fellow tech enthusiasts,
+              and drive innovation in the industry. Join a dynamic community of forward-thinkers.
+            </p>
+          </div>
+        </header>
+        <ul class="about__list">
+          <li class="about__item">
+            <a href="" class="about-card tile">
+              <h3 class="about-card__title circle-icon">Resource Access</h3>
+              <div class="about-card__description">
+                <p>Visitors can access a wide range of resources, including ebooks, whitepapers, reports.</p>
+              </div>
+            </a>
+          </li>
+          <li class="about__item">
+            <a href="" class="about-card tile">
+              <h3 class="about-card__title circle-icon">Community Forum</h3>
+              <div class="about-card__description">
+                <p>Join our active community forum to discuss industry trends, share insights, and collaborate with peers.</p>
+              </div>
+            </a>
+          </li>
+          <li class="about__item">
+            <a href="" class="about-card tile">
+              <h3 class="about-card__title circle-icon">Tech Events</h3>
+              <div class="about-card__description">
+                <p>Stay updated on upcoming tech events, webinars, and conferences to enhance your knowledge.</p>
+              </div>
+            </a>
+          </li>
+        </ul>
       </div>
     </section>
   </main>

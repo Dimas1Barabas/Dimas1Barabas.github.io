@@ -42,6 +42,7 @@
   &__item {
     display: flex;
     flex-direction: column-reverse;
+    justify-content: start;
     row-gap: rem(10);
     padding: rem(50);
     
