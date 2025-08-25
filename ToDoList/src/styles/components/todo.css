@@ -48,7 +48,7 @@
     color: var(--color-gray-4);
   }
   
-  &;not(.is-visible) {
+  &:not(.is-visible) {
     opacity: 0;
     visibility: hidden;
   }
