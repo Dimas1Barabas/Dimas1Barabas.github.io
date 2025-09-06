@@ -9,7 +9,8 @@
   --bg-odd: #F6F8FC;
   --aside: 300px;
   --model-width: 300px;
-  --model-height: 640px;
+  /*--model-height: 640px;*/
+  --model-height: 87.5vh;
 }
 
 @font-face {
@@ -64,7 +65,6 @@ body {
   animation-timing-function: linear;
   animation-fill-mode: both;
   animation-range: 0 300vh;
-  opacity: 0;
 }
 
 .layers img {
@@ -88,6 +88,7 @@ body {
   margin-left: -30vw;
   transform: scale(.8);
   opacity: .85;
+  filter: blur(2.5px);
   animation-name: animation-5;
 }
 
@@ -98,6 +99,7 @@ body {
   }
   10%, 100% {
     opacity: 1;
+    filter: blur(0px);
   }
 }
 
@@ -105,6 +107,7 @@ body {
   margin-left: -42.5vw;
   transform: scale(.575);
   opacity: .7;
+  filter: blur(5px);
   animation-name: animation-4;
 }
 
@@ -115,23 +118,64 @@ body {
   }
   10%, 100% {
     opacity: 1;
+    filter: blur(0px);
   }
 }
 
 .layer3 {
-  margin-left: -42.5vw;
-  transform: scale(.575);
+  margin-left: -52vw;
+  transform: scale(.375);
   opacity: .55;
-  animation-name: animation-4;
+  filter: blur(7.5px);
+  animation-name: animation-3;
 }
 
 @keyframes animation-3 {
   to {
-    transform: scale(2.75);
-    margin-left: 120vw;
+    transform: scale(1.85);
+    margin-left: 65vw;
   }
-  10%, 100% {
+  35%, 100% {
     opacity: 1;
+    filter: blur(0px);
+  }
+}
+
+.layer2 {
+  margin-left: -58vw;
+  transform: scale(.25);
+  opacity: .3;
+  filter: blur(10px);
+  animation-name: animation-2;
+}
+
+@keyframes animation-2 {
+  to {
+    transform: scale(1.35);
+    margin-left: 25vw;
+  }
+  55%, 100% {
+    opacity: 1;
+    filter: blur(0px);
+  }
+}
+
+.layer1 {
+  margin-left: -62vw;
+  transform: scale(.15);
+  opacity: .1;
+  filter: blur(12.5px);
+  animation-name: animation-1;
+}
+
+@keyframes animation-1 {
+  to {
+    transform: scale(.85);
+    margin-left: -2.5vw;
+  }
+  65%, 100% {
+    opacity: 1;
+    filter: blur(0px);
   }
 }
 
@@ -194,4 +238,66 @@ body {
   height: calc(100% - 50px);
   max-width: 150px;
   object-fit: contain;
+}
+
+.logo {
+  position: fixed;
+  bottom: 8vh;
+  left: 3.5vw;
+  text-transform: uppercase;
+  z-index: 10;
+}
+
+.logo__text {
+  font-weight: 700;
+  text-decoration: none;
+  color: #333;
+  font-size: 20px;
+  letter-spacing: 0.5px;
+}
+
+.logo p {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.collection {
+  position: absolute;
+  top: 5vh;
+  left: 3.5vw;
+  max-width: 360px;
+  z-index: 10;
+}
+
+.collection h2 {
+  text-transform: uppercase;
+  font-weight: 600;
+  margin: 0;
+}
+
+.collection p {
+  font-size: 14px;
+  line-height: 1.7;
+  margin-top: 14px;
+  
+}
+
+@media (max-width: 991.98px) {
+  :root {
+    --aside: 240px;
+  }
+  
+  .collection {
+    max-width: 200px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .show {
+    display: none;
+  }
+  
+  .aside {
+    width: 100%;
+  }
 }
