@@ -1,0 +1,17 @@
+.link {
+  padding: 0 20px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-family);
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 157%;
+  color: #222;
+  
+  &--light {
+    color: #717171;
+    font-weight: 400;
+  }
+}

@@ -1,0 +1,10 @@
+:root {
+  --textColor: #222222;
+  --accentColor: #FF385C;
+  --font-family: 'Roboto', sans-serif;
+}
+
+body {
+  color: var(--textColor);
+  font-family: var(--font-family);
+}
