@@ -1,0 +1,88 @@
+.card {
+  position: relative;
+  
+  &:hover {
+    cursor: pointer;
+    opacity: 0.8;
+    transition: all 0.2s ease-in;
+  }
+}
+
+.link {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.img {
+  margin-bottom: 12px;
+  border-radius: 12px;
+  width: 100%;
+  aspect-ratio: 302 / 286;
+  object-fit: cover;
+}
+
+.title {
+  font-family: var(--font-family);
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 127%;
+  color: #222;
+}
+
+.titleWrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.rating {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  
+  font-family: var(--font-family);
+  font-weight: 400;
+  font-size: 15px;
+  line-height: 127%;
+  text-align: right;
+  color: #222;
+}
+
+.desc {
+  font-family: var(--font-family);
+  font-weight: 400;
+  font-size: 15px;
+  line-height: 127%;
+  color: #717171;
+}
+
+.date {
+  font-family: var(--font-family);
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 146%;
+  color: #717171;
+}
+
+.price {
+  margin-top: 8px;
+  font-family: var(--font-family);
+  font-weight: 400;
+  font-size: 15px;
+  line-height: 127%;
+  color: #222;
+  
+  strong {
+    font-weight: 600;
+  }
+}
+
+.descWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

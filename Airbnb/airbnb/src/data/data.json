@@ -1,0 +1,110 @@
+[
+  {
+    "title": "Knoxville, Tennessee",
+    "desc": "Mountain and lake views",
+    "rating": 5.0,
+    "price_per_night": 388,
+    "dates_available": "Apr 16 – 21",
+    "img": "./img/objects/01.jpg",
+    "img2x": "./img/objects/01@2x.jpg"
+  },
+  {
+    "title": "Sevierville, Tennessee",
+    "desc": "Mountain views",
+    "rating": 4.93,
+    "price_per_night": 343,
+    "dates_available": "Jun 5 – 10",
+    "img": "./img/objects/02.jpg",
+    "img2x": "./img/objects/02@2x.jpg"
+  },
+  {
+    "title": "Branson, Missouri",
+    "desc": "Mountain views",
+    "rating": 5.0,
+    "price_per_night": 388,
+    "dates_available": "Apr 30 – May 5",
+    "img": "./img/objects/03.jpg",
+    "img2x": "./img/objects/03@2x.jpg"
+  },
+  {
+    "title": "Chicago, Illinois",
+    "desc": "City views",
+    "rating": 4.72,
+    "price_per_night": 326,
+    "dates_available": "Apr 4 – 9",
+    "img": "./img/objects/04.jpg",
+    "img2x": "./img/objects/04@2x.jpg"
+  },
+  {
+    "title": "Chicago, Illinois",
+    "desc": "Lake and city views",
+    "rating": 5.0,
+    "price_per_night": 349,
+    "dates_available": "Mar 4 – 9",
+    "img": "./img/objects/05.jpg",
+    "img2x": "./img/objects/05@2x.jpg"
+  },
+  {
+    "title": "Sevierville, Tennessee",
+    "desc": "Mountain and lake views",
+    "rating": 4.82,
+    "price_per_night": 255,
+    "dates_available": "Mar 5 – 10",
+    "img": "./img/objects/06.jpg",
+    "img2x": "./img/objects/06@2x.jpg"
+  },
+  {
+    "title": "Cassopolis, Michigan",
+    "desc": "Lake views",
+    "rating": 4.96,
+    "price_per_night": 595,
+    "dates_available": "Mar 5 – 10",
+    "img": "./img/objects/07.jpg",
+    "img2x": "./img/objects/07@2x.jpg"
+  },
+  {
+    "title": "Tofte, Minnesota",
+    "desc": "Beach and lake views",
+    "rating": 4.89,
+    "price_per_night": 170,
+    "dates_available": "Mar 19 – 24",
+    "img": "./img/objects/08.jpg",
+    "img2x": "./img/objects/08@2x.jpg"
+  },
+  {
+    "title": "Sevierville, Tennessee",
+    "desc": "Mountain and park views",
+    "rating": 4.94,
+    "price_per_night": 229,
+    "dates_available": "Mar 18 – 23",
+    "img": "./img/objects/09.jpg",
+    "img2x": "./img/objects/09@2x.jpg"
+  },
+  {
+    "title": "Sevierville, Tennessee",
+    "desc": "Mountain views",
+    "rating": 4.93,
+    "price_per_night": 199,
+    "dates_available": "Apr 21 – 26",
+    "img": "./img/objects/10.jpg",
+    "img2x": "./img/objects/10@2x.jpg"
+  },
+  {
+    "title": "Osage Beach, Missouri",
+    "desc": "Lake and pool views",
+    "rating": 4.85,
+    "price_per_night": 850,
+    "dates_available": "Mar 3 – 8",
+    "img": "./img/objects/11.jpg",
+    "img2x": "./img/objects/11@2x.jpg"
+  },
+  {
+    "title": "Sevierville, Tennessee",
+    "desc": "Mountain views",
+    "rating": 4.96,
+    "price_per_night": 428,
+    "dates_available": "Mar 7 – 12",
+    "img": "./img/objects/12.jpg",
+    "img2x": "./img/objects/12@2x.jpg"
+  }
+]
