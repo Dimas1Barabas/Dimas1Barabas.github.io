@@ -1,0 +1,50 @@
+@use 'helpers' as *;
+
+:root {
+  --color-black: #1B1F2B;
+  --color-white: #FFFFFF;
+  
+  --color-orange-200: #EFA501;
+  --color-orange-100: #F8E6BE;
+  
+  --color-green-400: #286562;
+  --color-green-300: #3B7E7B;
+  --color-green-200: #627F7E;
+  --color-green-100: #E0F0E5;
+  
+  --color-gray-300: #A6A6A6;
+  --color-gray-200: #D9DFDB;
+  --color-gray-100: #F1F3F2;
+  
+  --color-beige-200: #F4F0E9;
+  --color-beige-100: #F9F7F4;
+  
+  --gradient1: linear-gradient(
+    360deg,
+    rgba(0, 0, 0, 0.4) 0%,
+    rgba(0, 0, 0, 0.06) 48.44%,
+    rgba(0, 0, 0, 0.5) 100%);
+  
+  --gradient2: linear-gradient(
+    270deg,
+    rgba(0, 0, 0, 0) 0.01%,
+    rgba(0, 0, 0, 0.2) 100%);
+  
+  --gradient0:
+    linear-gradient(0deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0) 39.9%);
+  
+  
+  //--border: #{rem(1)} solid var(--color-dark-15);
+  //
+  //--shadow: 0 0 0 #{rem(3)} #191919;
+  //
+  //--container-width: #{rem(1600)};
+  //--container-padding-x: #{rem(16)};
+  //
+  //--transion-duration: 0.2s;
+  //
+  //@include laptop {
+  //  --container-width: #{rem(1280)};
+  //}
+}
