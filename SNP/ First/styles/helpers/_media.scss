@@ -1,16 +1,16 @@
 @use './functions' as *;
 
-$tablet: 1023.98;
-$mobile: 359.98;
+$laptop: 1024;
+$mobile: 360;
 
-@mixin tablet-above {
-  @media (width > rem($tablet)) {
+@mixin laptop-above {
+  @media (width > rem($laptop)) {
     @content
   }
 }
 
-@mixin tablet {
-  @media (width <= rem($tablet)) {
+@mixin laptop {
+  @media (width <= rem($laptop)) {
     @content
   }
 }

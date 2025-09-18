@@ -7,19 +7,24 @@ html {
 }
 
 body {
-  @include p-normal;
-  
-  @include mobile {
-    @include m-p-normal;
-  }
-  
   display: flex;
   flex-direction: column;
+  gap: 135px;
   background-color: var(--color-white);
+  
+  @include mobile {
+    gap: 75px;
+  }
 }
 
 main {
-  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 135px;
+  
+  @include mobile {
+    gap: 75px;
+  }
 }
 
 a,
@@ -29,7 +34,7 @@ input,
 textarea,
 select,
 svg * {
-  text-decoration: var(--transion-duration);
+  text-decoration: var(--transition-duration);
 }
 
 a {

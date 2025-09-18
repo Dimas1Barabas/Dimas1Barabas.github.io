@@ -1,11 +1,24 @@
 @use 'helpers' as *;
 
+.container {
+  width: var(--container-width-desktop);
+  margin-inline: auto;
+  
+  @include laptop {
+    width: var(--container-width-laptop);
+  }
+  
+  @include mobile {
+    width: var(--container-width-mobile);
+  }
+}
+
 //.container {
 //  max-width: calc(var(--container-width) + var(--container-padding-x) * 2);
 //  margin-inline: auto;
 //  padding-inline: var(--container-padding-x);
 //}
-//
+
 //.visually-hidden {
 //  @include visually-hidden;
 //}

@@ -18,6 +18,10 @@
   
   --color-beige-200: #F4F0E9;
   --color-beige-100: #F9F7F4;
+ 
+  --gradient-hero:
+    linear-gradient(0deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0) 39.9%);
   
   --gradient1: linear-gradient(
     360deg,
@@ -30,19 +34,21 @@
     rgba(0, 0, 0, 0) 0.01%,
     rgba(0, 0, 0, 0.2) 100%);
   
-  --gradient0:
-    linear-gradient(0deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0) 39.9%);
+  
+  --transition-duration: 0.2s;
+  
+  --container-width-desktop: 1170px;
+  --container-width-laptop: 918px;
+  --container-width-mobile: 320px;
+  
+  //--container-padding-x: #{rem(16)};
   
   
   //--border: #{rem(1)} solid var(--color-dark-15);
   //
   //--shadow: 0 0 0 #{rem(3)} #191919;
   //
-  //--container-width: #{rem(1600)};
-  //--container-padding-x: #{rem(16)};
   //
-  //--transion-duration: 0.2s;
   //
   //@include laptop {
   //  --container-width: #{rem(1280)};
