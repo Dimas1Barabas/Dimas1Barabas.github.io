@@ -1,0 +1,47 @@
+@use '../helpers' as *;
+
+.tabs-header {
+  display: flex;
+  gap: 30px;
+  color: var(--color-black);
+  
+  @include mobile {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  
+  &__button {
+    padding: 0;
+    border: none;
+    background: transparent;
+    @include p-big;
+    
+    &:where(.is-active ){
+      color: var(--color-orange-200);
+      text-decoration: underline;
+      text-decoration-thickness: 2px;
+      text-underline-offset: 6px;
+      transition-duration: var(--transition-duration);
+      
+      @include mobile {
+        @include m-p-big;
+        text-underline-offset: 4px;
+        transition-duration: var(--transition-duration);
+      }
+    }
+    
+    &:hover {
+      color: var(--color-black);
+      text-decoration: underline;
+      text-decoration-thickness: 2px;
+      text-underline-offset: 6px;
+      transition-duration: var(--transition-duration);
+    }
+    
+    
+    @include  mobile {
+      @include m-p-big;
+    }
+    
+  }
+}

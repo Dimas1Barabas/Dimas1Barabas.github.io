@@ -220,7 +220,7 @@ svg * {
   --gradient-hero:
     linear-gradient(0deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)),
     linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0) 39.9%);
-  --gradient1: linear-gradient(
+  --gradient-choose-tour: linear-gradient(
     360deg,
     rgba(0, 0, 0, 0.4) 0%,
     rgba(0, 0, 0, 0.06) 48.44%,
@@ -454,6 +454,353 @@ a[class] {
     font-size: 16px;
     line-height: 142%;
     letter-spacing: -0.01em;
+  }
+}
+
+.choose {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 100px;
+}
+@media (width <= 22.5rem) {
+  .choose {
+    gap: 50px;
+  }
+}
+.choose-header {
+  display: flex;
+  flex-direction: column;
+  gap: 35px;
+}
+@media (width <= 22.5rem) {
+  .choose-header {
+    gap: 30px;
+  }
+}
+.choose-header__title {
+  font-family: "Roboto-Bold", sans-serif;
+  font-weight: 700;
+  font-size: 59px;
+  line-height: 124%;
+  text-align: center;
+  color: var(--color-black);
+}
+@media (width <= 22.5rem) {
+  .choose-header__title {
+    font-family: "Roboto-Bold", sans-serif;
+    font-weight: 700;
+    font-size: 34px;
+    line-height: 112%;
+    letter-spacing: 0.02em;
+  }
+}
+.choose-body {
+  padding: 0;
+}
+@media (width <= 22.5rem) {
+  .choose-body {
+    padding: 0 1px;
+  }
+}
+
+.tabs-header {
+  display: flex;
+  gap: 30px;
+  color: var(--color-black);
+}
+@media (width <= 22.5rem) {
+  .tabs-header {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+}
+.tabs-header__button {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: "Roboto-Bold", sans-serif;
+  font-weight: 700;
+  font-size: 23px;
+  line-height: 122%;
+}
+.tabs-header__button:where(.is-active) {
+  color: var(--color-orange-200);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+  transition-duration: var(--transition-duration);
+}
+@media (width <= 22.5rem) {
+  .tabs-header__button:where(.is-active) {
+    font-family: "Roboto-Bold", sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 142%;
+    text-underline-offset: 4px;
+    transition-duration: var(--transition-duration);
+  }
+}
+.tabs-header__button:hover {
+  color: var(--color-black);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+  transition-duration: var(--transition-duration);
+}
+@media (width <= 22.5rem) {
+  .tabs-header__button {
+    font-family: "Roboto-Bold", sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 142%;
+  }
+}
+
+.tabs-body__list {
+  display: grid;
+  grid-template-columns: repeat(3, 370px);
+  gap: 30px;
+}
+@media (width <= 22.5rem) {
+  .tabs-body__list {
+    gap: 18px;
+  }
+}
+@media (width <= 64rem) {
+  .tabs-body__list {
+    gap: 18px;
+  }
+}
+
+.tour-card__title {
+  font-family: "Roboto-Medium", sans-serif;
+  font-weight: 500;
+  font-size: 35px;
+  line-height: 122%;
+}
+@media (width <= 22.5rem) {
+  .tour-card__title {
+    font-family: "Roboto-Bold", sans-serif;
+    font-weight: 700;
+    font-size: 23px;
+    line-height: 120%;
+    letter-spacing: 0.04em;
+  }
+}
+.tour-card__price {
+  font-family: "Roboto-Regular", sans-serif;
+  font-weight: 400;
+  font-size: 17px;
+  line-height: 142%;
+  letter-spacing: -0.01em;
+}
+@media (width <= 22.5rem) {
+  .tour-card__price {
+    font-family: "Roboto-Regular", sans-serif;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 142%;
+    letter-spacing: -0.01em;
+  }
+}
+.tour-card__description {
+  position: absolute;
+  padding: 7px 20px;
+  left: 30px;
+  bottom: 43px;
+  font-family: "Roboto-Bold", sans-serif;
+  font-weight: 700;
+  font-size: 23px;
+  line-height: 122%;
+}
+@media (width <= 22.5rem) {
+  .tour-card__description {
+    font-family: "Roboto-Bold", sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 142%;
+  }
+}
+.tour-card__description::after {
+  display: inline-block;
+  margin-left: 15px;
+  content: url("data:image/svg+xml,%3Csvg width='24' height='26' viewBox='0 0 24 26' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M22.7004 12.2833L16.1535 5.79682C15.7541 5.40106 15.1063 5.40106 14.7068 5.79682C14.3073 6.19266 14.3073 6.83433 14.7068 7.23017L19.5074 11.9865H2.02294C1.45803 11.9865 1 12.4403 1 13C1 13.5596 1.45803 14.0135 2.02294 14.0135H19.5074L14.707 18.7698C14.3075 19.1656 14.3075 19.8073 14.707 20.2032C14.9067 20.4009 15.1686 20.5 15.4304 20.5C15.6921 20.5 15.9539 20.4009 16.1537 20.2032L22.7004 13.7167C23.0999 13.3208 23.0999 12.6792 22.7004 12.2833Z' fill='%23FFFFFF'/%3E%3C/svg%3E");
+  width: 24px;
+  height: 26px;
+  right: -49px;
+}
+.tour-card__description:hover {
+  background-color: var(--color-green-400);
+  transition-duration: var(--transition-duration);
+  border-radius: 50px;
+}
+
+.tour-card-1 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  justify-content: space-between;
+  padding: 50px;
+  border-radius: 50px;
+  width: 370px;
+  height: 531px;
+  color: var(--color-white);
+  background: var(--gradient-choose-tour), url("../../images/choose/choose-1.jpg") center/cover no-repeat;
+}
+@media (width > 22.5rem) {
+  .tour-card-1 {
+    transition: 0.3s ease;
+  }
+  .tour-card-1:hover {
+    transform: scale(1.2);
+  }
+}
+@media (width <= 22.5rem) {
+  .tour-card-1 {
+    padding: 25px;
+    border-radius: 20px;
+  }
+}
+
+.tour-card-2 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  justify-content: space-between;
+  padding: 50px;
+  border-radius: 50px;
+  width: 370px;
+  height: 531px;
+  color: var(--color-white);
+  background: var(--gradient-choose-tour), url("../../images/choose/choose-2.jpg") center/cover no-repeat;
+}
+@media (width > 22.5rem) {
+  .tour-card-2 {
+    transition: 0.3s ease;
+  }
+  .tour-card-2:hover {
+    transform: scale(1.2);
+  }
+}
+@media (width <= 22.5rem) {
+  .tour-card-2 {
+    padding: 25px;
+    border-radius: 20px;
+  }
+}
+
+.tour-card-3 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  justify-content: space-between;
+  padding: 50px;
+  border-radius: 50px;
+  width: 370px;
+  height: 531px;
+  color: var(--color-white);
+  background: var(--gradient-choose-tour), url("../../images/choose/choose-3.jpg") center/cover no-repeat;
+}
+@media (width > 22.5rem) {
+  .tour-card-3 {
+    transition: 0.3s ease;
+  }
+  .tour-card-3:hover {
+    transform: scale(1.2);
+  }
+}
+@media (width <= 22.5rem) {
+  .tour-card-3 {
+    padding: 25px;
+    border-radius: 20px;
+  }
+}
+
+.tour-card-4 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  justify-content: space-between;
+  padding: 50px;
+  border-radius: 50px;
+  width: 370px;
+  height: 531px;
+  color: var(--color-white);
+  background: var(--gradient-choose-tour), url("../../images/choose/choose-4.jpg") center/cover no-repeat;
+}
+@media (width > 22.5rem) {
+  .tour-card-4 {
+    transition: 0.3s ease;
+  }
+  .tour-card-4:hover {
+    transform: scale(1.2);
+  }
+}
+@media (width <= 22.5rem) {
+  .tour-card-4 {
+    padding: 25px;
+    border-radius: 20px;
+  }
+}
+
+.tour-card-5 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  justify-content: space-between;
+  padding: 50px;
+  border-radius: 50px;
+  width: 370px;
+  height: 531px;
+  color: var(--color-white);
+  background: var(--gradient-choose-tour), url("../../images/choose/choose-5.jpg") center/cover no-repeat;
+}
+@media (width > 22.5rem) {
+  .tour-card-5 {
+    transition: 0.3s ease;
+  }
+  .tour-card-5:hover {
+    transform: scale(1.2);
+  }
+}
+@media (width <= 22.5rem) {
+  .tour-card-5 {
+    padding: 25px;
+    border-radius: 20px;
+  }
+}
+
+.tour-card-6 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  justify-content: space-between;
+  padding: 50px;
+  border-radius: 50px;
+  width: 370px;
+  height: 531px;
+  color: var(--color-white);
+  background: var(--gradient-choose-tour), url("../../images/choose/choose-6.jpg") center/cover no-repeat;
+}
+@media (width > 22.5rem) {
+  .tour-card-6 {
+    transition: 0.3s ease;
+  }
+  .tour-card-6:hover {
+    transform: scale(1.2);
+  }
+}
+@media (width <= 22.5rem) {
+  .tour-card-6 {
+    padding: 25px;
+    border-radius: 20px;
   }
 }
 
