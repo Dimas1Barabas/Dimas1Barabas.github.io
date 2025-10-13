@@ -6,7 +6,9 @@
   width: 100%;
   height: 830px;
   color: var(--color-white);
-  
+  justify-content: center;
+  align-items: center;
+  padding-top: 88px;
   background-image:
     var(--gradient-hero),
     url('../../images/hero/header-img-2x.jpg');
@@ -25,58 +27,6 @@
     height: 488px;
   }
   
-  &-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    height: 88px;
-    padding-inline: 1px;
-    
-    &__logo {
-      width: 181.83px;
-      height: 30.23px;
-      
-      @include mobile {
-        width: 133px;
-        height: 22px;
-      }
-    }
-    
-    &__menu {
-      @include mobile {
-        display: none;
-      }
-      
-      &-list {
-        display: flex;
-        gap: 50px;
-        @include p-normal;
-        
-        @include laptop {
-          gap: 30px;
-        }
-      }
-    }
-    
-    &__link {
-      &:hover {
-        text-decoration: underline;
-        text-decoration-thickness: 1px;
-        text-underline-offset: 6px;
-        text-decoration-skip-ink: none;
-        transition: var(--transition-duration);
-      }
-    }
-    
-    &__phone-link {
-      @include p-normal;
-      
-      @include mobile {
-        @include m-p-normal;
-      }
-    }
-  }
-  
   &-wrapper {
     display: flex;
     flex-direction: column;
@@ -84,7 +34,6 @@
     align-items: center;
     text-align: center;
     gap: 50px;
-    padding: 118.5px 201px;
     
     @include laptop {
       padding: 119px 2px;

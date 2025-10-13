@@ -1,16 +1,11 @@
 @use 'helpers' as *;
 
-.hero-container {
-  width: var(--container-width-desktop);
-  margin-inline: auto;
-  
-  @include laptop {
-    width: var(--container-width-laptop);
-  }
-  
-  @include mobile {
-    width: var(--container-width-mobile);
-  }
+header.fixed {
+  position: fixed;
+  color: var(--color-black);
+  backdrop-filter: blur(54px);
+  background-color: rgba(243, 239, 232, 0.6);
+  opacity: 1;
 }
 
 .container {
@@ -28,26 +23,6 @@
   @include mobile {
     width: var(--container-width-mobile);
     gap: 50px;
-  }
-}
-
-.spec-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 100px;
-  width: 100%;
-  margin-inline: 30px;
-  
-  @include laptop {
-    width: 100%;
-    margin-inline: 20px;
-  }
-  
-  @include mobile {
-    gap: 50px;
-    width: 100%;
-    margin-inline: 21px;
   }
 }
 
@@ -85,11 +60,28 @@
   }
 }
 
-//.container {
-//  max-width: calc(var(--container-width) + var(--container-padding-x) * 2);
-//  margin-inline: auto;
-//  padding-inline: var(--container-padding-x);
-//}
+.spec-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 100px;
+  width: 100%;
+  margin-inline: 30px;
+  
+  @include laptop {
+    width: 100%;
+    margin-inline: 20px;
+  }
+  
+  @include mobile {
+    gap: 50px;
+    width: 100%;
+    margin-inline: 21px;
+  }
+}
+
+
+
 
 //.visually-hidden {
 //  @include visually-hidden;

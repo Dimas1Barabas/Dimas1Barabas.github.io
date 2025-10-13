@@ -9,7 +9,7 @@ class InputMask {
     this.init()
   }
   
-  init() {
+  init()  {
     const isLibReady = typeof window.IMask !== 'undefined';
     
     if (isLibReady) {
