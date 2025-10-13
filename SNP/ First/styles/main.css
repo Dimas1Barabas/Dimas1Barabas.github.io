@@ -414,6 +414,7 @@ a[class] {
   padding: 0 376px;
   margin-inline: auto;
   color: var(--color-white);
+  opacity: 1;
   transition: background-color var(--transition-duration), opacity var(--transition-duration);
   z-index: 100;
 }
