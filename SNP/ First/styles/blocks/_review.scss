@@ -1,0 +1,55 @@
+@use '../helpers' as *;
+
+.review {
+  &__content {
+    @include p-big;
+    color: var(--color-black);
+    
+    @include mobile {
+      @include m-p-big;
+    }
+  }
+  
+  &-reviewer {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: end;
+    width: 100%;
+    height: 145px;
+    
+    @include mobile {
+      height: 115px;
+    }
+    
+    &__info {
+      display: flex;
+      flex-direction: column;
+      justify-content: start;
+      gap: 8px;
+      width: 100%;
+      
+      &-name {
+        @include H3;
+        color: var(--color-black);
+        
+        @include mobile {
+          @include m-H3;
+        }
+      }
+      
+      &-tour {
+        @include p-small;
+        color: var(--color-gray-300);
+        
+        @include mobile {
+          @include m-p-small;
+        }
+      }
+    }
+    
+    &__img {
+      border-radius: 50%;
+    }
+  }
+}

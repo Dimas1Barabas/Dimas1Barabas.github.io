@@ -29,13 +29,13 @@
     rgba(0, 0, 0, 0.06) 48.44%,
     rgba(0, 0, 0, 0.5) 100%);
   
-  --gradient2: linear-gradient(
+  --gradient-story-card: linear-gradient(
     270deg,
     rgba(0, 0, 0, 0) 0.01%,
     rgba(0, 0, 0, 0.2) 100%);
   
   
-  --transition-duration: 0.2s;
+  --transition-duration: 0.3s ease;
   
   --container-width-desktop: 1170px;
   --container-width-laptop: 918px;

@@ -1,0 +1,61 @@
+@use '../helpers' as *;
+
+.collect-form {
+  display: grid;
+  column-gap: 30px;
+  row-gap: 33px;
+  grid-template-columns: repeat(2, 1fr);
+  
+  @include laptop {
+    column-gap: 20px;
+  }
+  
+  @include mobile {
+    gap: 30px;
+    grid-template-columns: repeat(1, 1fr);
+  }
+  
+  &__col{
+    display: flex;
+    flex-direction: column;
+    align-items: start;
+    gap: 8px;
+    
+    &--wide {
+      grid-column: -1 / 1;
+    }
+  }
+  
+  &__row {
+    display: flex;
+    flex-direction: row;
+    justify-content: start;
+    align-items: center;
+    gap: 19px;
+    
+    @include laptop {
+      gap: 11px;
+    }
+    
+    @include mobile {
+      gap: 10px;
+    }
+    
+    &--wide {
+      grid-column: -1 / 1;
+      
+      @include mobile {
+        align-items: start;
+      }
+    }
+    
+    &--btn {
+      gap: 30px;
+      grid-column: -1 / 1;
+      
+      @include mobile {
+        gap: 10px;
+      }
+    }
+  }
+}

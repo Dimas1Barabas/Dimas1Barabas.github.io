@@ -130,6 +130,11 @@
   translate: 0 -50%;
 }
 
+@mixin square($size) {
+  width: $size;
+  height: $size;
+}
+
 //@mixin flex-center($isInline: false) {
 //  @if $isInline {
 //    display: inline-flex;
@@ -140,12 +145,7 @@
 //  justify-content: center;
 //  align-items: center;
 //}
-//
-//
-//@mixin square($size) {
-//  width: $size;
-//  height: $size;
-//}
+
 //
 //@mixin visually-hidden {
 //  position: absolute !important;

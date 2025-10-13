@@ -7,13 +7,14 @@
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <link rel="icon" href="./icons/favicon%2032х32.png" type="image/x-icon">
   <link rel="stylesheet" href="styles/main.css">
-  <script src="scripts/main.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/imask/7.6.1/imask.min.js"></script>
+  <script src="scripts/main.js" type="module"></script>
   <title>YourTour</title>
 </head>
 <body>
   <main>
     <section class="hero" aria-labelledby="hero-title">
-      <header class="hero-header container">
+      <header class="hero-header hero-container">
         <a
           href="#"
           class="hero-header__logo"
@@ -84,7 +85,7 @@
     
     <section class="choose container" aria-labelledby="choose-title">
       <header class="choose-header header-container">
-        <h2 class="choose-header__title" id="choose-title">Выбери свой тур</h2>
+        <h2 class="choose-header__title header-container__title" id="choose-title">Выбери свой тур</h2>
         <div class="tabs-header">
           <button class="tabs-header__button is-active">Популярные</button>
           <button class="tabs-header__button">Авторские</button>
@@ -95,73 +96,825 @@
       </header>
       <div class="choose-body">
         <div class="tabs-body is-active">
-          <ul class="tabs-body__list">
-            <li class="tabs-body__item">
-              <article class="tour-card-1">
-                <div>
-                  <h3 class="tour-card__title">Путешествие в горы</h3>
-                  <p class="tour-card__price">от 80 000 руб</p>
-                </div>
-                <a href="#" class="tour-card__description"><span>Подробнее</span></a>
-              </article>
-            </li>
-            <li class="tabs-body__item">
-              <article class="tour-card-2">
-                <div>
-                  <h3 class="tour-card__title">Путешествие в горы</h3>
-                  <p class="tour-card__price">от 80 000 руб</p>
-                </div>
-                <a href="#" class="tour-card__description">Подробнее</a>
-              </article>
-            </li>
-            <li class="tabs-body__item">
-              <article class="tour-card-3">
-                <div>
-                  <h3 class="tour-card__title">Путешествие в горы</h3>
-                  <p class="tour-card__price">от 80 000 руб</p>
-                </div>
-                <a href="#" class="tour-card__description">Подробнее</a>
-              </article>
-            </li>
-            <li class="tabs-body__item">
-              <article class="tour-card-4">
-                <div>
-                  <h3 class="tour-card__title">Путешествие в горы</h3>
-                  <p class="tour-card__price">от 80 000 руб</p>
-                </div>
-                <a href="#" class="tour-card__description">Подробнее</a>
-              </article>
-            </li>
-            <li class="tabs-body__item">
-              <article class="tour-card-5">
-                <div>
-                  <h3 class="tour-card__title">Путешествие в горы</h3>
-                  <p class="tour-card__price">от 80 000 руб</p>
-                </div>
-                <a href="#" class="tour-card__description">Подробнее</a>
-              </article>
-            </li>
-            <li class="tabs-body__item">
-              <article class="tour-card-6">
-                <div>
-                  <h3 class="tour-card__title">Путешествие в горы</h3>
-                  <p class="tour-card__price">от 80 000 руб</p>
-                </div>
-                <a href="#" class="tour-card__description">Подробнее</a>
-              </article>
-            </li>
-          </ul>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+          
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <div class="tour-card-content">
+                <h3 class="tour-card-content__title">Путешествие в горы</h3>
+                <p class="tour-card-content__price">от 80 000 руб</p>
+              </div>
+              <a href="#" class="tour-card__link"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-2.jpg" alt="">
+            <article class="tour-card">
+              <div class="tour-card-content">
+                <h3 class="tour-card-content__title">Путешествие в горы</h3>
+                <p class="tour-card-content__price">от 80 000 руб</p>
+              </div>
+              <a href="#" class="tour-card__link"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-3.jpg" alt="">
+            <article class="tour-card">
+              <div class="tour-card-content">
+                <h3 class="tour-card-content__title">Путешествие в горы</h3>
+                <p class="tour-card-content__price">от 80 000 руб</p>
+              </div>
+              <a href="#" class="tour-card__link"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-4.jpg" alt="">
+            <article class="tour-card">
+              <div class="tour-card-content">
+                <h3 class="tour-card-content__title">Путешествие в горы</h3>
+                <p class="tour-card-content__price">от 80 000 руб</p>
+              </div>
+              <a href="#" class="tour-card__link"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-5.jpg" alt="">
+            <article class="tour-card">
+              <div class="tour-card-content">
+                <h3 class="tour-card-content__title">Путешествие в горы</h3>
+                <p class="tour-card-content__price">от 80 000 руб</p>
+              </div>
+              <a href="#" class="tour-card__link"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-6.jpg" alt="">
+            <article class="tour-card">
+              <div class="tour-card-content">
+                <h3 class="tour-card-content__title">Путешествие в горы</h3>
+                <p class="tour-card-content__price">от 80 000 руб</p>
+              </div>
+              <a href="#" class="tour-card__link"><span>Подробнее</span></a>
+            </article>
+          </div>
         </div>
-        <div class="tabs-body"></div>
-        <div class="tabs-body"></div>
-        <div class="tabs-body"></div>
-        <div class="tabs-body"></div>
+        <div class="tabs-body">
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+        </div>
+        <div class="tabs-body">
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+        </div>
+        <div class="tabs-body">
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+        </div>
+        <div class="tabs-body">
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+          <div class="tabs-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+            <img class="tour-card__img" src="./images/choose/choose-1.jpg" alt="">
+            <article class="tour-card">
+              <h3 class="tour-card__title">Путешествие в горы</h3>
+              <p class="tour-card__price">от 80 000 руб</p>
+              <a href="#" class="tour-card__description"><span>Подробнее</span></a>
+            </article>
+          </div>
+        </div>
       </div>
     </section>
     
+    <section class="collect container" aria-labelledby="collect-title">
+      <header class="collect-header header-container">
+        <h2 class="collect-header__title  header-container__title " id="collect-title">Собери свой тур</h2>
+        <p class="collect-header__description header-container__description">
+          Идейные соображения высшего порядка,<br> а также рамки и место обучения кадров
+        </p>
+      </header>
+      <div class="collect-body">
+        <form action="/" class="collect-form" id="form-create-tour">
+          <div class="collect-form__col field">
+            <label
+              for="name"
+              class="field__label"
+            >
+              Имя
+            </label>
+            <input
+              class="field__input"
+              id="name"
+              placeholder="Введите Ваше имя"
+              required
+            >
+          </div>
+          <div class="collect-form__col field">
+            <label
+              for="path"
+              class="field__label"
+            >
+              Направление
+            </label>
+            <select
+              id="path"
+              class="field__input"
+              required
+            >
+              <option value="">Куда хотите ехать</option>
+              <option value="Север">Север</option>
+              <option value="Юг">Юг</option>
+              <option value="Запад">Запад</option>
+              <option value="Восток">Восток</option>
+            </select>
+          </div>
+          <div class="collect-form__col field">
+            <label
+              for="email"
+              class="field__label"
+            >
+              Email
+            </label>
+            <input
+              type="email"
+              class="field__input"
+              id="email"
+              placeholder="example@mail.com"
+              required
+            >
+          </div>
+          <div class="collect-form__col field">
+            <label
+              for="phoneNumber"
+              class="field__label"
+            >
+              Телефон
+            </label>
+            <input
+              class="field__input"
+              id="phoneNumber"
+              placeholder="+ 7 ( _ _ _ ) _ _ _ - _ _ - _ _"
+              data-js-input-mask-phone-number = "+ 7 (000) 000 - 00 - 00"
+              required
+            >
+          </div>
+          <div class="collect-form__col field">
+            <label
+              for="dateFrom"
+              class="field__label"
+            >
+              Дата от
+            </label>
+            <input
+              class="field__input"
+              id="dateFrom"
+              placeholder="ДД.ММ.ГГГГ"
+              data-js-input-mask-date-from = "00.00.0000"
+              required
+            >
+          </div>
+          <div class="collect-form__col field">
+            <label
+              for="dateBefore"
+              class="field__label"
+            >
+              Дата до
+            </label>
+            <input
+              class="field__input"
+              id="dateBefore"
+              placeholder="ДД.ММ.ГГГГ"
+              data-js-input-mask-date-before = "00.00.0000"
+              required
+            >
+          </div>
+          <div class="collect-form__col collect-form__col--wide field">
+            <label
+              for="comments"
+              class="field__label"
+            >
+              Комментарий
+            </label>
+            <textarea
+              class="field__input-textarea"
+              form="form-create-tour"
+              maxlength="1000"
+              id="comments"
+            >
+            </textarea>
+          </div>
+          <div class="collect-form__col collect-form__col--wide field">
+            <p class="field__label">
+              Вам есть 18 лет?
+            </p>
+            <fieldset
+              form="form-create-tour"
+              class="field__input-set"
+            >
+              <div class="field__input-set-wrap">
+                <input
+                  type="radio"
+                  class="field__input-set-wrap-radio"
+                  id=">18"
+                  name="radio"
+                  value="Да"
+                  required
+                >
+                <label
+                  for=">18"
+                  class="field__label"
+                >
+                  Да
+                </label>
+              </div>
+              <div class="field__input-set-wrap">
+                <input
+                  type="radio"
+                  class="field__input-set-wrap-radio"
+                  id="<18"
+                  name="radio"
+                  value="Нет"
+                >
+                <label
+                  for="<18"
+                  class="field__label"
+                >
+                  Нет
+                </label>
+              </div>
+            </fieldset>
+          </div>
+          <div class="collect-form__row collect-form__row--wide field">
+            <input
+              type="checkbox"
+              class="field__input-checkbox"
+              id="agree"
+              required
+            >
+            <label
+              for="agree"
+              class="field__label-gray"
+            >
+              Нажимая кнопку, я принимаю условия <a href="#">Лицензионного договора</a>
+            </label>
+          </div>
+          <div class="collect-form__row collect-form__row--btn field">
+            <button type="submit" class="field__input-btn field__input-btn-submit" onclick="window.location.href='#choose-title'">Найти тур</button>
+            <button type="reset" class="field__input-btn field__input-btn-reset">Сбросить</button>
+          </div>
+        </form>
+      </div>
+    </section>
     
+    <section class="reviews container" aria-labelledby="reviews-title">
+      <header class="reviews-header header-container">
+        <h2 class="reviews-header__title header-container__title" id="reviews-title">Отзывы наших путешественников</h2>
+        <p class="reviews-header__description header-container__description">
+          Идейные соображения высшего порядка,<br> а также рамки и место обучения кадров
+        </p>
+      </header>
+      <div class="reviews-body">
+        <article class="reviews-body__card review">
+          <p class="review__content">
+            Идейные соображения высшего порядка, а также рамки и место обучения
+            кадров обеспечивает широкому кругу (специалистов) участие в формировании новых предложений.
+            Идейные соображения высшего порядка, а также начало повседневной работы по формированию
+            позиции позволяет оценить значение модели развития.
+          </p>
+          <div class="review-reviewer">
+            <div class="review-reviewer__info">
+              <h3 class="review-reviewer__info-name">Мария</h3>
+              <p class="review-reviewer__info-tour">Тур: Вдали от дома </p>
+            </div>
+            <img
+              class="review-reviewer__img"
+              src="./images/reviews/review%20photo-1.jpg"
+              width="75"
+              height="75"
+              loading="lazy"
+              alt="reviewer"
+            >
+          </div>
+        </article>
+        <article class="reviews-body__card review">
+          <p class="review__content">
+            Равным образом постоянный количественный рост и сфера нашей активности играет
+            важную роль в формировании системы обучения кадров, соответствует насущным потребностям.
+            <br/>
+            <br/>
+            Значимость этих проблем настолько очевидна, что дальнейшее развитие различных форм
+            деятельности обеспечивает широкому кругу (специалистов) участие в формировании новых предложений.
+            Повседневная практика показывает, что реализация намеченных плановых заданий в значительной
+            степени обуславливает создание модели развития.
+          </p>
+          <div class="review-reviewer">
+            <div class="review-reviewer__info">
+              <h3 class="review-reviewer__info-name">Павел</h3>
+              <p class="review-reviewer__info-tour">Тур: Путешествие в горы</p>
+            </div>
+            <img
+              class="review-reviewer__img"
+              src="./images/reviews/review%20photo-2.jpg"
+              width="75"
+              height="75"
+              loading="lazy"
+              alt="reviewer"
+            >
+          </div>
+        </article>
+      </div>
+    </section>
+    
+    <section class="travel-photos spec-container" aria-labelledby="travel-photos-title">
+      <header class="travel-photos-header header-container">
+        <h2 class="travel-photos-header__title header-container__title" id="travel-photos-title">Фотографии путешествий</h2>
+        <p class="travel-photos-header__description header-container__description">
+          Идейные соображения высшего порядка,<br> а также рамки и место обучения кадров
+        </p>
+      </header>
+      <div class="travel-photos-body">
+        <div class="travel-photos-body__row">
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/1.jpg"
+              class="travel-photo__img"
+              alt="travel photo"
+            >
+          </div>
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/2.jpg"
+              class="travel-photo__img laptop"
+              alt="travel photo"
+            >
+          </div>
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/3.jpg"
+              class="travel-photo__img mobile"
+              alt="travel photo"
+            >
+          </div>
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/4.jpg"
+              class="travel-photo__img"
+              alt="travel photo"
+            >
+          </div>
+        </div>
+        <div class="travel-photos-body__row travel-photos-body__row-col5">
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/5.jpg"
+              class="travel-photo__img"
+              alt="travel photo"
+            >
+          </div>
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/6.jpg"
+              class="travel-photo__img mobile"
+              alt="travel photo"
+            >
+          </div>
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/7.jpg"
+              class="travel-photo__img laptop"
+              alt="travel photo"
+            >
+          </div>
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/8.jpg"
+              class="travel-photo__img"
+              alt="travel photo"
+            >
+          </div>
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/9.jpg"
+              class="travel-photo__img"
+              alt="travel photo"
+            >
+          </div>
+        </div>
+        <div class="travel-photos-body__row">
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/10.jpg"
+              class="travel-photo__img"
+              alt="travel photo"
+            >
+          </div>
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/11.jpg"
+              class="travel-photo__img"
+              alt="travel photo"
+            >
+          </div>
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/12.jpg"
+              class="travel-photo__img mobile"
+              alt="travel photo"
+            >
+          </div>
+          <div class="travel-photo">
+            <img
+              src="./images/travel-photos/13.jpg"
+              class="travel-photo__img travel-photo__img-center laptop"
+              alt="travel photo"
+            >
+          </div>
+        </div>
+      </div>
+    </section>
+    
+    <section class="stories container" aria-labelledby="stories-title">
+      <header class="stories-header header-container">
+        <h2 class="stories-header__title header-container__title" id="stories-title">Истории путешествий</h2>
+        <p class="stories-header__description header-container__description">
+          Идейные соображения высшего порядка,<br> а также рамки и место обучения кадров
+        </p>
+      </header>
+      <div class="stories-body">
+        <div class="stories-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+          <img class="story-card__img" src="images/stories/1.jpg" alt="">
+          <article class="story-card">
+            <div class="story-card-content">
+              <h3 class="story-card-content__title">Автостопом в Стамбул</h3>
+              <p class="story-card-content__description">
+                Идейные соображения высшего порядка, а также рамки и место
+                обучения кадров обеспечивает широкому кругу (специалистов) участие
+                в формировании новых предложений: <br><br>
+<!--                расстояние между больше похоже на br
+                    Нужно ли делать списком ?-->
+                <span>  &bull;   вкусная еда</span><br>
+                <span>  &bull;   дешевый транспорт</span><br>
+                <span>  &bull;   красивый город.</span>
+              </p>
+            </div>
+            <div class="story-card-links">
+              <a href="#" class="story-card-links__description"><span>Подробнее</span></a>
+              <ul class="story-card-links-soc">
+                <li class="story-card-links-soc__link">
+                  <a
+                    href="#"
+                    target="_blank"
+                    aria-label="Telegram"
+                    title="Telegram"
+                  >
+                    telegram
+                  </a>
+                </li>
+                <li class="story-card-links-soc__link">
+                  <a
+                    href="#"
+                    target="_blank"
+                    aria-label="Facebook"
+                    title="Facebook"
+                  >
+                    facebook
+                  </a>
+                </li>
+                <li class="story-card-links-soc__link">
+                  <a
+                    href="#"
+                    target="_blank"
+                    aria-label="YouTube"
+                    title="YouTube"
+                  >
+                    YouTube
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </article>
+        </div>
+        <div class="stories-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+          <img class="story-card__img" src="images/stories/2.jpg" alt="">
+          <article class="story-card">
+            <div class="story-card-content">
+              <h3 class="story-card-content__title">Автостопом в Стамбул</h3>
+              <p class="story-card-content__description">
+                Идейные соображения высшего порядка, а также рамки и место
+                обучения кадров обеспечивает широкому кругу (специалистов) участие
+                в формировании новых предложений:
+              </p>
+            </div>
+            <div class="story-card-links">
+              <a href="#" class="story-card-links__description"><span>Подробнее</span></a>
+              <ul class="story-card-links-soc">
+                <li class="story-card-links-soc__link">
+                  <a
+                    href="#"
+                    target="_blank"
+                    aria-label="Telegram"
+                    title="Telegram"
+                  >
+                    telegram
+                  </a>
+                </li>
+                <li class="story-card-links-soc__link">
+                  <a
+                    href="#"
+                    target="_blank"
+                    aria-label="Facebook"
+                    title="Facebook"
+                  >
+                    facebook
+                  </a>
+                </li>
+                <li class="story-card-links-soc__link">
+                  <a
+                    href="#"
+                    target="_blank"
+                    aria-label="VKontakte"
+                    title="VKontakte"
+                  >
+                    ВКонтакте
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </article>
+        </div>
+        <div class="stories-body__link" role="link" tabindex="0" onclick="window.location.href='#'">
+          <img class="story-card__img" src="images/stories/3.jpg" alt="">
+          <article class="story-card">
+            <div class="story-card-content">
+              <h3 class="story-card-content__title">Автостопом в Стамбул</h3>
+              <p class="story-card-content__description">
+                Идейные соображения высшего порядка, а также рамки и место
+                обучения кадров обеспечивает широкому кругу (специалистов) участие
+                в формировании новых предложений:
+              </p>
+            </div>
+            <div class="story-card-links">
+              <a href="#" class="story-card-links__description"><span>Подробнее</span></a>
+              <ul class="story-card-links-soc">
+                <li class="story-card-links-soc__link">
+                  <a
+                    href="#"
+                    target="_blank"
+                    aria-label="Telegram"
+                    title="Telegram"
+                  >
+                    telegram
+                  </a>
+                </li>
+                <li class="story-card-links-soc__link">
+                  <a
+                    href="#"
+                    target="_blank"
+                    aria-label="Facebook"
+                    title="Facebook"
+                  >
+                    facebook
+                  </a>
+                </li>
+                <li class="story-card-links-soc__link">
+                  <a
+                    href="#"
+                    target="_blank"
+                    aria-label="VKontakte"
+                    title="VKontakte"
+                  >
+                    ВКонтакте
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+    
+    <section class="contacts container" aria-labelledby="contacts-title">
+      <div class="contacts-wrapper">
+        <div class="contacts-wrapper__img">
+          <img src="images/contacts/footer-photo.jpg">
+        </div>
+        <div class="contacts-wrapper__body contacts-body">
+          <h3 class="contacts-body__title" id="contacts-title">Пора в путешествие вместе с нами!</h3>
+          <p class="contacts-body__description">
+            Напиши на почту и узнай подробности на
+            <a href="mailto:yourtour@gmail.com" target="_blank">yourtour@gmail.com</a>
+          </p>
+        </div>
+      </div>
+    </section>
   </main>
   
-  <footer></footer>
+  <footer class="footer">
+    <div class="footer-wrapper">
+      <p class="footer-wrapper__text">Наши социальные сети</p>
+      <div class="footer-wrapper-links">
+        <a
+          class="footer-wrapper-links__link footer-wrapper-links__link-1"
+          href="#"
+          aria-label="Telegram"
+          title="Telegram"
+        >
+<!--          можно спрайт-->
+          <span>telegram</span>
+        </a>
+        <a
+          class="footer-wrapper-links__link footer-wrapper-links__link-2"
+          href="#"
+          aria-label="Facebook"
+          title="Facebook"
+        >
+          <span>facebook</span>
+        </a>
+        <a
+          class="footer-wrapper-links__link footer-wrapper-links__link-3"
+          href="#"
+          aria-label="VKontakte"
+          title="VKontakte"
+        >
+          <span>vkontakte</span>
+        </a>
+      </div>
+    </div>
+  </footer>
 </body>
 </html>

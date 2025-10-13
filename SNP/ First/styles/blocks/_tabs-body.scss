@@ -1,237 +1,79 @@
 @use '../helpers' as *;
 
 .tabs-body {
+  display: grid;
+  grid-template-columns: repeat(3, 370px);
+  gap: 30px;
   
-  &__list {
-    display: grid;
-    grid-template-columns: repeat(3, 370px);
-    gap: 30px;
-    
-    @include mobile {
-      gap: 18px;
-    }
+  @include laptop {
+    grid-template-columns: repeat(2, 450px);
+    gap: 18px;
+  }
+  
+  @include mobile {
+    grid-template-columns: repeat(1, 318px);
+    gap: 18px;
+  }
+  
+  &:where(:not(.is-active)) {
+    display: none;
+  }
+  
+  &__link {
+    position: relative;
+    width: 370px;
+    height: 531px;
+    color: var(--color-white);
+    border-radius: 50px;
+    overflow: hidden;
     
     @include laptop {
-      gap: 18px;
+      width: 450px;
     }
-  }
-}
-
-
-.tour-card {
-  &__title {
-    @include H3;
     
     @include mobile {
-      @include m-H3;
-    }
-  }
-  
-  &__price {
-    @include p-small;
-    
-    @include mobile {
-      @include m-p-small;
-    }
-  }
-  
-  &__description {
-    position: absolute;
-    padding: 7px 20px;
-    left: 30px;
-    bottom: 43px;
-    @include p-big;
-    
-    @include mobile {
-      @include m-p-big;
-    }
-    
-    &::after {
-      display: inline-block;
-      margin-left: 15px;
-      content: url("data:image/svg+xml,%3Csvg width='24' height='26' viewBox='0 0 24 26' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M22.7004 12.2833L16.1535 5.79682C15.7541 5.40106 15.1063 5.40106 14.7068 5.79682C14.3073 6.19266 14.3073 6.83433 14.7068 7.23017L19.5074 11.9865H2.02294C1.45803 11.9865 1 12.4403 1 13C1 13.5596 1.45803 14.0135 2.02294 14.0135H19.5074L14.707 18.7698C14.3075 19.1656 14.3075 19.8073 14.707 20.2032C14.9067 20.4009 15.1686 20.5 15.4304 20.5C15.6921 20.5 15.9539 20.4009 16.1537 20.2032L22.7004 13.7167C23.0999 13.3208 23.0999 12.6792 22.7004 12.2833Z' fill='%23FFFFFF'/%3E%3C/svg%3E");
-      width: 24px;
-      height: 26px;
-      right: -49px;
+      @include square(318px);
+      border-radius: 20px;
     }
     
     &:hover {
-      background-color: var(--color-green-400);
-      transition-duration: var(--transition-duration);
-      border-radius: 50px;
-    }
-  }
-}
+      .tour-card__img {
+        transform: scale(1.2);
+        transition: var(--transition-duration);
+      }
 
-.tour-card-1 {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  justify-content: space-between;
-  padding: 50px;
-  border-radius: 50px;
-  width: 370px;
-  height: 531px;
-  color: var(--color-white);
-  background:
-    var(--gradient-choose-tour),
-    url('../../images/choose/choose-1.jpg') center/cover no-repeat;
-  
-  @include mobile-above {
-    transition: 0.3s ease;
-    
-    &:hover {
-      transform: scale(1.2);
+      .tour-card__link {
+        background-color: var(--color-green-400);
+        transition: var(--transition-duration);
+      }
     }
-  }
-  
-  @include mobile {
-    padding: 25px;
-    border-radius: 20px;
-  }
-}
 
-.tour-card-2 {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  justify-content: space-between;
-  padding: 50px;
-  border-radius: 50px;
-  width: 370px;
-  height: 531px;
-  color: var(--color-white);
-  background:
-    var(--gradient-choose-tour),
-    url('../../images/choose/choose-2.jpg') center/cover no-repeat;
-  
-  @include mobile-above {
-    transition: 0.3s ease;
-    
-    &:hover {
-      transform: scale(1.2);
+    &:active {
+      .tour-card__link {
+        background-color: var(--color-orange-200);
+      }
     }
-  }
-  
-  @include mobile {
-    padding: 25px;
-    border-radius: 20px;
-  }
-}
 
-.tour-card-3 {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  justify-content: space-between;
-  padding: 50px;
-  border-radius: 50px;
-  width: 370px;
-  height: 531px;
-  color: var(--color-white);
-  background:
-    var(--gradient-choose-tour),
-    url('../../images/choose/choose-3.jpg') center/cover no-repeat;
-  
-  @include mobile-above {
-    transition: 0.3s ease;
-    
-    &:hover {
-      transform: scale(1.2);
-    }
-  }
-  
-  @include mobile {
-    padding: 25px;
-    border-radius: 20px;
-  }
-}
+    &:not(:hover) {
+      .tour-card__img {
+        transform: scale(1);
+        transition: var(--transition-duration);
+      }
 
-.tour-card-4 {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  justify-content: space-between;
-  padding: 50px;
-  border-radius: 50px;
-  width: 370px;
-  height: 531px;
-  color: var(--color-white);
-  background:
-    var(--gradient-choose-tour),
-    url('../../images/choose/choose-4.jpg') center/cover no-repeat;
-  
-  @include mobile-above {
-    transition: 0.3s ease;
-    
-    &:hover {
-      transform: scale(1.2);
+      .tour-card__link {
+        background-color: transparent;
+        transition: var(--transition-duration);
+      }
     }
-  }
-  
-  @include mobile {
-    padding: 25px;
-    border-radius: 20px;
-  }
-}
-.tour-card-5 {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  justify-content: space-between;
-  padding: 50px;
-  border-radius: 50px;
-  width: 370px;
-  height: 531px;
-  color: var(--color-white);
-  background:
-    var(--gradient-choose-tour),
-    url('../../images/choose/choose-5.jpg') center/cover no-repeat;
-  
-  @include mobile-above {
-    transition: 0.3s ease;
     
-    &:hover {
-      transform: scale(1.2);
+    &::before {
+      content: '';
+      position: absolute;
+      display: block;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      background: var(--gradient-choose-tour);
     }
-  }
-  
-  @include mobile {
-    padding: 25px;
-    border-radius: 20px;
-  }
-}
-
-.tour-card-6 {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  justify-content: space-between;
-  padding: 50px;
-  border-radius: 50px;
-  width: 370px;
-  height: 531px;
-  color: var(--color-white);
-  background:
-    var(--gradient-choose-tour),
-    url('../../images/choose/choose-6.jpg') center/cover no-repeat;
-  
-  @include mobile-above {
-    transition: 0.3s ease;
-    
-    &:hover {
-      transform: scale(1.2);
-    }
-  }
-  
-  @include mobile {
-    padding: 25px;
-    border-radius: 20px;
   }
 }

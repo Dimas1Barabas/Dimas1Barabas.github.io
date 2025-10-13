@@ -58,6 +58,16 @@
       }
     }
     
+    &__link {
+      &:hover {
+        text-decoration: underline;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 6px;
+        text-decoration-skip-ink: none;
+        transition: var(--transition-duration);
+      }
+    }
+    
     &__phone-link {
       @include p-normal;
       
@@ -114,13 +124,23 @@
       border: none;
       color: var(--color-black);
       background-color: var(--color-white);
-      
       @include p-small;
       
       @include mobile {
         width: 114px;
         height: 33px;
         @include m-p-small;
+      }
+      
+      &:hover {
+        color: var(--color-white);
+        background-color: var(--color-orange-200);
+        transition: var(--transition-duration);
+      }
+      
+      &:active {
+        color: var(--color-black);
+        background-color: var(--color-orange-100);
       }
     }
   }

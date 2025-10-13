@@ -5,6 +5,52 @@
 @use 'globals';
 
 @use 'blocks/hero';
+
 @use 'blocks/choose';
 @use 'blocks/tabs-header';
 @use 'blocks/tabs-body';
+@use 'blocks/tour-card';
+
+@use 'blocks/collect';
+@use 'blocks/collect-form';
+@use 'blocks/field';
+
+@use 'blocks/reviews';
+@use 'blocks/review';
+
+@use 'blocks/travel-photos';
+@use 'blocks/travel-photo';
+
+@use 'blocks/stories';
+@use 'blocks/story-card';
+
+@use 'blocks/contacts';
+
+@use 'blocks/footer';
+
+
+
+
+//.footer,
+//main > *:not(:nth-child(0)) {
+//  display: none;
+//}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//footer,
+//main > *:not(:nth-child(0)) {
+//  display: none;
+//}

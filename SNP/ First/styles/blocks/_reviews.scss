@@ -1,0 +1,47 @@
+@use '../helpers' as *;
+
+.reviews {
+  &-header {
+    &__title {
+      width: 529px;
+    }
+  }
+  
+  &-body {
+    display: flex;
+    flex-direction: row;
+    gap: 30px;
+    
+    @include laptop {
+      gap: 18px;
+    }
+    
+    @include mobile {
+      flex-direction: column;
+      gap: 18px;
+    }
+    
+    &__card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      width: 570px;
+      height: 673px;
+      padding: 40px;
+      background-color: var(--color-beige-200);
+      border-radius: 50px;
+      
+      @include laptop {
+        width: 450px;
+        height: 841px;
+      }
+      
+      @include mobile {
+        width: 318px;
+        height: 592px;
+        padding: 20px;
+        border-radius: 20px;
+      }
+    }
+  }
+}

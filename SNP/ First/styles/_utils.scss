@@ -1,6 +1,6 @@
 @use 'helpers' as *;
 
-.container {
+.hero-container {
   width: var(--container-width-desktop);
   margin-inline: auto;
   
@@ -13,8 +13,76 @@
   }
 }
 
-.header-container {
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 100px;
+  width: var(--container-width-desktop);
+  margin-inline: auto;
+  
+  @include laptop {
+    width: var(--container-width-laptop);
+  }
+  
+  @include mobile {
+    width: var(--container-width-mobile);
+    gap: 50px;
+  }
+}
 
+.spec-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 100px;
+  width: 100%;
+  margin-inline: 30px;
+  
+  @include laptop {
+    width: 100%;
+    margin-inline: 20px;
+  }
+  
+  @include mobile {
+    gap: 50px;
+    width: 100%;
+    margin-inline: 21px;
+  }
+}
+
+.header-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  
+  @include mobile {
+    gap: 20px;
+  }
+  
+  &__title {
+    @include H2;
+    text-align: center;
+    color: var(--color-black);
+    
+    @include mobile {
+      @include m-H2;
+    }
+  }
+  
+  &__description {
+    @include p-normal;
+    max-width: 418px;
+    text-align: center;
+    color: var(--color-gray-300);
+    
+    @include mobile {
+      @include m-p-normal;
+      max-width: 318px;
+    }
+  }
 }
 
 //.container {

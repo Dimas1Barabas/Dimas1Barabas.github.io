@@ -1,41 +1,13 @@
 @use '../helpers' as *;
 
 .choose {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 100px;
-  
-  @include mobile {
-    gap: 50px;
-  }
-  
   &-header {
-    display: flex;
-    flex-direction: column;
     gap: 35px;
     
     @include mobile {
       gap: 30px;
     }
-    
-    &__title {
-      @include H2;
-      
-      text-align: center;
-      color: var(--color-black);
-      
-      @include mobile {
-        @include m-H2;
-      }
-    }
   }
   
-  &-body {
-    padding: 0;
-    
-    @include  mobile {
-      padding: 0 1px;
-    }
-  }
+  &-body {}
 }

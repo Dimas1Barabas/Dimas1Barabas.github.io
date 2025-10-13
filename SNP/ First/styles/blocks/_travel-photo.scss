@@ -1,0 +1,30 @@
+@use '../helpers' as *;
+
+.travel-photo {
+  border-radius: 50px;
+  overflow: hidden;
+  
+  @include laptop {
+    &:has(.laptop) {
+      display: none;
+    }
+  }
+  
+  @include mobile {
+    border-radius: 20px;
+    &:has(.mobile) {
+      display: none;
+    }
+  }
+  
+  &__img {
+    object-fit: cover;
+    object-position: center center;
+    width: 100%;
+    height: 100%;
+    
+    &-center {
+      object-position: center -330px;
+    }
+  }
+}

@@ -1,0 +1,20 @@
+@use '../helpers' as *;
+
+.collect {
+  &-header {}
+  
+  &-body {
+    padding: 70px;
+    background-color: var(--color-white);
+    border-radius: 50px;
+    
+    @include laptop {
+      padding: 60px;
+    }
+    
+    @include mobile {
+      padding: 20px 20px 40px 20px;
+      border-radius: 30px;
+    }
+  }
+}
