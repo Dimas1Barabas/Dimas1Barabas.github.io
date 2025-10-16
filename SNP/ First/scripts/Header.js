@@ -8,10 +8,11 @@ class Header {
   
   init() {
     window.addEventListener('scroll', () => {
-      if (window.scrollY > 450 && !this.headerElement.classList.contains('fixed')) {
-        this.headerElement.classList.add('fixed');
-      } else if (window.scrollY < 450 && this.headerElement.classList.contains('fixed')) {
-        this.headerElement.classList.remove('fixed');
+      let scroll = window.scrollY > 450;
+      if (scroll) {
+        this.headerElement.classList.replace('absolute', 'fixed');
+      } else {
+        this.headerElement.classList.replace('fixed', 'absolute');
       }
     });
   }
