@@ -1,0 +1,123 @@
+.slider {
+  height: 600px;
+  background-color: black;
+  border-radius: 28px;
+  overflow: hidden;
+}
+
+.controls {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 100%;
+  padding-left: 60px;
+  z-index: 100;
+}
+
+.slide-list {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 374px;
+  padding: 14px 32px 14px 14px;
+  background-color: rgb(30, 30, 32, 0.8);
+  backdrop-filter: blur(5px);
+  border-radius: 28px;
+  font-size: 16px;
+  font-weight: 400;
+  text-align: left;
+  transition: all 0.2s ease-in;
+}
+
+.button--open {
+  padding: 24px;
+}
+
+.button:not(.button--open):hover {
+  background-color: rgb(48, 48, 51);
+}
+
+.plus-icon {
+  --app-pv-icon-fill: white;
+}
+
+.button__icon {
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+.controls__arrows {
+  pointer-events: all;
+  position: absolute;
+  top: 50%;
+  left: 15px;
+  transform: translate(0, -50%);
+  
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.2s ease-in;
+  transform: translateY(0%);
+}
+
+.controls__arrows--hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(100%);
+}
+
+.control-order {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: #333;
+  transition: all 0.2s ease-in;
+}
+
+.control-order[disabled] {
+  background-color: #111;
+  cursor: auto;
+}
+
+.control-order svg{
+  width: 36px;
+  height: 36px;
+  fill: white;
+  transition: all 0.2s ease-in;
+}
+
+.control-order[disabled] svg {
+  width: 36px;
+  height: 36px;
+  fill: grey;
+}
+
+.content {
+  width: 100%;
+  height: 100%;
+}
+
+.slide-content {
+  width: 100%;
+  height: 100%;
+}
+
+.object-cover {
+  object-fit: cover;
+}
+
+.video-cover {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
