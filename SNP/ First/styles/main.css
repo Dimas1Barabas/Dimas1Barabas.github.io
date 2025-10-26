@@ -492,7 +492,7 @@ a[class] {
   justify-content: center;
   align-items: center;
   padding-top: 88px;
-  background-image: var(--gradient-hero), url("../../images/hero/header-img-2x.jpg");
+  background-image: var(--gradient-hero), url("../images/hero/header-img-2x.jpg");
   background-repeat: no-repeat;
   background-size: cover;
   background-position: center;
@@ -500,7 +500,7 @@ a[class] {
 @media (width <= 64rem) {
   .hero {
     height: 831px;
-    background-image: var(--gradient-hero), url("../../images/hero/header-img.jpg");
+    background-image: var(--gradient-hero), url("../images/hero/header-img.jpg");
   }
 }
 @media (width <= 22.5rem) {
@@ -813,7 +813,7 @@ a[class] {
   line-height: 122%;
 }
 .tour-card__link::after {
-  content: url("../../icons/arrow btw.svg");
+  content: url("../icons/arrow btw.svg");
   width: 24px;
   height: 26px;
   fill: var(--color-white);
@@ -1539,7 +1539,7 @@ a[class] {
   line-height: 122%;
 }
 .story-card-links__description::after {
-  content: url("../../icons/arrow btw.svg");
+  content: url("../icons/arrow btw.svg");
   width: 24px;
   height: 26px;
   fill: var(--color-white);
@@ -1751,17 +1751,17 @@ a[class] {
   transition: var(--transition-duration);
 }
 .footer-wrapper-links__link-1::before {
-  content: url("../../icons/telegram.svg");
+  content: url("../icons/telegram.svg");
   width: 26px;
   height: 26px;
 }
 .footer-wrapper-links__link-2::before {
-  content: url("../../icons/fb.svg");
+  content: url("../icons/fb.svg");
   width: 26px;
   height: 25px;
 }
 .footer-wrapper-links__link-3::before {
-  content: url("../../icons/vk.svg");
+  content: url("../icons/vk.svg");
   width: 26px;
   height: 26px;
 }
