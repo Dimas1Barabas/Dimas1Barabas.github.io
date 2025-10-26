@@ -1,208 +1,208 @@
 .idea
-/SNP/ First/node_modules/detect-libc/.npmignore
-/SNP/ First/node_modules/.package-lock.json
-/SNP/ First/node_modules/sass/types/value/argument_list.d.ts
-/SNP/ First/node_modules/source-map-js/lib/array-set.js
-/SNP/ First/node_modules/@parcel/watcher/src/Backend.cc
-/SNP/ First/node_modules/@parcel/watcher/src/Backend.hh
-/SNP/ First/node_modules/source-map-js/lib/base64.js
-/SNP/ First/node_modules/source-map-js/lib/base64-vlq.js
-/SNP/ First/node_modules/source-map-js/lib/binary-search.js
-/SNP/ First/node_modules/@parcel/watcher/src/binding.cc
-/SNP/ First/node_modules/@parcel/watcher/binding.gyp
-/SNP/ First/node_modules/sass/types/value/boolean.d.ts
-/SNP/ First/node_modules/@parcel/watcher/src/shared/BruteForceBackend.cc
-/SNP/ First/node_modules/@parcel/watcher/src/shared/BruteForceBackend.hh
-/SNP/ First/node_modules/@parcel/watcher/src/watchman/BSER.cc
-/SNP/ First/node_modules/@parcel/watcher/src/watchman/BSER.hh
-/SNP/ First/node_modules/@parcel/watcher/scripts/build-from-source.js
-/SNP/ First/node_modules/sass/types/value/calculation.d.ts
-/SNP/ First/node_modules/picomatch/CHANGELOG.md
-/SNP/ First/node_modules/node-addon-api/tools/check-napi.js
-/SNP/ First/node_modules/node-addon-api/tools/clang-format.js
-/SNP/ First/node_modules/sass/types/value/color.d.ts
-/SNP/ First/node_modules/node-addon-api/common.gypi
-/SNP/ First/node_modules/sass/types/compile.d.ts
-/SNP/ First/node_modules/braces/lib/compile.js
-/SNP/ First/node_modules/braces/lib/constants.js
-/SNP/ First/node_modules/picomatch/lib/constants.js
-/SNP/ First/node_modules/node-addon-api/tools/conversion.js
-/SNP/ First/node_modules/@parcel/watcher/src/Debounce.cc
-/SNP/ First/node_modules/@parcel/watcher/src/Debounce.hh
-/SNP/ First/node_modules/sass/types/deprecations.d.ts
-/SNP/ First/node_modules/.bin/detect-libc
-/SNP/ First/node_modules/.bin/detect-libc.cmd
-/SNP/ First/node_modules/detect-libc/bin/detect-libc.js
-/SNP/ First/node_modules/detect-libc/lib/detect-libc.js
-/SNP/ First/node_modules/.bin/detect-libc.ps1
-/SNP/ First/node_modules/@parcel/watcher/src/DirTree.cc
-/SNP/ First/node_modules/@parcel/watcher/src/DirTree.hh
-/SNP/ First/node_modules/node-addon-api/tools/eslint-format.js
-/SNP/ First/node_modules/@parcel/watcher/src/Event.hh
-/SNP/ First/node_modules/node-addon-api/except.gypi
-/SNP/ First/node_modules/sass/types/legacy/exception.d.ts
-/SNP/ First/node_modules/sass/types/exception.d.ts
-/SNP/ First/node_modules/braces/lib/expand.js
-/SNP/ First/node_modules/@parcel/watcher/src/macos/FSEventsBackend.cc
-/SNP/ First/node_modules/@parcel/watcher/src/macos/FSEventsBackend.hh
-/SNP/ First/node_modules/@parcel/watcher/src/unix/fts.cc
-/SNP/ First/node_modules/sass/types/legacy/function.d.ts
-/SNP/ First/node_modules/sass/types/value/function.d.ts
-/SNP/ First/node_modules/@parcel/watcher/src/Glob.cc
-/SNP/ First/node_modules/@parcel/watcher/src/Glob.hh
-/SNP/ First/node_modules/chokidar/esm/handler.d.ts
-/SNP/ First/node_modules/chokidar/handler.d.ts
-/SNP/ First/node_modules/chokidar/esm/handler.js
-/SNP/ First/node_modules/chokidar/handler.js
-/SNP/ First/node_modules/immutable/dist/immutable.d.ts
-/SNP/ First/node_modules/immutable/dist/immutable.es.js
-/SNP/ First/node_modules/immutable/dist/immutable.js
-/SNP/ First/node_modules/immutable/dist/immutable.js.flow
-/SNP/ First/node_modules/immutable/dist/immutable.min.js
-/SNP/ First/node_modules/sass/types/legacy/importer.d.ts
-/SNP/ First/node_modules/sass/types/importer.d.ts
-/SNP/ First/node_modules/@parcel/watcher/src/wasm/include.h
-/SNP/ First/node_modules/@parcel/watcher/index.d.ts
-/SNP/ First/node_modules/chokidar/esm/index.d.ts
-/SNP/ First/node_modules/chokidar/index.d.ts
-/SNP/ First/node_modules/readdirp/esm/index.d.ts
-/SNP/ First/node_modules/readdirp/index.d.ts
-/SNP/ First/node_modules/sass/types/logger/index.d.ts
-/SNP/ First/node_modules/sass/types/value/index.d.ts
-/SNP/ First/node_modules/sass/types/index.d.ts
-/SNP/ First/node_modules/@parcel/watcher/index.js
-/SNP/ First/node_modules/braces/index.js
-/SNP/ First/node_modules/chokidar/esm/index.js
-/SNP/ First/node_modules/chokidar/index.js
-/SNP/ First/node_modules/fill-range/index.js
-/SNP/ First/node_modules/is-extglob/index.js
-/SNP/ First/node_modules/is-glob/index.js
-/SNP/ First/node_modules/is-number/index.js
-/SNP/ First/node_modules/micromatch/index.js
-/SNP/ First/node_modules/node-addon-api/index.js
-/SNP/ First/node_modules/picomatch/index.js
-/SNP/ First/node_modules/readdirp/esm/index.js
-/SNP/ First/node_modules/readdirp/index.js
-/SNP/ First/node_modules/to-regex-range/index.js
-/SNP/ First/node_modules/@parcel/watcher/index.js.flow
-/SNP/ First/node_modules/@parcel/watcher/src/linux/InotifyBackend.cc
-/SNP/ First/node_modules/@parcel/watcher/src/linux/InotifyBackend.hh
-/SNP/ First/node_modules/@parcel/watcher/src/watchman/IPC.hh
-/SNP/ First/node_modules/@parcel/watcher/src/kqueue/KqueueBackend.cc
-/SNP/ First/node_modules/@parcel/watcher/src/kqueue/KqueueBackend.hh
-/SNP/ First/node_modules/@parcel/watcher/src/unix/legacy.cc
-/SNP/ First/node_modules/@parcel/watcher/LICENSE
-/SNP/ First/node_modules/@parcel/watcher-win32-x64/LICENSE
-/SNP/ First/node_modules/braces/LICENSE
-/SNP/ First/node_modules/chokidar/LICENSE
-/SNP/ First/node_modules/detect-libc/LICENSE
-/SNP/ First/node_modules/fill-range/LICENSE
-/SNP/ First/node_modules/immutable/LICENSE
-/SNP/ First/node_modules/is-extglob/LICENSE
-/SNP/ First/node_modules/is-glob/LICENSE
-/SNP/ First/node_modules/is-number/LICENSE
-/SNP/ First/node_modules/micromatch/LICENSE
-/SNP/ First/node_modules/picomatch/LICENSE
-/SNP/ First/node_modules/readdirp/LICENSE
-/SNP/ First/node_modules/sass/LICENSE
-/SNP/ First/node_modules/source-map-js/LICENSE
-/SNP/ First/node_modules/to-regex-range/LICENSE
-/SNP/ First/node_modules/node-addon-api/LICENSE.md
-/SNP/ First/node_modules/sass/types/value/list.d.ts
-/SNP/ First/node_modules/sass/types/value/map.d.ts
-/SNP/ First/node_modules/source-map-js/lib/mapping-list.js
-/SNP/ First/node_modules/sass/types/value/mixin.d.ts
-/SNP/ First/node_modules/node-addon-api/napi.h
-/SNP/ First/node_modules/node-addon-api/napi-inl.deprecated.h
-/SNP/ First/node_modules/node-addon-api/napi-inl.h
-/SNP/ First/node_modules/node-addon-api/node_addon_api.gyp
-/SNP/ First/node_modules/node-addon-api/node_api.gyp
-/SNP/ First/node_modules/node-addon-api/noexcept.gypi
-/SNP/ First/node_modules/node-addon-api/nothing.c
-/SNP/ First/node_modules/sass/types/value/number.d.ts
-/SNP/ First/node_modules/sass/types/legacy/options.d.ts
-/SNP/ First/node_modules/sass/types/options.d.ts
-/SNP/ First/node_modules/@parcel/watcher/package.json
-/SNP/ First/node_modules/@parcel/watcher-win32-x64/package.json
-/SNP/ First/node_modules/braces/package.json
-/SNP/ First/node_modules/chokidar/esm/package.json
-/SNP/ First/node_modules/chokidar/package.json
-/SNP/ First/node_modules/detect-libc/package.json
-/SNP/ First/node_modules/fill-range/package.json
-/SNP/ First/node_modules/immutable/package.json
-/SNP/ First/node_modules/is-extglob/package.json
-/SNP/ First/node_modules/is-glob/package.json
-/SNP/ First/node_modules/is-number/package.json
-/SNP/ First/node_modules/micromatch/package.json
-/SNP/ First/node_modules/node-addon-api/package.json
-/SNP/ First/node_modules/picomatch/package.json
-/SNP/ First/node_modules/readdirp/esm/package.json
-/SNP/ First/node_modules/readdirp/package.json
-/SNP/ First/node_modules/sass/package.json
-/SNP/ First/node_modules/source-map-js/package.json
-/SNP/ First/node_modules/to-regex-range/package.json
-/SNP/ First/node_modules/node-addon-api/package-support.json
-/SNP/ First/node_modules/braces/lib/parse.js
-/SNP/ First/node_modules/picomatch/lib/parse.js
-/SNP/ First/node_modules/picomatch/lib/picomatch.js
-/SNP/ First/node_modules/sass/types/legacy/plugin_this.d.ts
-/SNP/ First/node_modules/sass/types/util/promise_or.d.ts
-/SNP/ First/node_modules/@parcel/watcher/src/PromiseRunner.hh
-/SNP/ First/node_modules/source-map-js/lib/quick-sort.js
-/SNP/ First/node_modules/@parcel/watcher/README.md
-/SNP/ First/node_modules/@parcel/watcher-win32-x64/README.md
-/SNP/ First/node_modules/braces/README.md
-/SNP/ First/node_modules/chokidar/README.md
-/SNP/ First/node_modules/detect-libc/README.md
-/SNP/ First/node_modules/fill-range/README.md
-/SNP/ First/node_modules/immutable/README.md
-/SNP/ First/node_modules/is-extglob/README.md
-/SNP/ First/node_modules/is-glob/README.md
-/SNP/ First/node_modules/is-number/README.md
-/SNP/ First/node_modules/micromatch/README.md
-/SNP/ First/node_modules/node-addon-api/tools/README.md
-/SNP/ First/node_modules/node-addon-api/README.md
-/SNP/ First/node_modules/picomatch/README.md
-/SNP/ First/node_modules/readdirp/README.md
-/SNP/ First/node_modules/sass/README.md
-/SNP/ First/node_modules/source-map-js/README.md
-/SNP/ First/node_modules/to-regex-range/README.md
-/SNP/ First/node_modules/sass/types/legacy/render.d.ts
-/SNP/ First/node_modules/.bin/sass
-/SNP/ First/node_modules/.bin/sass.cmd
-/SNP/ First/node_modules/sass/sass.dart.js
-/SNP/ First/node_modules/sass/sass.default.cjs
-/SNP/ First/node_modules/sass/sass.default.js
-/SNP/ First/node_modules/sass/sass.js
-/SNP/ First/node_modules/sass/sass.node.js
-/SNP/ First/node_modules/sass/sass.node.mjs
-/SNP/ First/node_modules/.bin/sass.ps1
-/SNP/ First/node_modules/picomatch/lib/scan.js
-/SNP/ First/node_modules/@parcel/watcher/src/Signal.hh
-/SNP/ First/node_modules/source-map-js/source-map.d.ts
-/SNP/ First/node_modules/source-map-js/source-map.js
-/SNP/ First/node_modules/source-map-js/lib/source-map-consumer.d.ts
-/SNP/ First/node_modules/source-map-js/lib/source-map-consumer.js
-/SNP/ First/node_modules/source-map-js/lib/source-map-generator.d.ts
-/SNP/ First/node_modules/source-map-js/lib/source-map-generator.js
-/SNP/ First/node_modules/source-map-js/lib/source-node.d.ts
-/SNP/ First/node_modules/source-map-js/lib/source-node.js
-/SNP/ First/node_modules/sass/types/logger/source_location.d.ts
-/SNP/ First/node_modules/sass/types/logger/source_span.d.ts
-/SNP/ First/node_modules/sass/types/value/string.d.ts
-/SNP/ First/node_modules/braces/lib/stringify.js
-/SNP/ First/node_modules/source-map-js/lib/util.js
-/SNP/ First/node_modules/braces/lib/utils.js
-/SNP/ First/node_modules/picomatch/lib/utils.js
-/SNP/ First/node_modules/@parcel/watcher/src/wasm/WasmBackend.cc
-/SNP/ First/node_modules/@parcel/watcher/src/wasm/WasmBackend.hh
-/SNP/ First/node_modules/@parcel/watcher/src/Watcher.cc
-/SNP/ First/node_modules/@parcel/watcher/src/Watcher.hh
-/SNP/ First/node_modules/@parcel/watcher-win32-x64/watcher.node
-/SNP/ First/node_modules/@parcel/watcher/src/watchman/WatchmanBackend.cc
-/SNP/ First/node_modules/@parcel/watcher/src/watchman/WatchmanBackend.hh
-/SNP/ First/node_modules/@parcel/watcher/src/windows/win_utils.cc
-/SNP/ First/node_modules/@parcel/watcher/src/windows/win_utils.hh
-/SNP/ First/node_modules/@parcel/watcher/src/windows/WindowsBackend.cc
-/SNP/ First/node_modules/@parcel/watcher/src/windows/WindowsBackend.hh
-/SNP/ First/node_modules/@parcel/watcher/wrapper.js
+/SNP/First/node_modules/detect-libc/.npmignore
+/SNP/First/node_modules/.package-lock.json
+/SNP/First/node_modules/sass/types/value/argument_list.d.ts
+/SNP/First/node_modules/source-map-js/lib/array-set.js
+/SNP/First/node_modules/@parcel/watcher/src/Backend.cc
+/SNP/First/node_modules/@parcel/watcher/src/Backend.hh
+/SNP/First/node_modules/source-map-js/lib/base64.js
+/SNP/First/node_modules/source-map-js/lib/base64-vlq.js
+/SNP/First/node_modules/source-map-js/lib/binary-search.js
+/SNP/First/node_modules/@parcel/watcher/src/binding.cc
+/SNP/First/node_modules/@parcel/watcher/binding.gyp
+/SNP/First/node_modules/sass/types/value/boolean.d.ts
+/SNP/First/node_modules/@parcel/watcher/src/shared/BruteForceBackend.cc
+/SNP/First/node_modules/@parcel/watcher/src/shared/BruteForceBackend.hh
+/SNP/First/node_modules/@parcel/watcher/src/watchman/BSER.cc
+/SNP/First/node_modules/@parcel/watcher/src/watchman/BSER.hh
+/SNP/First/node_modules/@parcel/watcher/scripts/build-from-source.js
+/SNP/First/node_modules/sass/types/value/calculation.d.ts
+/SNP/First/node_modules/picomatch/CHANGELOG.md
+/SNP/First/node_modules/node-addon-api/tools/check-napi.js
+/SNP/First/node_modules/node-addon-api/tools/clang-format.js
+/SNP/First/node_modules/sass/types/value/color.d.ts
+/SNP/First/node_modules/node-addon-api/common.gypi
+/SNP/First/node_modules/sass/types/compile.d.ts
+/SNP/First/node_modules/braces/lib/compile.js
+/SNP/First/node_modules/braces/lib/constants.js
+/SNP/First/node_modules/picomatch/lib/constants.js
+/SNP/First/node_modules/node-addon-api/tools/conversion.js
+/SNP/First/node_modules/@parcel/watcher/src/Debounce.cc
+/SNP/First/node_modules/@parcel/watcher/src/Debounce.hh
+/SNP/First/node_modules/sass/types/deprecations.d.ts
+/SNP/First/node_modules/.bin/detect-libc
+/SNP/First/node_modules/.bin/detect-libc.cmd
+/SNP/First/node_modules/detect-libc/bin/detect-libc.js
+/SNP/First/node_modules/detect-libc/lib/detect-libc.js
+/SNP/First/node_modules/.bin/detect-libc.ps1
+/SNP/First/node_modules/@parcel/watcher/src/DirTree.cc
+/SNP/First/node_modules/@parcel/watcher/src/DirTree.hh
+/SNP/First/node_modules/node-addon-api/tools/eslint-format.js
+/SNP/First/node_modules/@parcel/watcher/src/Event.hh
+/SNP/First/node_modules/node-addon-api/except.gypi
+/SNP/First/node_modules/sass/types/legacy/exception.d.ts
+/SNP/First/node_modules/sass/types/exception.d.ts
+/SNP/First/node_modules/braces/lib/expand.js
+/SNP/First/node_modules/@parcel/watcher/src/macos/FSEventsBackend.cc
+/SNP/First/node_modules/@parcel/watcher/src/macos/FSEventsBackend.hh
+/SNP/First/node_modules/@parcel/watcher/src/unix/fts.cc
+/SNP/First/node_modules/sass/types/legacy/function.d.ts
+/SNP/First/node_modules/sass/types/value/function.d.ts
+/SNP/First/node_modules/@parcel/watcher/src/Glob.cc
+/SNP/First/node_modules/@parcel/watcher/src/Glob.hh
+/SNP/First/node_modules/chokidar/esm/handler.d.ts
+/SNP/First/node_modules/chokidar/handler.d.ts
+/SNP/First/node_modules/chokidar/esm/handler.js
+/SNP/First/node_modules/chokidar/handler.js
+/SNP/First/node_modules/immutable/dist/immutable.d.ts
+/SNP/First/node_modules/immutable/dist/immutable.es.js
+/SNP/First/node_modules/immutable/dist/immutable.js
+/SNP/First/node_modules/immutable/dist/immutable.js.flow
+/SNP/First/node_modules/immutable/dist/immutable.min.js
+/SNP/First/node_modules/sass/types/legacy/importer.d.ts
+/SNP/First/node_modules/sass/types/importer.d.ts
+/SNP/First/node_modules/@parcel/watcher/src/wasm/include.h
+/SNP/First/node_modules/@parcel/watcher/index.d.ts
+/SNP/First/node_modules/chokidar/esm/index.d.ts
+/SNP/First/node_modules/chokidar/index.d.ts
+/SNP/First/node_modules/readdirp/esm/index.d.ts
+/SNP/First/node_modules/readdirp/index.d.ts
+/SNP/First/node_modules/sass/types/logger/index.d.ts
+/SNP/First/node_modules/sass/types/value/index.d.ts
+/SNP/First/node_modules/sass/types/index.d.ts
+/SNP/First/node_modules/@parcel/watcher/index.js
+/SNP/First/node_modules/braces/index.js
+/SNP/First/node_modules/chokidar/esm/index.js
+/SNP/First/node_modules/chokidar/index.js
+/SNP/First/node_modules/fill-range/index.js
+/SNP/First/node_modules/is-extglob/index.js
+/SNP/First/node_modules/is-glob/index.js
+/SNP/First/node_modules/is-number/index.js
+/SNP/First/node_modules/micromatch/index.js
+/SNP/First/node_modules/node-addon-api/index.js
+/SNP/First/node_modules/picomatch/index.js
+/SNP/First/node_modules/readdirp/esm/index.js
+/SNP/First/node_modules/readdirp/index.js
+/SNP/First/node_modules/to-regex-range/index.js
+/SNP/First/node_modules/@parcel/watcher/index.js.flow
+/SNP/First/node_modules/@parcel/watcher/src/linux/InotifyBackend.cc
+/SNP/First/node_modules/@parcel/watcher/src/linux/InotifyBackend.hh
+/SNP/First/node_modules/@parcel/watcher/src/watchman/IPC.hh
+/SNP/First/node_modules/@parcel/watcher/src/kqueue/KqueueBackend.cc
+/SNP/First/node_modules/@parcel/watcher/src/kqueue/KqueueBackend.hh
+/SNP/First/node_modules/@parcel/watcher/src/unix/legacy.cc
+/SNP/First/node_modules/@parcel/watcher/LICENSE
+/SNP/First/node_modules/@parcel/watcher-win32-x64/LICENSE
+/SNP/First/node_modules/braces/LICENSE
+/SNP/First/node_modules/chokidar/LICENSE
+/SNP/First/node_modules/detect-libc/LICENSE
+/SNP/First/node_modules/fill-range/LICENSE
+/SNP/First/node_modules/immutable/LICENSE
+/SNP/First/node_modules/is-extglob/LICENSE
+/SNP/First/node_modules/is-glob/LICENSE
+/SNP/First/node_modules/is-number/LICENSE
+/SNP/First/node_modules/micromatch/LICENSE
+/SNP/First/node_modules/picomatch/LICENSE
+/SNP/First/node_modules/readdirp/LICENSE
+/SNP/First/node_modules/sass/LICENSE
+/SNP/First/node_modules/source-map-js/LICENSE
+/SNP/First/node_modules/to-regex-range/LICENSE
+/SNP/First/node_modules/node-addon-api/LICENSE.md
+/SNP/First/node_modules/sass/types/value/list.d.ts
+/SNP/First/node_modules/sass/types/value/map.d.ts
+/SNP/First/node_modules/source-map-js/lib/mapping-list.js
+/SNP/First/node_modules/sass/types/value/mixin.d.ts
+/SNP/First/node_modules/node-addon-api/napi.h
+/SNP/First/node_modules/node-addon-api/napi-inl.deprecated.h
+/SNP/First/node_modules/node-addon-api/napi-inl.h
+/SNP/First/node_modules/node-addon-api/node_addon_api.gyp
+/SNP/First/node_modules/node-addon-api/node_api.gyp
+/SNP/First/node_modules/node-addon-api/noexcept.gypi
+/SNP/First/node_modules/node-addon-api/nothing.c
+/SNP/First/node_modules/sass/types/value/number.d.ts
+/SNP/First/node_modules/sass/types/legacy/options.d.ts
+/SNP/First/node_modules/sass/types/options.d.ts
+/SNP/First/node_modules/@parcel/watcher/package.json
+/SNP/First/node_modules/@parcel/watcher-win32-x64/package.json
+/SNP/First/node_modules/braces/package.json
+/SNP/First/node_modules/chokidar/esm/package.json
+/SNP/First/node_modules/chokidar/package.json
+/SNP/First/node_modules/detect-libc/package.json
+/SNP/First/node_modules/fill-range/package.json
+/SNP/First/node_modules/immutable/package.json
+/SNP/First/node_modules/is-extglob/package.json
+/SNP/First/node_modules/is-glob/package.json
+/SNP/First/node_modules/is-number/package.json
+/SNP/First/node_modules/micromatch/package.json
+/SNP/First/node_modules/node-addon-api/package.json
+/SNP/First/node_modules/picomatch/package.json
+/SNP/First/node_modules/readdirp/esm/package.json
+/SNP/First/node_modules/readdirp/package.json
+/SNP/First/node_modules/sass/package.json
+/SNP/First/node_modules/source-map-js/package.json
+/SNP/First/node_modules/to-regex-range/package.json
+/SNP/First/node_modules/node-addon-api/package-support.json
+/SNP/First/node_modules/braces/lib/parse.js
+/SNP/First/node_modules/picomatch/lib/parse.js
+/SNP/First/node_modules/picomatch/lib/picomatch.js
+/SNP/First/node_modules/sass/types/legacy/plugin_this.d.ts
+/SNP/First/node_modules/sass/types/util/promise_or.d.ts
+/SNP/First/node_modules/@parcel/watcher/src/PromiseRunner.hh
+/SNP/First/node_modules/source-map-js/lib/quick-sort.js
+/SNP/First/node_modules/@parcel/watcher/README.md
+/SNP/First/node_modules/@parcel/watcher-win32-x64/README.md
+/SNP/First/node_modules/braces/README.md
+/SNP/First/node_modules/chokidar/README.md
+/SNP/First/node_modules/detect-libc/README.md
+/SNP/First/node_modules/fill-range/README.md
+/SNP/First/node_modules/immutable/README.md
+/SNP/First/node_modules/is-extglob/README.md
+/SNP/First/node_modules/is-glob/README.md
+/SNP/First/node_modules/is-number/README.md
+/SNP/First/node_modules/micromatch/README.md
+/SNP/First/node_modules/node-addon-api/tools/README.md
+/SNP/First/node_modules/node-addon-api/README.md
+/SNP/First/node_modules/picomatch/README.md
+/SNP/First/node_modules/readdirp/README.md
+/SNP/First/node_modules/sass/README.md
+/SNP/First/node_modules/source-map-js/README.md
+/SNP/First/node_modules/to-regex-range/README.md
+/SNP/First/node_modules/sass/types/legacy/render.d.ts
+/SNP/First/node_modules/.bin/sass
+/SNP/First/node_modules/.bin/sass.cmd
+/SNP/First/node_modules/sass/sass.dart.js
+/SNP/First/node_modules/sass/sass.default.cjs
+/SNP/First/node_modules/sass/sass.default.js
+/SNP/First/node_modules/sass/sass.js
+/SNP/First/node_modules/sass/sass.node.js
+/SNP/First/node_modules/sass/sass.node.mjs
+/SNP/First/node_modules/.bin/sass.ps1
+/SNP/First/node_modules/picomatch/lib/scan.js
+/SNP/First/node_modules/@parcel/watcher/src/Signal.hh
+/SNP/First/node_modules/source-map-js/source-map.d.ts
+/SNP/First/node_modules/source-map-js/source-map.js
+/SNP/First/node_modules/source-map-js/lib/source-map-consumer.d.ts
+/SNP/First/node_modules/source-map-js/lib/source-map-consumer.js
+/SNP/First/node_modules/source-map-js/lib/source-map-generator.d.ts
+/SNP/First/node_modules/source-map-js/lib/source-map-generator.js
+/SNP/First/node_modules/source-map-js/lib/source-node.d.ts
+/SNP/First/node_modules/source-map-js/lib/source-node.js
+/SNP/First/node_modules/sass/types/logger/source_location.d.ts
+/SNP/First/node_modules/sass/types/logger/source_span.d.ts
+/SNP/First/node_modules/sass/types/value/string.d.ts
+/SNP/First/node_modules/braces/lib/stringify.js
+/SNP/First/node_modules/source-map-js/lib/util.js
+/SNP/First/node_modules/braces/lib/utils.js
+/SNP/First/node_modules/picomatch/lib/utils.js
+/SNP/First/node_modules/@parcel/watcher/src/wasm/WasmBackend.cc
+/SNP/First/node_modules/@parcel/watcher/src/wasm/WasmBackend.hh
+/SNP/First/node_modules/@parcel/watcher/src/Watcher.cc
+/SNP/First/node_modules/@parcel/watcher/src/Watcher.hh
+/SNP/First/node_modules/@parcel/watcher-win32-x64/watcher.node
+/SNP/First/node_modules/@parcel/watcher/src/watchman/WatchmanBackend.cc
+/SNP/First/node_modules/@parcel/watcher/src/watchman/WatchmanBackend.hh
+/SNP/First/node_modules/@parcel/watcher/src/windows/win_utils.cc
+/SNP/First/node_modules/@parcel/watcher/src/windows/win_utils.hh
+/SNP/First/node_modules/@parcel/watcher/src/windows/WindowsBackend.cc
+/SNP/First/node_modules/@parcel/watcher/src/windows/WindowsBackend.hh
+/SNP/First/node_modules/@parcel/watcher/wrapper.js

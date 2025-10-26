@@ -11,7 +11,7 @@
   padding-top: 88px;
   background-image:
     var(--gradient-hero),
-    url('../../images/hero/header-img-2x.jpg');
+    url('../images/hero/header-img-2x.jpg');
   background-repeat: no-repeat;
   background-size: cover;
   background-position: center;
@@ -20,7 +20,7 @@
     height: 831px;
     background-image:
       var(--gradient-hero),
-      url('../../images/hero/header-img.jpg');
+      url('../images/hero/header-img.jpg');
   }
   
   @include mobile {
