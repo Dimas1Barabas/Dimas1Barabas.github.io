@@ -77,106 +77,14 @@ header.absolute {
   align-items: center;
   gap: 100px;
   width: 100%;
-  margin-inline: 30px;
+  padding-inline: 30px;
   
   @include laptop {
-    width: 100%;
-    margin-inline: 20px;
+    padding-inline: 20px;
   }
   
   @include mobile {
     gap: 50px;
-    width: 100%;
-    margin-inline: 21px;
+    padding-inline: 21px;
   }
 }
-
-
-
-
-//.visually-hidden {
-//  @include visually-hidden;
-//}
-//
-//.hidden-mobile {
-//  @include mobile {
-//    display: none !important;
-//  }
-//}
-//
-//.visible-mobile {
-//  @include mobile-above {
-//    display: none !important;
-//  }
-//}
-//
-//.full-vw-line {
-//  position: relative;
-//
-//  &::before,
-//  &::after {
-//    position: absolute;
-//    width: calc((100vw - var(--container-width)) / 2
-//    );
-//    height: rem(1);
-//    background-color: var(--color-dark-15);
-//  }
-//
-//  &--top {
-//    &::before {
-//      content: '';
-//      bottom: 100%;
-//    }
-//  }
-//
-//  &--bottom {
-//    &::after {
-//      content: '';
-//      top: 100%;
-//    }
-//  }
-//
-//  &--left {
-//    &::before,
-//    &::after{
-//      right: 100%;
-//    }
-//  }
-//
-//  &--right {
-//    &::before,
-//    &::after{
-//      left: 100%;
-//    }
-//  }
-//}
-//
-//.circle-icon {
-//  --circleSize: #{rem(52)};
-//  --circleMarginLeft: #{rem(20)};
-//
-//  position: relative;
-//  min-height: var(--circleSize);
-//  padding-right: calc(var(--circleSize) + var(--circleMarginLeft));
-//
-//  @include laptop {
-//    --circleSize: #{rem(44)};
-//    --circleMarginLeft: #{rem(14)};
-//  }
-//
-//  @include mobile {
-//    --circleSize: #{rem(40)};
-//  }
-//
-//  &::after {
-//    @include square(var(--circleSize));
-//    @include abs-y;
-//
-//    content: '';
-//    right: 0;
-//    background:
-//      url(../../icons/arrow-top-right_black.svg) center no-repeat
-//      var(--color-accent);
-//    border-radius: 50%;
-//  }
-//}

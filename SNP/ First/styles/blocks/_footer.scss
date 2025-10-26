@@ -18,8 +18,9 @@
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
-    width: 1168px;
+    width: 1274px;
     height: 28px;
+    padding-inline: 53px;
     @include p-normal;
     
     
@@ -27,6 +28,8 @@
       flex-direction: column;
       gap: 7px;
       width: 918px;
+      height: 56px;
+      padding-inline: 21.5px;
       @include m-p-normal;
     }
     
