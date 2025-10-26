@@ -1,0 +1,90 @@
+@use 'helpers' as *;
+
+//   в Figma в ~2 раза слабее блюр => 54 / 2 = 27
+
+header.fixed {
+  position: fixed;
+  color: var(--color-black);
+  backdrop-filter: blur(27px);
+  background-color: rgba(243, 239, 232, 0.6);
+  opacity: 1;
+}
+
+header.absolute {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: var(--color-white);
+  opacity: 1;
+  transition: background-color var(--transition-duration), opacity var(--transition-duration);
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 100px;
+  width: var(--container-width-desktop);
+  margin-inline: auto;
+  
+  @include laptop {
+    width: var(--container-width-laptop);
+  }
+  
+  @include mobile {
+    width: var(--container-width-mobile);
+    gap: 50px;
+  }
+}
+
+.header-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  
+  @include mobile {
+    gap: 20px;
+  }
+  
+  &__title {
+    @include H2;
+    text-align: center;
+    color: var(--color-black);
+    
+    @include mobile {
+      @include m-H2;
+    }
+  }
+  
+  &__description {
+    @include p-normal;
+    max-width: 418px;
+    text-align: center;
+    color: var(--color-gray-300);
+    
+    @include mobile {
+      @include m-p-normal;
+      max-width: 318px;
+    }
+  }
+}
+
+.spec-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 100px;
+  width: 100%;
+  padding-inline: 30px;
+  
+  @include laptop {
+    padding-inline: 20px;
+  }
+  
+  @include mobile {
+    gap: 50px;
+    padding-inline: 21px;
+  }
+}

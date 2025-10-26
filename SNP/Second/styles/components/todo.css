@@ -1,0 +1,93 @@
+.todo {
+  display: flex;
+  flex-direction: column;
+  row-gap: 24px;
+  width: 100%;
+  max-width: 1000px;
+  padding: 50px;
+  background-color: var(--color-dark-1);
+  border: var(--border);
+  border-radius: var(--border-radius);
+  
+  @media (width < 520px) {
+    padding: 10px;
+  }
+}
+
+.todo__title {
+  color: var(--color-white);
+  text-align: center;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.4em;
+  user-select: none;
+}
+
+.todo__form {
+  display: flex;
+  justify-content: center;
+  column-gap: 32px;
+  
+  @media (width < 520px) {
+    column-gap: 16px;
+  }
+}
+
+.todo__field {
+  width: 100%;
+  max-width: 500px;
+}
+
+.todo__field-search {
+  width: 100%;
+  max-width: 660px;
+}
+
+.todo__info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  user-select: none;
+}
+
+.todo__total-task {
+  color: var(--color-white);
+}
+
+.todo__delete-all-button {
+  color: var(--color-accent);
+  padding: 0;
+  background-color: transparent;
+  border: none;
+  
+  :hover {
+    color: var(--color-accent);
+  }
+  
+  &:not(.is-visible) {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.todo__list,
+.todo__empty-message {
+  &:empty {
+    display: none;
+  }
+}
+
+.todo__list {
+  --todoListRowGap: 8px;
+  
+  display: grid;
+  row-gap: var(--todoListRowGap);
+}
+
+.todo__empty-message {
+  text-align: center;
+  color: var(--color-white);
+  user-select: none;
+}

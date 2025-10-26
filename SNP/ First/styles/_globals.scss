@@ -1,0 +1,54 @@
+@use 'helpers' as *;
+
+html {
+  &.is-lock {
+    overflow: hidden;
+  }
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  gap: 135px;
+  background-color: var(--color-beige-100);
+  
+  @include mobile {
+    gap: 75px;
+  }
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 135px;
+  
+  @include mobile {
+    gap: 75px;
+  }
+}
+
+a,
+label,
+button,
+input,
+textarea,
+select,
+svg * {
+  text-decoration: var(--transition-duration);
+}
+
+a {
+  color: inherit;
+
+  @include hover {
+    text-decoration: underline;
+  }
+
+  &[class] {
+    text-decoration: none;
+  }
+}
+
+
+
+

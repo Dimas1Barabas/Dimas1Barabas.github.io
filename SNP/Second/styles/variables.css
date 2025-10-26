@@ -1,0 +1,16 @@
+:root {
+  --color-white: #FFFFFF;
+  --color-black: #000000;
+  
+  --color-dark-1: #1e1e1e;
+  --color-dark-2: #2c2c2c;
+  --color-gray: #B3B3B3;
+  --color-accent: #9747FF;
+  
+  --border: 1px solid var(--color-gray);
+  --border-radius: 10px;
+  
+  --input-height: 70px;
+  
+  --transition-duration: 0.2s;
+}

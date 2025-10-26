@@ -1,0 +1,62 @@
+@use '../helpers' as *;
+
+.travel-photos {
+  &-header {}
+  
+  &-body {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+    
+    @include mobile {
+      gap: 18px;
+    }
+    
+    &__row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(1, 301px);
+      gap: 30px;
+      
+      @include laptop {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+      }
+      
+      @include mobile {
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: repeat(1, 110px);
+        gap: 10px;
+      }
+      
+      //@include laptop {
+      //  grid-template-columns: repeat(3, 1fr);
+      //}
+      
+      //@include mobile {
+      //  grid-template-columns: repeat(2, 1fr);
+      //  grid-template-rows: repeat(1, 110px);
+      //}
+      
+      &-mobile-spec {
+        @include mobile {
+          gap: 18px;
+        }
+      }
+      
+      &-col5 {
+        grid-template-columns: repeat(5, 1fr);
+        grid-template-rows: repeat(1, 301px);
+        
+        @include laptop {
+          grid-template-columns: repeat(4, 1fr);
+        }
+        
+        @include mobile {
+          grid-template-columns: repeat(3, 1fr);
+          grid-template-rows: repeat(1, 110px);
+        }
+      }
+    }
+  }
+}

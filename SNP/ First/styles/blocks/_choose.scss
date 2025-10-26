@@ -1,0 +1,13 @@
+@use '../helpers' as *;
+
+.choose {
+  &-header {
+    gap: 35px;
+    
+    @include mobile {
+      gap: 30px;
+    }
+  }
+  
+  &-body {}
+}

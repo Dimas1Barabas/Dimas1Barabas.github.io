@@ -1,0 +1,109 @@
+.todo-item {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  column-gap: 12px;
+  height: var(--input-height);
+  padding-left: 10px;
+  border: var(--border);
+  border-radius: var(--border-radius);
+  transition-duration: var(--transition-duration);
+  
+  &:hover {
+    background-color: var(--color-dark-2);
+  }
+  
+  &.is-disappearing {
+    opacity: 0;
+    translate: 0 -75%;
+    transition-duration: calc(var(--transition-duration) * 2);
+    pointer-events: none;
+    
+    & ~ .todo-item {
+      translate: 0 calc((100% + var(--todoListRowGap)) * -1);
+      transition-delay: var(--transition-duration);
+      transition-duration: var(--transition-duration);
+      pointer-events: none;
+    }
+  }
+}
+
+.todo-item__checkbox {
+  flex-shrink: 0;
+  appearance: none;
+  position: relative;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  border: 1px solid var(--color-gray);
+  border-radius: 4px;
+  
+  &:not(:checked) {
+    &::after {
+      opacity: 0;
+    }
+  }
+  
+  &:checked {
+    background-color: var(--color-black);
+    border-color: var(--color-black);
+    
+    & + .todo-item__label {
+      color: var(--color-gray);
+      text-decoration: line-through;
+      
+    }
+  }
+  
+  &:hover {
+    border-color: var(--color-accent);
+  }
+  
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    translate: -50% -50%;
+    width: 16px;
+    height: 16px;
+    background:
+      url("../../icons/icon-check_white.svg")
+      center/contain no-repeat;
+  }
+}
+
+.todo-item__label {
+  color: var(--color-accent);
+  width: 100%;
+  pointer-events: none;
+}
+
+.todo-item__delete-button {
+  flex-shrink: 0;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 44px;
+  height: 44px;
+  margin-left: auto;
+  padding: 0;
+  color: var(--color-white);
+  background-color: transparent;
+  border: none;
+  border-radius: inherit;
+  
+  &:hover {
+    border: 3px solid var(--color-accent);
+    color: var(--color-accent);
+    background-color: var(--color-black);
+  }
+  
+  &:active {
+    scale: 1.05;
+  }
+  
+  * {
+    pointer-events: none;
+  }
+}

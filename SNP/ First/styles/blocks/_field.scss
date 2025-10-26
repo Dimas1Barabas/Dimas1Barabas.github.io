@@ -1,0 +1,255 @@
+@use '../helpers' as *;
+
+.field {
+  
+  &__label {
+    @include p-normal;
+    color: var(--color-black);
+    
+    @include mobile {
+      @include m-p-normal;
+    }
+    
+    &-gray {
+      @include p-small;
+      color: var(--color-gray-300);
+      
+      @include mobile {
+        @include m-p-small;
+      }
+      
+      & > a {
+        color: var(--color-black);
+        
+        &:hover {
+          text-decoration: underline;
+          text-decoration-thickness: 1px;
+          text-underline-offset: 6px;
+          text-decoration-skip-ink: none;
+          transition: var(--transition-duration);
+        }
+        
+        &:active {
+          color: var(--color-green-400);
+          text-decoration: underline;
+          text-decoration-thickness: 1px;
+          text-underline-offset: 6px;
+          text-decoration-skip-ink: none;
+        }
+      }
+    }
+  }
+  
+  &__input {
+    width: 500px;
+    height: 68px;
+    padding: 20px;
+    @include p-normal;
+    border: 1px solid var(--color-beige-200);
+    border-radius: 10px;
+    color: var(--color-gray-300);
+    background-color: var(--color-beige-100);
+    
+    @include laptop {
+      width: 389px;
+    }
+    
+    @include mobile {
+      width: 281px;
+      height: 43px;
+      padding: 10px;
+      @include m-p-normal;
+    }
+    
+    &:hover {
+      background-color: var(--color-beige-200);
+    }
+    
+    &:focus {
+      outline: none;
+    }
+    
+    &:focus-visible {
+      background-color: var(--color-beige-200);
+      border: 1px solid var(--color-gray-300);
+    }
+    
+    &:valid {
+      color: var(--color-black);
+    }
+    
+    &:has(option) {
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+      background: var(--color-beige-100) url("data:image/svg+xml;charset=UTF-8,%3csvg width='26' height='26' viewBox='0 0 26 26' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath fill-rule='evenodd' clip-rule='evenodd' d='M13 19.4142L4.29289 10.7071C3.90236 10.3165 3.90237 9.68338 4.29289 9.29286C4.68341 8.90234 5.31658 8.90234 5.7071 9.29286L13 16.5858L20.2929 9.29286C20.6834 8.90234 21.3166 8.90234 21.7071 9.29286C22.0976 9.68338 22.0976 10.3165 21.7071 10.7071L13 19.4142Z' fill='%231B1F2B'/%3e%3c/svg%3e ") no-repeat;
+      background-position: 454px center;          // локальный путь не работает
+      
+      @include laptop {
+        background-position: 343px center;
+      }
+      
+      @include mobile {
+        background-position: 242px center;
+      }
+    }
+    
+    &-textarea {
+      resize: none;
+      width: 100%;
+      height: 152px;
+      background-color: var(--color-beige-100);
+      border: 1px solid var(--color-beige-200);
+      border-radius: 10px;
+      @include p-normal;
+      
+      @include mobile {
+        height: 132px;
+        @include m-p-normal;
+      }
+      
+      &:hover {
+        background-color: var(--color-beige-200);
+      }
+      
+      &:focus {
+        outline: none;
+      }
+      
+      &:focus-visible {
+        background-color: var(--color-beige-200);
+        border: 1px solid var(--color-gray-300);
+      }
+      
+      &:valid {
+        color: var(--color-black);
+      }
+    }
+    
+    &-set {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 31px;
+      
+      @include mobile {
+        gap: 30px;
+      }
+      
+      &-wrap {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 11px;
+        
+        @include mobile {
+          gap: 10px;
+        }
+        
+        &-radio {
+          position: relative;
+          appearance: none;
+          @include square(26px);
+          background-color: transparent;
+          border-radius: 50%;
+          border: 3px solid var(--color-black);
+          
+          @include mobile {
+            @include square(20px);
+          }
+          
+          &::after {
+            content: "";
+            @include abs-center;
+            width: 0;
+            height: 0;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg width='12' height='12' viewBox='0 0 12 12' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3ccircle cx='6' cy='6' r='6' fill='%231B1F2B'/%3e%3c/svg%3e");
+          }
+          
+          &:checked::after {
+            @include square(12px);
+            
+            @include mobile {
+              @include square(9.23px);
+            }
+          }
+        }
+      }
+    }
+    
+    &-checkbox {
+      position: relative;
+      appearance: none;
+      @include square(26px);
+      background-color: transparent;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg width='26' height='26' viewBox='0 0 26 26' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath fill-rule='evenodd' clip-rule='evenodd' d='M21 2H5C3.34315 2 2 3.34315 2 5V21C2 22.6569 3.34315 24 5 24H21C22.6569 24 24 22.6569 24 21V5C24 3.34315 22.6569 2 21 2ZM5 0C2.23858 0 0 2.23858 0 5V21C0 23.7614 2.23858 26 5 26H21C23.7614 26 26 23.7614 26 21V5C26 2.23858 23.7614 0 21 0H5Z' fill='%231B1F2B'/%3e%3c/svg%3e ");
+      
+      @include mobile {
+        @include square(20px);
+        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg width='20' height='20' viewBox='0 0 20 20' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath fill-rule='evenodd' clip-rule='evenodd' d='M16.1538 1.53846H3.84615C2.57165 1.53846 1.53846 2.57165 1.53846 3.84615V16.1538C1.53846 17.4284 2.57165 18.4615 3.84615 18.4615H16.1538C17.4284 18.4615 18.4615 17.4284 18.4615 16.1538V3.84615C18.4615 2.57165 17.4284 1.53846 16.1538 1.53846ZM3.84615 0C1.72198 0 0 1.72198 0 3.84615V16.1538C0 18.278 1.72198 20 3.84615 20H16.1538C18.278 20 20 18.278 20 16.1538V3.84615C20 1.72198 18.278 0 16.1538 0H3.84615Z' fill='%231B1F2B'/%3e%3c/svg%3e ");
+      }
+      
+      &::after {
+        content: "";
+        @include abs-center;
+        width: 0;
+        height: 0;
+        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg width='13' height='10' viewBox='0 0 13 10' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath fill-rule='evenodd' clip-rule='evenodd' d='M0.293044 4.53581C0.683569 4.14529 1.31673 4.14529 1.70726 4.53581L4.62161 7.45017L11.1574 0.914353C11.5479 0.523829 12.1811 0.523829 12.5716 0.914353C12.9622 1.30488 12.9622 1.93804 12.5716 2.32857L5.32872 9.57149C4.93819 9.96201 4.30503 9.96201 3.9145 9.57149L0.293044 5.95003C-0.09748 5.5595 -0.09748 4.92634 0.293044 4.53581Z' fill='%231B1F2B'/%3e%3c/svg%3e ");
+        
+        @include mobile {
+          background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg width='11' height='8' viewBox='0 0 11 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath fill-rule='evenodd' clip-rule='evenodd' d='M0.610335 3.64296C0.910738 3.34256 1.39779 3.34256 1.69819 3.64296L3.94 5.88477L8.96755 0.857223C9.26795 0.55682 9.755 0.556819 10.0554 0.857223C10.3558 1.15763 10.3558 1.64468 10.0554 1.94508L4.48393 7.51656C4.18353 7.81696 3.69648 7.81696 3.39607 7.51656L0.610335 4.73082C0.309931 4.43041 0.309931 3.94336 0.610335 3.64296Z' fill='%231B1F2B'/%3e%3c/svg%3e ");
+        }
+      }
+      
+      &:checked::after {
+        @include square(12.24px);
+        
+        @include mobile {
+          @include square(9.42px);
+        }
+      }
+    }
+    
+    &-btn {
+      width: 235px;
+      height: 58px;
+      border-radius: 10px;
+      border: none;
+      @include p-normal;
+      
+      @include mobile {
+        width: 134px;
+        height: 47px;
+        @include m-p-normal;
+      }
+      
+      &-submit {
+        color: var(--color-white);
+        background-color: var(--color-green-400);
+        
+        &:hover {
+          background-color: var(--color-green-300);
+          transition: var(--transition-duration);
+        }
+        
+        &:active {
+          background-color: var(--color-green-200);
+        }
+      }
+      
+      &-reset {
+        color: var(--color-green-400);
+        background-color: var(--color-green-100);
+        
+        &:hover {
+          background-color: var(--color-gray-100);
+          transition: var(--transition-duration);
+        }
+        
+        &:active {
+          background-color: var(--color-gray-200);
+        }
+      }
+    }
+  }
+}

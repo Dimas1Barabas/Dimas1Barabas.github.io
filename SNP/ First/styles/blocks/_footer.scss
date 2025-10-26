@@ -1,0 +1,88 @@
+@use '../helpers' as *;
+
+.footer {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 88px;
+  background-color: var(--color-beige-200);
+  
+  @include mobile {
+    height: 98px;
+  }
+  
+  &-wrapper {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    width: 1274px;
+    height: 28px;
+    padding-inline: 53px;
+    @include p-normal;
+    
+    
+    @include mobile {
+      flex-direction: column;
+      gap: 7px;
+      width: 918px;
+      height: 56px;
+      padding-inline: 21.5px;
+      @include m-p-normal;
+    }
+    
+    &__text {
+      color: var(--color-gray-300);
+    }
+    
+    &-links {
+      display: flex;
+      flex-direction: row;
+      gap: 25px;
+      
+      @include mobile {
+        gap: 15px;
+      }
+      
+      &__link {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+        color: var(--color-black);
+        
+        @include mobile {
+          gap: 5px;
+        }
+        
+        &:hover {
+          text-decoration: underline;
+          text-decoration-thickness: 1px;
+          text-underline-offset: 6px;
+          text-decoration-skip-ink: none;
+          transition: var(--transition-duration);
+        }
+        
+        &-1::before {
+          content: url("../../icons/telegram.svg");
+          width: 26px;
+          height: 26px;
+        }
+        
+        &-2::before {
+          content: url("../../icons/fb.svg");
+          width: 26px;
+          height: 25px;
+        }
+        
+        &-3::before {
+          content: url("../../icons/vk.svg");
+          width: 26px;
+          height: 26px;
+        }
+      }
+    }
+  }
+}

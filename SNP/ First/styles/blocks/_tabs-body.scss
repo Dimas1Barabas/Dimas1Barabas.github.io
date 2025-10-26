@@ -1,0 +1,79 @@
+@use '../helpers' as *;
+
+.tabs-body {
+  display: grid;
+  grid-template-columns: repeat(3, 370px);
+  gap: 30px;
+  
+  @include laptop {
+    grid-template-columns: repeat(2, 450px);
+    gap: 18px;
+  }
+  
+  @include mobile {
+    grid-template-columns: repeat(1, 318px);
+    gap: 18px;
+  }
+  
+  &:where(:not(.is-active)) {
+    display: none;
+  }
+  
+  &__link {
+    position: relative;
+    width: 370px;
+    height: 531px;
+    color: var(--color-white);
+    border-radius: 50px;
+    overflow: hidden;
+    
+    @include laptop {
+      width: 450px;
+    }
+    
+    @include mobile {
+      @include square(318px);
+      border-radius: 20px;
+    }
+    
+    &:hover {
+      .tour-card__img {
+        transform: scale(1.2);
+        transition: var(--transition-duration);
+      }
+
+      .tour-card__link {
+        background-color: var(--color-green-400);
+        transition: var(--transition-duration);
+      }
+    }
+
+    &:active {
+      .tour-card__link {
+        background-color: var(--color-orange-200);
+      }
+    }
+
+    &:not(:hover) {
+      .tour-card__img {
+        transform: scale(1);
+        transition: var(--transition-duration);
+      }
+
+      .tour-card__link {
+        background-color: transparent;
+        transition: var(--transition-duration);
+      }
+    }
+    
+    &::before {
+      content: '';
+      position: absolute;
+      display: block;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      background: var(--gradient-choose-tour);
+    }
+  }
+}

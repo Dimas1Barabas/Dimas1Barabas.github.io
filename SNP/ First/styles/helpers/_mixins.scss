@@ -1,0 +1,182 @@
+@use 'sass:math';
+@use 'functions' as *;
+
+@mixin H1 {
+  font-family: 'Roboto-Bold', sans-serif;
+  font-weight: 700;
+  font-size: 96px;
+  line-height: 109%;
+  letter-spacing: 0.02em;
+}
+
+@mixin m-H1 {
+  font-family: 'Roboto-Bold', sans-serif;
+  font-weight: 700;
+  font-size: 34px;
+  line-height: 112%;
+  letter-spacing: 0.02em;
+}
+
+
+@mixin H2 {
+  font-family: 'Roboto-Bold', sans-serif;
+  font-weight: 700;
+  font-size: 59px;
+  line-height: 124%;
+}
+
+@mixin m-H2 {
+  font-family: 'Roboto-Bold', sans-serif;
+  font-weight: 700;
+  font-size: 34px;
+  line-height: 112%;
+  letter-spacing: 0.02em;
+}
+
+
+@mixin H3 {
+  font-family: 'Roboto-Medium', sans-serif;
+  font-weight: 500;
+  font-size: 35px;
+  line-height: 122%;
+}
+
+@mixin m-H3 {
+  font-family: 'Roboto-Bold', sans-serif;
+  font-weight: 700;
+  font-size: 23px;
+  line-height: 120%;
+  letter-spacing: 0.04em;
+}
+
+
+@mixin p-big {
+  font-family: 'Roboto-Bold', sans-serif;
+  font-weight: 700;
+  font-size: 23px;
+  line-height: 122%;
+}
+
+@mixin m-p-big {
+  font-family: 'Roboto-Bold', sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 142%;
+}
+
+
+@mixin p-normal {
+  font-family: 'Roboto-Regular', sans-serif;
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 142%;
+}
+
+@mixin m-p-normal {
+  font-family: 'Roboto-Regular', sans-serif;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 142%;
+}
+
+
+@mixin p-small {
+  font-family: 'Roboto-Regular', sans-serif;
+  font-weight: 400;
+  font-size: 17px;
+  line-height: 142%;
+  letter-spacing: -0.01em;
+}
+
+@mixin m-p-small {
+  font-family: 'Roboto-Regular', sans-serif;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 142%;
+  letter-spacing: -0.01em;
+}
+
+
+@mixin fluid-text($max: 48, $min: 16) {
+  font-size: fluid($max, $min);
+}
+
+@mixin hide {
+  opacity: 0;
+  visibility: hidden;
+}
+
+@mixin show {
+  opacity: 1;
+  visibility: visible;
+}
+
+@mixin abs-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+}
+
+@mixin abs-x {
+  position: absolute;
+  left: 50%;
+  translate: -50%;
+}
+
+@mixin abs-y {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+}
+
+@mixin square($size) {
+  width: $size;
+  height: $size;
+}
+
+//@mixin flex-center($isInline: false) {
+//  @if $isInline {
+//    display: inline-flex;
+//  } @else  {
+//    display: flex;
+//  }
+//
+//  justify-content: center;
+//  align-items: center;
+//}
+
+//
+//@mixin visually-hidden {
+//  position: absolute !important;
+//  width: 1px !important;
+//  height: 1px !important;
+//  margin: -1px !important;
+//  border: 0 !important;
+//  padding: 0 !important;
+//  white-space: nowrap !important;
+//  clip-path: inset(100%) !important;
+//  clip: rect(0 0 0 0) !important;
+//  overflow: hidden !important;
+//}
+//
+//@mixin full-vw-centered-line(
+//  $property: top,
+//  $left: 50%,
+//  $right: auto,
+//  $translate: -50%
+//) {
+//  position: relative;
+//
+//  &::before {
+//    content: "";
+//    position: absolute;
+//    left: $left;
+//    right: $right;
+//    translate: $translate;
+//    #{$property}: 0;
+//    width: 100vw;
+//    height: rem(1);
+//    background-color: var(--color-dark-15);
+//  }
+//}

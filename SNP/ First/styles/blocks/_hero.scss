@@ -1,0 +1,96 @@
+@use '../helpers' as *;
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 830px;
+  color: var(--color-white);
+  justify-content: center;
+  align-items: center;
+  padding-top: 88px;
+  background-image:
+    var(--gradient-hero),
+    url('../../images/hero/header-img-2x.jpg');
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  
+  @include laptop {
+    height: 831px;
+    background-image:
+      var(--gradient-hero),
+      url('../../images/hero/header-img.jpg');
+  }
+  
+  @include mobile {
+    height: 488px;
+  }
+  
+  &-wrapper {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    gap: 50px;
+    
+    @include laptop {
+      padding: 119px 2px;
+    }
+    
+    @include mobile {
+      gap: 40px;
+      padding: 52px 0;
+    }
+
+    &__title {
+      @include H1;
+      
+      @include mobile {
+        @include m-H1;
+      }
+    }
+      
+    &__description {
+      @include p-normal;
+      
+      @include laptop {
+        padding-inline: 236px;
+      }
+      
+      @include mobile {
+        @include m-p-normal;
+        padding-inline: 5px;
+      }
+    }
+    
+    &__search-button {
+      width: 118px;
+      height: 34px;
+      padding: 5px 20px;
+      border-radius: 10px;
+      border: none;
+      color: var(--color-black);
+      background-color: var(--color-white);
+      @include p-small;
+      
+      @include mobile {
+        width: 114px;
+        height: 33px;
+        @include m-p-small;
+      }
+      
+      &:hover {
+        color: var(--color-white);
+        background-color: var(--color-orange-200);
+        transition: var(--transition-duration);
+      }
+      
+      &:active {
+        color: var(--color-black);
+        background-color: var(--color-orange-100);
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  height: var(--input-height);
+  padding: 25px;
+  color: var(--color-accent);
+  background-color: var(--color-dark-2);
+  border: 1px solid var(--color-dark-2);
+  border-radius: var(--border-radius);
+  user-select: none;
+  
+  @media (width < 520px) {
+    padding: 10px;
+  }
+  
+  &:hover {
+    background-color: transparent;
+    border-color: var(--color-accent);
+  }
+  
+  &:active {
+    scale: 1.05;
+  }
+}
