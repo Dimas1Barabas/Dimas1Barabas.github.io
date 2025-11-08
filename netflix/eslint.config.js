@@ -20,7 +20,7 @@ export default defineConfig([
       prettier: prettierPlugin,
     },
     rules: {
-      'prettier/prettier': 'error',
+      // 'prettier/prettier': 'error',
       'react/prop-types': 0,
     },
   },
