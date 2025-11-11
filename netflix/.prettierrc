@@ -8,9 +8,8 @@
   "tabWidth": 2,
   "arrowParens": "avoid",
   "endOfLine": "lf",
-  "plugins": [
-    "@ianvs/prettier-plugin-sort-imports"
-  ],
+
+  "plugins": ["@ianvs/prettier-plugin-sort-imports"],
   "importOrder": [
     "^@core/(.*)$",
     "",
@@ -20,10 +19,6 @@
     "",
     "^[./]"
   ],
-  "importOrderParserPlugins": [
-    "typescript",
-    "jsx",
-    "decorators-legacy"
-  ],
+  "importOrderParserPlugins": ["typescript", "jsx", "decorators-legacy"],
   "importOrderTypeScriptVersion": "5.0.0"
 }

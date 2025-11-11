@@ -1,27 +1,25 @@
-import js from '@eslint/js';
+import pluginJs from '@eslint/js';
 import prettierConfig from 'eslint-config-prettier';
 import prettierPlugin from 'eslint-plugin-prettier';
-import pluginReact from 'eslint-plugin-react';
-import { defineConfig } from 'eslint/config';
+import pluginReactConfig from 'eslint-plugin-react/configs/recommended.js';
 import globals from 'globals';
 
-export default defineConfig([
-  {
-    files: ['**/*.{js,mjs,cjs,jsx}'],
-    plugins: { js },
-    extends: ['js/recommended'],
-    languageOptions: { globals: globals.browser },
-  },
-  pluginReact.configs.flat.recommended,
+export default [
+  { files: ['**/*.{js,mjs,cjs,jsx}'] },
+  { languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } } },
+  { languageOptions: { globals: globals.browser } },
+  pluginJs.configs.recommended,
+  pluginReactConfig,
   prettierConfig,
 
   {
     plugins: {
       prettier: prettierPlugin,
     },
+
     rules: {
       // 'prettier/prettier': 'error',
       'react/prop-types': 0,
     },
   },
-]);
+];

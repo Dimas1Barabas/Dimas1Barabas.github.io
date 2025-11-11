@@ -17,7 +17,7 @@ const MoviesListTop = () => {
     type: MovieType.value,
     page,
   });
-  //TODO 2 40
+  
   useEffect(() => {setPage(1)}, [location]);
 
   if (error) return <p>ошибка</p>;
