@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { TOP_LISTS } from '../../../constants.js';
 import { useGetFilmsTopQuery } from '../../../services/kinopoiskApi.js';
 import MoviesList from '../../ui/MoviesList';
+import ErrorMessage from '../../ui/ErrorMessage';
 
 const MoviesListTop = () => {
   const [page, setPage] = useState(1);
@@ -20,7 +21,7 @@ const MoviesListTop = () => {
   
   useEffect(() => {setPage(1)}, [location]);
 
-  if (error) return <p>ошибка</p>;
+  if (error) return <ErrorMessage />;
 
   if (isLoading) return <p>Загрузка...</p>;
 

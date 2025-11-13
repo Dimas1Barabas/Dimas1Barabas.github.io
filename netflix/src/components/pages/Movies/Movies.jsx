@@ -1,5 +1,4 @@
 import { Link, Stack } from '@mui/material';
-import BearCarousel, { BearSlideImage } from 'bear-react-carousel';
 import React from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
@@ -25,7 +24,7 @@ export default function Movies() {
   const serializeDataForCarousel = data =>
     data.map(row => (
       <RouterLink key={row.id} to={`/movie/${row.kinopoiskId}`}>
-        <BearSlideImage imageUrl={row.posterUrlPreview} />
+        <img src={row.posterUrlPreview} alt={row.name} style={{ width: '230px', height: '352px' }} />
       </RouterLink>
     ));
   
@@ -59,7 +58,7 @@ export default function Movies() {
       data: serializeDataForCarousel(responseCartoons.data.items),
     },
   ];
-  //TODO 3 24
+  
   return (
     <>
       {carouselArr.map(carousel => (
@@ -72,23 +71,9 @@ export default function Movies() {
           >
             {carousel.title}
           </Link>
-          <BearCarousel
-            data={carousel.data}
-            slidesPerView={1}
-            slidesPerGroup={1}
-            isEnableNavButton
-            isEnableLoop
-            isEnableAutoPlay
-            autoPlayTime={5000}
-            breakpoints={{
-              375: {
-                autoPlayTime: 0,
-              },
-              768: {
-                slidesPerView: 5,
-              },
-            }}
-          />
+          <div style={{ width: "100%",display: 'inline-flex', overflowX: 'scroll' }}>
+            {carousel.data}
+          </div>
         </Stack>
       ))}
     </>
