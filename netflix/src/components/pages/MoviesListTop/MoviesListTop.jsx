@@ -7,6 +7,7 @@ import { TOP_LISTS } from '../../../constants.js';
 import { useGetFilmsTopQuery } from '../../../services/kinopoiskApi.js';
 import MoviesList from '../../ui/MoviesList';
 import ErrorMessage from '../../ui/ErrorMessage';
+import MoviesListTopSkeleton from './MoviesListTopSkeleton.jsx';
 
 const MoviesListTop = () => {
   const [page, setPage] = useState(1);
@@ -23,7 +24,7 @@ const MoviesListTop = () => {
 
   if (error) return <ErrorMessage />;
 
-  if (isLoading) return <p>Загрузка...</p>;
+  if (isLoading) return <MoviesListTopSkeleton />;
 
   return (
     <>

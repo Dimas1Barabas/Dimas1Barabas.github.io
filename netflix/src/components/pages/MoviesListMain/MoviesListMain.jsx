@@ -13,7 +13,7 @@ import ErrorMessage from '../../ui/ErrorMessage';
 import MoviesList from '../../ui/MoviesList/MoviesList';
 import SelectMovies from '../../ui/SelectMovies';
 import MoviesListMainSkeleton from './MoviesListMainSkeleton';
-//TODO 4 2
+
 export default function MoviesListMain() {
   const location = useLocation();
   const { countries, order, year, genreId } = useSelector(
@@ -40,7 +40,7 @@ export default function MoviesListMain() {
     setPage(1);
   }, [location]);
   
-  if (responseFilms.error && responseGenresAndCountries.error)
+  if (responseFilms.error || responseGenresAndCountries.error)
     return <ErrorMessage />;
   
   if (responseFilms.isLoading || responseGenresAndCountries.isLoading)
