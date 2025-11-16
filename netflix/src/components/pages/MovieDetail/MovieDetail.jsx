@@ -5,11 +5,12 @@ import {
   ButtonGroup,
   CircularProgress,
   Grid,
+  Link,
   Stack,
   Typography,
 } from '@mui/material';
 import React from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 
 import {
   useGetFilmQuery,
@@ -138,10 +139,16 @@ const MovieDetail = () => {
           {responseStaff.data
             .filter(el => el.professionText === 'Актеры')
             .slice(0, 10)
-            .map(({ nameRu }) => (
-              <Typography gutterBottom key={nameRu}>
-                {nameRu}
-              </Typography>
+            .map(({ nameRu, staffId }) => (
+              <div key={nameRu}>
+                <Link
+                  component={RouterLink}
+                  to={`/actor/${staffId}`}
+                  gutterBottom
+                >
+                  {nameRu}
+                </Link>
+              </div>
             ))}
         </Grid>
       </Grid>

@@ -1,6 +1,5 @@
 import { Box, Link, Rating, Stack, Tooltip } from '@mui/material';
 import React from 'react';
-import { RouterLink } from 'react-router-dom';
 
 import styles from './MovieCard.module.css';
 

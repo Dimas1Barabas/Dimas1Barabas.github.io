@@ -5,10 +5,13 @@ import { Provider } from 'react-redux';
 
 import { store } from './app/store.js';
 import App from './components/App.jsx';
+import ToggleColorMode from './context/ToggleColorMode.jsx';
 
 createRoot(document.getElementById('root')).render(
   <Provider store={store}>
-    <CssBaseline />
-    <App />
+    <ToggleColorMode>
+      <CssBaseline />
+      <App />
+    </ToggleColorMode>
   </Provider>,
 );
