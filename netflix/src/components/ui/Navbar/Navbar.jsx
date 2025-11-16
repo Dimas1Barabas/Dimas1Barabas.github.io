@@ -13,6 +13,7 @@ import {
   ListItemIcon,
   ListItemText,
   Slide,
+  Stack,
   Toolbar,
   Typography,
   useScrollTrigger,
@@ -21,6 +22,7 @@ import React, { useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
 import { iconComponents, MOVIE_LISTS, TOP_LISTS } from '../../../constants.js';
+import Search from '../Search/index.js';
 
 const Icon = ({ iconName }) => {
   const IconComponent = iconComponents[iconName];
@@ -79,14 +81,22 @@ const Navbar = () => {
                 </List>
               </Box>
             </Drawer>
-            <Typography
-              sx={{ color: 'white', textDecoration: 'none' }}
-              component={RouterLink}
-              variant="h4"
-              to="/"
+            <Stack
+              flexDirection="row"
+              justifyContent="space-between"
+              alignItems="center"
+              width="100%"
             >
-              Netflix
-            </Typography>
+              <Typography
+                sx={{ color: 'white', textDecoration: 'none' }}
+                component={RouterLink}
+                variant="h4"
+                to="/"
+              >
+                Netflix
+              </Typography>
+              <Search />
+            </Stack>
           </Toolbar>
         </Container>
       </AppBar>

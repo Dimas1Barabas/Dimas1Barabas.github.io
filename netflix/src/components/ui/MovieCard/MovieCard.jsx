@@ -1,29 +1,24 @@
 import { Box, Link, Rating, Stack, Tooltip } from '@mui/material';
 import React from 'react';
-import { Link as RouterLink } from 'react-router-dom';
-
-
+import { RouterLink } from 'react-router-dom';
 
 import styles from './MovieCard.module.css';
 
-
-const MovieCard = ({ movie }) => {
+const MovieCard = ({ movie, reload = false }) => {
+  const linkProps = reload
+    ? { component: 'a', href: `/movie/${movie.kinopoiskId}` }
+    : { component: 'RouterLink', to: `/movie/${movie.kinopoiskId}` };
   return (
     <Stack>
-      <RouterLink to={`/movie/${movie.kinoposkId}`}>
+      <Link {...linkProps}>
         <img
           className={styles.img}
           src={movie.posterUrlPreview}
           alt={movie.nameRu}
         />
-      </RouterLink>
-      <Link
-        component={RouterLink}
-        to={`/movie/${movie.kinoposkId}`}
-        textAlign="center"
-        sx={{ width: '200px' }}
-      >
-        {movie.nameRu ? movie.nameRu : movie.nameEn}
+        <Link component="p" textAlign="center" sx={{ width: '200px' }}>
+          {movie.nameRu ? movie.nameRu : movie.nameEn}
+        </Link>
       </Link>
 
       {movie.ratingKinopoisk && (

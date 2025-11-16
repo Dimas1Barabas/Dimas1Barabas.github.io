@@ -28,9 +28,6 @@ export default function Movies() {
       </RouterLink>
     ));
   
-  console.log(responsePopular.data.items[1].kinopoiskId)
-  console.log(responsePopular.data.items[1].posterUrlPreview)
-  
   const carouselArr = [
     {
       title: 'Популярные фильмы',

@@ -32,8 +32,9 @@ export const kinopoiskApi = createApi({
         type = 'FILM',
         year,
         page,
+        keyword = '',
       }) =>
-        `/v2.2/films?countries=${countries}&genres=${genreId}&order=${order}&type=${type}&yearFrom=${year}&yearTo=${year}&page=${page}`,
+        `/v2.2/films?countries=${countries}&genres=${genreId}&order=${order}&type=${type}&yearFrom=${year}&yearTo=${year}&page=${page}&keyword=${keyword}`,
     }),
 
     getGenresAndCountries: builder.query({
@@ -45,6 +46,24 @@ export const kinopoiskApi = createApi({
         ),
       }),
     }),
+
+    getFilm: builder.query({
+      query: id => `/v2.2/films/${id}`,
+    }),
+
+    getSequelsAndPrequels: builder.query({
+      query: id => `/v2.1/films/${id}/sequels_and_prequels`,
+      transformResponse: response =>
+        response.map(el => ({ ...el, kinopoiskId: el.filmId })),
+    }),
+
+    getStaff: builder.query({
+      query: id => `/v1/staff?filmId=${id}`,
+    }),
+
+    getStaffById: builder.query({
+      query: id => `/v1/staff/${id}`,
+    }),
   }),
 });
 
@@ -52,4 +71,8 @@ export const {
   useGetFilmsTopQuery,
   useGetFilmsQuery,
   useGetGenresAndCountriesQuery,
+  useGetFilmQuery,
+  useGetSequelsAndPrequelsQuery,
+  useGetStaffQuery,
+  useGetStaffByIdQuery,
 } = kinopoiskApi;
