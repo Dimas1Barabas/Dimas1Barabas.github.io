@@ -965,7 +965,7 @@ a[class] {
   line-height: 142%;
   border: 1px solid var(--color-beige-200);
   border-radius: 10px;
-  color: var(--color-gray-300);
+  color: var(--color-black);
   background-color: var(--color-beige-100);
 }
 @media (width <= 64rem) {
@@ -994,10 +994,11 @@ a[class] {
   background-color: var(--color-beige-200);
   border: 1px solid var(--color-gray-300);
 }
-.field__input:valid {
-  color: var(--color-black);
+.field__input::placeholder {
+  color: var(--color-gray-300);
 }
 .field__input:has(option) {
+  color: var(--color-gray-300);
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
@@ -1380,7 +1381,7 @@ a[class] {
   height: 100%;
 }
 .travel-photo__img-center {
-  object-position: center -330px;
+  object-position: center bottom;
 }
 
 .stories-body {

@@ -37,7 +37,7 @@
         <ul class="header-wrapper__menu-list">
           <li class="header-wrapper__item">
             <a
-              href="#"
+              href="#tures"
               class="header-wrapper__link"
             >
               Туры
@@ -45,7 +45,7 @@
           </li>
           <li class="header-wrapper__item">
             <a
-              href="#"
+              href="#create"
               class="header-wrapper__link"
             >
               Создать тур
@@ -53,7 +53,7 @@
           </li>
           <li class="header-wrapper__item">
             <a
-              href="#"
+              href="#reviews"
               class="header-wrapper__link"
             >
               Отзывы
@@ -61,7 +61,7 @@
           </li>
           <li class="header-wrapper__item">
             <a
-              href="#"
+              href="#story"
               class="header-wrapper__link"
             >
               Истории
@@ -82,13 +82,13 @@
         <p class="hero-wrapper__description">
           Идейные соображения высшего порядка, а также рамки и место обучения кадров
         </p>
-        <button class="hero-wrapper__search-button">
+        <button class="hero-wrapper__search-button" onclick="window.location.href='#tures'">
           Найти тур
         </button>
       </div>
     </section>
     
-    <section class="choose container" aria-labelledby="choose-title" data-js-tabs>
+    <section class="choose container" id="tures" aria-labelledby="choose-title" data-js-tabs>
       <header class="choose-header header-container">
         <h2 class="choose-header__title header-container__title" id="choose-title">Выбери свой тур</h2>
         <div
@@ -443,7 +443,7 @@
       </div>
     </section>
     
-    <section class="collect container" aria-labelledby="collect-title">
+    <section class="collect container" id="create" aria-labelledby="collect-title">
       <header class="collect-header header-container">
         <h2 class="collect-header__title  header-container__title " id="collect-title">Собери свой тур</h2>
         <p class="collect-header__description header-container__description">
@@ -451,7 +451,7 @@
         </p>
       </header>
       <div class="collect-body">
-        <form action="/" class="collect-form" id="form-create-tour">
+        <form action="" class="collect-form" id="form-create-tour">
           <div class="collect-form__col field">
             <label
               for="name"
@@ -477,8 +477,9 @@
               id="path"
               class="field__input"
               required
+              onclick="style.color = 'black'"
             >
-              <option value="">Куда хотите ехать</option>
+              <option selected value="Куда хотите ехать">Куда хотите ехать</option>
               <option value="Север">Север</option>
               <option value="Юг">Юг</option>
               <option value="Запад">Запад</option>
@@ -616,14 +617,14 @@
             </label>
           </div>
           <div class="collect-form__row collect-form__row--btn field">
-            <button type="submit" class="field__input-btn field__input-btn-submit" onclick="window.location.href='#choose-title'">Найти тур</button>
+            <button type="submit" class="field__input-btn field__input-btn-submit" onclick="window.location.href='#tures'">Найти тур</button>
             <button type="reset" class="field__input-btn field__input-btn-reset">Сбросить</button>
           </div>
         </form>
       </div>
     </section>
     
-    <section class="reviews container" aria-labelledby="reviews-title">
+    <section class="reviews container" id="reviews" aria-labelledby="reviews-title">
       <header class="reviews-header header-container">
         <h2 class="reviews-header__title header-container__title" id="reviews-title">Отзывы наших путешественников</h2>
         <p class="reviews-header__description header-container__description">
@@ -790,7 +791,7 @@
       </div>
     </section>
     
-    <section class="stories container" aria-labelledby="stories-title">
+    <section class="stories container" id="story" aria-labelledby="stories-title">
       <header class="stories-header header-container">
         <h2 class="stories-header__title header-container__title" id="stories-title">Истории путешествий</h2>
         <p class="stories-header__description header-container__description">
@@ -973,6 +974,7 @@
         <a
           class="footer-wrapper-links__link footer-wrapper-links__link-1"
           href="#"
+          target="_blank"
           aria-label="Telegram"
           title="Telegram"
         >
@@ -982,6 +984,7 @@
         <a
           class="footer-wrapper-links__link footer-wrapper-links__link-2"
           href="#"
+          target="_blank"
           aria-label="Facebook"
           title="Facebook"
         >
@@ -990,6 +993,7 @@
         <a
           class="footer-wrapper-links__link footer-wrapper-links__link-3"
           href="#"
+          target="_blank"
           aria-label="VKontakte"
           title="VKontakte"
         >

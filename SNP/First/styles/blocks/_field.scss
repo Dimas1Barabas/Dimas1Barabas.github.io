@@ -47,7 +47,7 @@
     @include p-normal;
     border: 1px solid var(--color-beige-200);
     border-radius: 10px;
-    color: var(--color-gray-300);
+    color: var(--color-black);
     background-color: var(--color-beige-100);
     
     @include laptop {
@@ -74,11 +74,12 @@
       border: 1px solid var(--color-gray-300);
     }
     
-    &:valid {
-      color: var(--color-black);
+    &::placeholder {
+      color: var(--color-gray-300);
     }
     
     &:has(option) {
+      color: var(--color-gray-300);
       -webkit-appearance: none;
       -moz-appearance: none;
       appearance: none;
