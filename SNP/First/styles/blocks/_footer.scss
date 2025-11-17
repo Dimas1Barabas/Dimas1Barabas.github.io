@@ -27,7 +27,7 @@
     @include mobile {
       flex-direction: column;
       gap: 7px;
-      width: 918px;
+      width: 100%;
       height: 56px;
       padding-inline: 21.5px;
       @include m-p-normal;

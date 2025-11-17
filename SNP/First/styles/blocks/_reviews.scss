@@ -3,7 +3,9 @@
 .reviews {
   &-header {
     &__title {
-      width: 529px;
+      @include laptop-above {
+        width: 529px;
+      }
     }
   }
   
