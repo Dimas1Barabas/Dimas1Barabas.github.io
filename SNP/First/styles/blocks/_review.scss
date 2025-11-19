@@ -7,6 +7,14 @@
     
     @include mobile {
       @include m-p-big;
+      
+      &--low {
+        height: 253px;
+      }
+      
+      &--high {
+        height: 437px;
+      }
     }
   }
   

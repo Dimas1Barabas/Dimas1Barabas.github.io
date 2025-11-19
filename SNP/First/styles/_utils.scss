@@ -34,6 +34,10 @@ header.absolute {
   @include mobile {
     width: var(--container-width-mobile);
     gap: 50px;
+    
+    &--wtf40 {
+      gap: 40px;
+    }
   }
 }
 
