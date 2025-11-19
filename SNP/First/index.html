@@ -451,7 +451,7 @@
         </p>
       </header>
       <div class="collect-body">
-        <form action="" class="collect-form" id="form-create-tour">
+        <form onsubmit="event.preventDefault(); window.location.href='#tures'" class="collect-form" id="form-create-tour">
           <div class="collect-form__col field">
             <label
               for="name"
@@ -476,8 +476,7 @@
             <select
               id="path"
               class="field__input"
-              required
-              onclick="style.color = 'black'"
+              onclick="style.color='black'"
             >
               <option selected value="Куда хотите ехать">Куда хотите ехать</option>
               <option value="Север">Север</option>
@@ -558,8 +557,8 @@
               form="form-create-tour"
               maxlength="1000"
               id="comments"
-            >
-            </textarea>
+              required
+            ></textarea>
           </div>
           <div class="collect-form__col collect-form__col--wide field">
             <p class="field__label">
@@ -575,7 +574,6 @@
                   class="field__input-set-wrap-radio"
                   id=">18"
                   name="radio"
-                  value="Да"
                   required
                 >
                 <label
@@ -591,7 +589,6 @@
                   class="field__input-set-wrap-radio"
                   id="<18"
                   name="radio"
-                  value="Нет"
                 >
                 <label
                   for="<18"
@@ -617,7 +614,7 @@
             </label>
           </div>
           <div class="collect-form__row collect-form__row--btn field">
-            <button type="submit" class="field__input-btn field__input-btn-submit" onclick="window.location.href='#tures'">Найти тур</button>
+            <button type="submit" class="field__input-btn field__input-btn-submit" >Найти тур</button>
             <button type="reset" class="field__input-btn field__input-btn-reset">Сбросить</button>
           </div>
         </form>

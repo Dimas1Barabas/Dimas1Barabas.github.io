@@ -1015,6 +1015,9 @@ a[class] {
     background-position: 242px center;
   }
 }
+.field__input:has(option) > option {
+  color: var(--color-green-400);
+}
 .field__input-textarea {
   resize: none;
   width: 100%;

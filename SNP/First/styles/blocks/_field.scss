@@ -93,6 +93,10 @@
       @include mobile {
         background-position: 242px center;
       }
+      
+      & > option {
+        color: var(--color-green-400);
+      }
     }
     
     &-textarea {
