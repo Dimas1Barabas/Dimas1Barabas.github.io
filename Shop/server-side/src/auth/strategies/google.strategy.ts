@@ -22,6 +22,6 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
 			name: displayName,
 			picture: photos[0].value
 		}
-		done(null, user) //TODO 38:36
+		done(null, user)
 	}
 }
