@@ -1086,13 +1086,13 @@ a[class] {
   height: 26px;
   background-color: transparent;
   border-radius: 50%;
-  border: 3px solid var(--color-black);
+  border: 2px solid var(--color-black);
 }
 @media (width <= 22.5rem) {
   .field__input-set-wrap-radio {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--color-black);
+    border: 1.6px solid var(--color-black);
   }
 }
 .field__input-set-wrap-radio::after {

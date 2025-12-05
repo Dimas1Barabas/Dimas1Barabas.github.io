@@ -158,11 +158,11 @@
           @include square(26px);
           background-color: transparent;
           border-radius: 50%;
-          border: 3px solid var(--color-black);
+          border: 2px solid var(--color-black);
           
           @include mobile {
             @include square(20px);
-            border: 2px solid var(--color-black);
+            border: 1.6px solid var(--color-black);
           }
           
           &::after {
