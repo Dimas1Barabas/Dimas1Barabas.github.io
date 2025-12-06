@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
+import { ColorDto } from '../color/dto/color.dto'
+import { ProductDto } from './dto/product.dto'
 
 @Injectable()
 export class ProductService {
@@ -119,5 +121,64 @@ export class ProductService {
 		
 		return products
 	}
+	
+	async getSimilar(id: string) {
+		const currentProduct = await this.getById(id)
+		
+		if(!currentProduct) throw new NotFoundException(`Текущий товар не наден`)
+		
+		const products = await this.prisma.product.findMany({
+			where: {
+				category: {
+					title: currentProduct.category.title
+				},
+				NOT: {
+					id: currentProduct.id
+				}
+			},
+			orderBy: {
+				sreatedAt: 'desc'
+			},
+			include: {
+				category: true,
+			}
+		})
+		
+		return products
+	}
+	
+	async create(storeId: string, dto: ProductDto) {
+		return this.prisma.product.create({
+			data: {
+				title: dto.title,
+				description: dto.description,
+				price: dto.price,
+				images: dto.images,
+				categoryId: dto.categoryId,
+				colorId: dto.colorId,
+				storeId
+			}
+		})
+	}
+	
+	async update(id: string, dto: ProductDto) {
+		await this.getById(id)
+		
+		return this.prisma.product.update({
+			where: {
+				id
+			},
+			data: dto
+		})
+	}
+	
+	async delete(id: string) {
+		await this.getById(id)
+		
+		return this.prisma.product.delete({
+			where: {
+				id
+			}
+		})
+	}
 }
-//TODO 1 57 48
