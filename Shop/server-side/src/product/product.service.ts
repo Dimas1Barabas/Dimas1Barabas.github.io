@@ -24,21 +24,23 @@ export class ProductService {
 		return products
 	}
 	
-	private getSearchTermFilter(searchTerm: string) {
-		return {
+	private async getSearchTermFilter(searchTerm: string) {
+		return this.prisma.product.findMany({
+		where: {
 			OR: [
-				{
-					title: {
-						contains: searchTerm,
-						mode: 'insensitive'
-					},
-					description: {
-						contains: searchTerm,
-						mode: 'insensitive'
+					{
+						title: {
+							contains: searchTerm,
+							mode: 'insensitive'
+						},
+						description: {
+							contains: searchTerm,
+							mode: 'insensitive'
+						}
 					}
-				}
-			]
-		}
+				]
+			}
+		})
 	}
 	
 	async getByStoreId(stroreId: string) {
