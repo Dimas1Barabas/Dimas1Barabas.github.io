@@ -97,5 +97,100 @@ export class StatisticsService {
 		return averageRating._avg.rating
 	}
 	
-	//TODO 2 37 55
+	private async calculateMonthlySales(storeId: string) {
+		const startDate = dayjs().subtract(30, 'days').startOf('day').toDate()
+		const endDate = dayjs().endOf('day').toDate()
+		
+		const salesRaw = await this.prisma.order.findMany({
+			where: {
+				createdAt: {
+					gte: startDate,
+					lte: endDate
+				},
+				items: {
+					some: { storeId }
+				}
+			},
+			includes: {
+				items: true
+			}
+		})
+		
+		const formatDate = (date: Date): string => {
+			return `${date.getDate()} ${monthNames[date.getMonth()]}`
+		}
+		
+		const salesByDate = new Map<string, number>()
+		
+		salesRaw.forEach(order => {
+			const formatedDate = formatDate(new Date(order.createdAt))
+			
+			const total = order.items.reduce((total, item) => {
+				return total + item.price * item.quantity
+			}, 0)
+			
+			if(salesByDate.has(formatedDate)) {
+				salesByDate.set(
+					formatedDate,
+					salesByDate.get(formatedDate)! + total
+				)
+			} else {
+				salesByDate.set(formatedDate, total)
+			}
+		})
+		
+		const monthlySales = Array.from(salesByDate, ([date, value]) => ({
+			date,
+			value
+		}))
+		
+		return monthlySales
+	}
+	
+	private async getLastUsers(storeId: string) {
+		const lastUsers = await this.prisma.user.findMany({
+			where: {
+				orders: {
+					some: {
+						items: {
+							some: { storeId }
+						}
+					}
+				}
+			},
+			orderBy: {
+				createdAt: 'desc'
+			},
+			take: 5,
+			include: {
+				orders: {
+					where: {
+						items: { some: { storeId } }
+					},
+					 include: {
+						items: {
+							where: { storeId },
+							select: { price: true }
+						}
+					}
+				}
+			}
+		})
+		
+		return lastUsers.map(user => {
+			const lastOrder = user.orders[user.orders.length - 1]
+			
+			const total = lastOrder.items.reduce((total, item) => {
+				return total + item.price
+			})
+			
+			return {
+				id: user.id,
+				name: user.name,
+				email: user.email,
+				picture: user.picture,
+				total
+			}
+		})
+	}
 }
