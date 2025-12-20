@@ -1,0 +1,1 @@
+export const validEmail = /^90909()()9/
