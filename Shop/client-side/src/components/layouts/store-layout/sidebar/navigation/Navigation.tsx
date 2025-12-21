@@ -4,6 +4,8 @@ import { useParams } from "next/navigation";
 import {IMenuItem} from '@/components/layouts/store-layout/sidebar/navigation/menu.interface';
 import {STORE_URL} from '@/config/url.config';
 import {Album, BarChart, FolderKanban, PaintBucket, Settings, Star} from 'lucide-react';
+import styles from './Navigation.module.scss'
+import MenuItem from '@/components/layouts/store-layout/sidebar/navigation/MenuItem';
 
 export default function Navigation() {
   const params = useParams<{ storeId: string }>();
@@ -42,6 +44,12 @@ export default function Navigation() {
   ]
   
   return (
-    <div></div>
+    <div className={styles.wrapper}>
+      <div className={styles.navigation}>
+        {routes.map((route, index) => (
+          <MenuItem key={route.value} route={route} />
+        ))}
+      </div>
+    </div>
   );
 }
