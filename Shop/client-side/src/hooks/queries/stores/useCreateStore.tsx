@@ -4,7 +4,6 @@ import {IStoreCreate} from '@/shared/types/store.interface';
 import {storeService} from '@/services/store.service';
 import {STORE_URL} from '@/config/url.config';
 import {useMemo} from 'react';
-import {createStore} from 'redux';
 import toast from 'react-hot-toast';
 
 export function useCreateStore() {
@@ -28,5 +27,5 @@ export function useCreateStore() {
   })
   
   return useMemo(() => ({CreateStore, isLoadingCreate}),
-    [createStore, isLoadingCreate])
+    [CreateStore, isLoadingCreate])
 }
