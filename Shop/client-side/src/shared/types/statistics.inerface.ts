@@ -9,7 +9,7 @@ export interface IMonthlySales {
   value: number
 }
 
-export interface ILastUser {
+export interface ILastUsers {
   id: string;
   name: string;
   email: string;
