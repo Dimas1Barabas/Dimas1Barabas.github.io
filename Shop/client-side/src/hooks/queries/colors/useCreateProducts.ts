@@ -35,5 +35,5 @@ export const useCreateProduct = () => {
       isLoadingCreate
     }),
     [createProduct, isLoadingCreate]
-  )
+  ) // TODO 6 22
 }

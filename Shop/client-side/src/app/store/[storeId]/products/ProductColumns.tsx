@@ -19,7 +19,7 @@ export  interface IProductColumn {
   storeID: string
 }
 
-export const columns: ColumnDef<IProductColumn>[] = [
+export const productColumns: ColumnDef<IProductColumn>[] = [
   {
     accessorKey: 'title',
     header: ({column}) => {

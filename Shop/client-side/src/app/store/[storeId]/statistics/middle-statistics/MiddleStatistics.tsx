@@ -1,4 +1,4 @@
-import {useGetStatistics} from '@/hooks/statistics/useGetStatistics';
+import {useGetStatistics} from '@/hooks/queries/statistics/useGetStatistics';
 import styles from './MiddleStatistics.module.scss'
 import { LastUsers } from './LastUsers';
 import {Overview} from '@/app/store/[storeId]/statistics/middle-statistics/Overview';

@@ -37,11 +37,11 @@ export function DataTable<TData, TValue>({columns, data, filterKey}: DataTablePr
           <Input
             placeholder='Поиск'
             value={
-              (table.getColumn('email')?.getFilterValue() as string) ?? ''
+              (table.getColumn(filterKey)?.getFilterValue() as string) ?? ''
             }
             onChange={event =>
               table
-                .getColumn('email')
+                .getColumn(filterKey)
                 ?.setFilterValue(event.target.value)
             }
             className='max-w-sm'
