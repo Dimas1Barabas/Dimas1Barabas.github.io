@@ -22,7 +22,7 @@ interface ProductsFormProps {
   colors: IColor[]
 }
 
-export function ProductsForm({product, categories, colors}: ProductsFormProps) {
+export function ColorForm({product, categories, colors}: ProductsFormProps) {
   const {createProduct, isLoadingCreate} = useCreateProduct();
   const {updateProduct, isLoadingUpdate} = useUpdateProduct();
   const {deleteProduct, isLoadingDelete} = useDeleteProduct();

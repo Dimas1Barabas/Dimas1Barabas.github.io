@@ -7,33 +7,35 @@ import toast from 'react-hot-toast';
 import {useParams} from 'next/navigation';
 import {IProductInput} from '@/shared/types/product.interface';
 import {productService} from '@/services/product.service';
+import {ICategoryInput} from '@/shared/types/category.interface';
+import {categoryService} from '@/services/category.service';
 
-export const useCreateProduct = () => {
+export const useCreateCategory = () => {
   const params = useParams<{ storeId: string }>();
   const router = useRouter()
   
   const queryClient = useQueryClient();
   
-  const { mutate: createProduct, isPending: isLoadingCreate } = useMutation({
-    mutationKey: ['create product'],
-    mutationFn: (data: IProductInput) => productService.create(data, params.storeId),
-    onSuccess(store) {
+  const { mutate: createCategory, isPending: isLoadingCreate } = useMutation({
+    mutationKey: ['create category'],
+    mutationFn: (data: ICategoryInput) => categoryService.create(data, params.storeId),
+    onSuccess() {
       queryClient.invalidateQueries({
-        queryKey: ['get products for store dashboard'],
+        queryKey: ['get categories for store dashboard'],
       });
-      toast.success('Товар создан');
-      router.push(STORE_URL.products(params.storeId));
+      toast.success('Категория создана');
+      router.push(STORE_URL.categories(params.storeId));
     },
     onError() {
-      toast.error('Ошибка при создании товара');
+      toast.error('Ошибка при создании категории');
     }
   })
   
   return useMemo(
     () => ({
-      createProduct,
+      createCategory,
       isLoadingCreate
     }),
-    [createProduct, isLoadingCreate]
-  ) // TODO 6 22
+    [createCategory, isLoadingCreate]
+  )
 }
