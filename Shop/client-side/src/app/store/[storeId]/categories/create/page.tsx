@@ -3,7 +3,7 @@ import {NO_INDEX_PAGE} from '@/constants/seo.constants'
 import {CreateProduct} from '@/app/store/[storeId]/products/create/CreateProduct';
 
 export const metadata: Metadata = {
-  title: 'Создание цвета',
+  title: 'Создание товара',
   ...NO_INDEX_PAGE
 }
 

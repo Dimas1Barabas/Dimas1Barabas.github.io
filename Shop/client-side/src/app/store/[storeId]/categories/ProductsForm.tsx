@@ -1,10 +1,10 @@
-import {IColor, IColorInput} from '@/shared/types/color.interface';
+import {IColor} from '@/shared/types/color.interface';
 import {ICategory} from '@/shared/types/category.interface';
 import {IProduct, IProductInput} from '@/shared/types/product.interface';
 import {useCreateProduct} from '@/hooks/queries/products/useCreateProducts';
 import {useUpdateProduct} from '@/hooks/queries/products/useUpdateProduct';
 import {useDeleteProduct} from '@/hooks/queries/products/useDeleteProducts';
-import {SubmitHandler, useForm} from 'react-hook-form';
+import {SubmitHandler} from 'react-hook-form';
 import styles from '../Store.module.scss'
 import {Heading} from '@/components/ui/Heading';
 import {ConfirmModal} from '@/components/ui/modals/ConfirmModal';
@@ -15,39 +15,47 @@ import {Select, SelectContent, SelectGroup, SelectItem, SelectValue} from '@/com
 import {Textarea} from '@/components/ui/Textarea';
 import {Button} from '@/components/ui/Button';
 import {ImageUpload} from '@/components/ui/form-elements/image-upload/ImageUpload';
-import { useUpdateColor } from '@/hooks/queries/colors/useUpdateColor';
-import { useCreateColor } from '@/hooks/queries/colors/useCreateColor';
-import { useDeleteColor } from '@/hooks/queries/colors/useDeleteColor';
 
-interface ColorFormProps {
-  color?: IColor
+interface ProductsFormProps {
+  product?: IProduct
+  categories: ICategory[]
+  colors: IColor[]
 }
 
-export function ColorForm({color}: ColorFormProps) {
-  const {createColor, isLoadingCreate} = useCreateColor();
-  const {updateColor, isLoadingUpdate} = useUpdateColor();
-  const {deleteColor, isLoadingDelete} = useDeleteColor();
+export function ProductsForm({product, categories, colors}: ProductsFormProps) {
+  const {createProduct, isLoadingCreate} = useCreateProduct();
+  const {updateProduct, isLoadingUpdate} = useUpdateProduct();
+  const {deleteProduct, isLoadingDelete} = useDeleteProduct();
   
-  const title = color ? 'Изменить данные' : 'Создать цвет';
-  const description = color ? 'Изменить данные о цвете' : 'Добавить новый цвет в магазин';
-  const action = color ? 'Сохранить' : 'Создать';
+  const title = product ? 'Изменить данные' : 'Создать товар';
+  const description = product ? 'Изменить данные о товаре' : 'Добавить новый товар в магазин';
+  const action = product ? 'Сохранить' : 'Создать';
   
-  const form = useForm<IColorInput>({
+  const form = useForm<IProductInput>({
     mode: 'onChange',
     values: {
-      name: color?.name || '',
-      value: color?.value || ''
+      title: product?.title || '',
+      description: product?.description || '',
+      images: product?.images || [],
+      price: product?.price || 0,
+      categoryId: product?.category.id || '',
+      colorId: product?.color.id || '',
     } || {
-      name: '',
-      value: '',
+      title: '',
+      description: '',
+      images: [],
+      price: 0,
+      categoryId: '',
+      colorId: '',
     },
   });
   
   const onSubmit: SubmitHandler<IProductInput> = data => {
-    if(color) {
-      updateColor(data)
+    data.price = Number(data.price);
+    if(product) {
+      updateProduct(data)
     } else{
-      createColor(data)
+      createProduct(data)
     }
   }
   
@@ -55,7 +63,7 @@ export function ColorForm({color}: ColorFormProps) {
     <div className={styles.wrapper}>
       <div className={styles.header}>
         <Heading title={title} description={description} />
-        {color && (
+        {product && (
           <ConfirmModal handleClick={() => deleteProduct()} >
             <Button size="icon" variant="primary" disabled={isLoadingDelete}>
               <Trash />
@@ -91,7 +99,7 @@ export function ColorForm({color}: ColorFormProps) {
               <FormItem>
                 <FormLabel>Название</FormLabel>
                 <FormControl>
-                  <Input placeholder="Название цвета" disabled={isLoadingCreate || isLoadingUpdate} {...field}/>
+                  <Input placeholder="Название товара" disabled={isLoadingCreate || isLoadingUpdate} {...field}/>
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -107,7 +115,7 @@ export function ColorForm({color}: ColorFormProps) {
               <FormItem>
                 <FormLabel>Название</FormLabel>
                 <FormControl>
-                  <Input placeholder="Цена цвета" disabled={isLoadingCreate || isLoadingUpdate} {...field}/>
+                  <Input placeholder="Цена товара" disabled={isLoadingCreate || isLoadingUpdate} {...field}/>
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -129,13 +137,13 @@ export function ColorForm({color}: ColorFormProps) {
                 >
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue placeholder='Категория цвета'/>
+                      <SelectValue placeholder='Категория товара'/>
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
                     <SelectGroup>
-                      {categories.map(color => (
-                        <SelectItem value={color.id} key={color.id}>{color.title}</SelectItem>
+                      {categories.map(category => (
+                        <SelectItem value={category.id} key={category.id}>{category.title}</SelectItem>
                       ))}
                     </SelectGroup>
                   </SelectContent>
@@ -160,7 +168,7 @@ export function ColorForm({color}: ColorFormProps) {
                 >
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue placeholder='Цвет цвета'/>
+                      <SelectValue placeholder='Цвет товара'/>
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
