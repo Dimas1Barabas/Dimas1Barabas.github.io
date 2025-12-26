@@ -77,6 +77,7 @@
       color: var(--color-black);
       background-color: var(--color-white);
       @include p-small;
+      transition: var(--transition-duration);
       
       @include mobile {
         width: 114px;
@@ -87,7 +88,6 @@
       &:hover {
         color: var(--color-white);
         background-color: var(--color-orange-200);
-        transition: var(--transition-duration);
       }
       
       &:active {

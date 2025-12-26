@@ -19,22 +19,38 @@
       }
       
       & > a {
+        position: relative;
+        display: inline-block;
         color: var(--color-black);
+        transition: var(--transition-duration);
         
-        &:hover {
-          text-decoration: underline;
-          text-decoration-thickness: 1px;
-          text-underline-offset: 6px;
-          text-decoration-skip-ink: none;
+        &::after {
+          content: '';
+          position: absolute;
+          left: 0;
+          bottom: 4px;
+          width: 0;
+          height: 1px;
           transition: var(--transition-duration);
+        }
+        
+        @include hover {
+          text-decoration: none;
+          color: var(--color-black);
+          
+          &::after {
+            width: 100%;
+            background-color: var(--color-black);
+          }
         }
         
         &:active {
           color: var(--color-green-400);
-          text-decoration: underline;
-          text-decoration-thickness: 1px;
-          text-underline-offset: 6px;
-          text-decoration-skip-ink: none;
+          
+          &::after {
+            width: 100%;
+            background-color: var(--color-green-400);
+          }
         }
       }
     }

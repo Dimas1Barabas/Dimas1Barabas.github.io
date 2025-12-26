@@ -2,21 +2,40 @@
 
 //   в Figma в ~2 раза слабее блюр => 54 / 2 = 27
 
-header.fixed {
-  position: fixed;
-  color: var(--color-black);
-  backdrop-filter: blur(27px);
-  background-color: rgba(243, 239, 232, 0.6);
-  opacity: 1;
-}
-
-header.absolute {
-  position: absolute;
-  top: 0;
-  left: 0;
-  color: var(--color-white);
-  opacity: 1;
-  transition: background-color var(--transition-duration), opacity var(--transition-duration);
+.header {
+  &.fixed {
+    position: fixed;
+    color: var(--color-black);
+    backdrop-filter: blur(27px);
+    background-color: rgba(243, 239, 232, 0.6);
+    transition: var(--transition-duration);
+    
+    & .header-wrapper__link {
+      &:hover {
+        &::after {
+          background-color: var(--color-black);
+          width: 100%;
+        }
+      }
+    }
+  }
+  
+  &.absolute {
+    position: absolute;
+    top: 0;
+    left: 0;
+    color: var(--color-white);
+    transition: var(--transition-duration);
+    
+    & .header-wrapper__link {
+      &:hover {
+        &::after {
+          background-color: var(--color-white);
+          width: 100%;
+        }
+      }
+    }
+  }
 }
 
 .container {

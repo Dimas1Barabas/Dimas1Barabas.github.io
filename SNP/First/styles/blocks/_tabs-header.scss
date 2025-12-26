@@ -16,34 +16,44 @@
     padding: 0;
     border: none;
     background: transparent;
+    position: relative;
     @include p-big;
     
-    &:where(.is-active ){
-      color: var(--color-orange-200);
-      text-decoration: underline;
-      text-decoration-thickness: 2px;
-      text-underline-offset: 6px;
-      transition-duration: var(--transition-duration);
-      
-      @include mobile {
-        @include m-p-big;
-        text-underline-offset: 4px;
-        transition-duration: var(--transition-duration);
-      }
-    }
-    
-    &:hover {
-      color: var(--color-black);
-      text-decoration: underline;
-      text-decoration-thickness: 2px;
-      text-underline-offset: 6px;
-      transition-duration: var(--transition-duration);
-    }
-    
-    
-    @include  mobile {
+    @include mobile {
       @include m-p-big;
     }
     
+    &::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      bottom: -4px;
+      width: 0;
+      height: 2px;
+      transition: var(--transition-duration);
+      
+      @include mobile {
+        bottom: 0;
+      }
+    }
+    
+    &:where(.is-active ){
+      pointer-events: none;
+      color: var(--color-orange-200);
+      
+      &::after {
+        width: 100%;
+        background-color: var(--color-orange-200);
+      }
+    }
+    
+    @include hover {
+      color: var(--color-black);
+      
+      &::after {
+        width: 100%;
+        background-color: var(--color-black);
+      }
+    }
   }
 }
