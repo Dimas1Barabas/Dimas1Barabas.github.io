@@ -81,6 +81,7 @@ header.absolute {
   align-items: center;
   gap: 100px;
   width: 100%;
+  max-width: 1920px;
   padding-inline: 30px;
   
   @include laptop {
