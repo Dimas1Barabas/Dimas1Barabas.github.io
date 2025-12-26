@@ -489,8 +489,9 @@ a[class] {
 .hero {
   display: flex;
   flex-direction: column;
-  width: 100%;
-  height: 830px;
+  width: 100vw;
+  height: 100vh;
+  min-height: 630px;
   color: var(--color-white);
   justify-content: center;
   align-items: center;
@@ -502,13 +503,15 @@ a[class] {
 }
 @media (width <= 64rem) {
   .hero {
-    height: 831px;
+    height: 100vh;
+    min-height: 620px;
     background-image: var(--gradient-hero), url("../images/hero/header-img.jpg");
   }
 }
 @media (width <= 22.5rem) {
   .hero {
-    height: 488px;
+    height: 100vh;
+    min-height: 410px;
   }
 }
 .hero-wrapper {
