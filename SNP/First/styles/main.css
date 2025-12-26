@@ -1024,9 +1024,10 @@ a[class] {
   color: var(--color-green-400);
 }
 .field__input-textarea {
-  resize: none;
-  width: 100%;
-  height: 152px;
+  min-width: 49%;
+  min-height: 152px;
+  max-width: 100%;
+  max-height: 300px;
   padding: 20px;
   background-color: var(--color-beige-100);
   border: 1px solid var(--color-beige-200);
@@ -1038,6 +1039,8 @@ a[class] {
 }
 @media (width <= 22.5rem) {
   .field__input-textarea {
+    resize: none;
+    width: 100%;
     height: 132px;
     padding: 10px;
     font-family: "Roboto-Regular", sans-serif;
