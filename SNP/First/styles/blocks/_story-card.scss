@@ -107,16 +107,37 @@
         }
         
         & > a {
-          &:hover {
-            text-decoration: underline;
-            text-decoration-thickness: 1px;
-            text-underline-offset: 6px;
-            text-decoration-skip-ink: none;
+          position: relative;
+          display: inline-block;
+          transition: var(--transition-duration);
+          
+          &::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 0;
+            height: 1px;
             transition: var(--transition-duration);
+          }
+          
+          @include hover {
+            text-decoration: none;
+            color: var(--color-white);
+            
+            &::after {
+              width: 100%;
+              background-color: var(--color-white);
+            }
           }
           
           &:active {
             color: var(--color-orange-200);
+            
+            &::after {
+              width: 100%;
+              background-color: var(--color-orange-200);
+            }
           }
         }
       }

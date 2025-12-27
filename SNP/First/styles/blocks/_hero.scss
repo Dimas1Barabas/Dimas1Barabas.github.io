@@ -85,7 +85,7 @@
         @include m-p-small;
       }
       
-      &:hover {
+      @include hover {
         color: var(--color-white);
         background-color: var(--color-orange-200);
       }

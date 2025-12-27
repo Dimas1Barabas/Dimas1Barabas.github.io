@@ -31,7 +31,7 @@
         border-radius: 20px;
       }
       
-      &:hover {
+      @include hover {
         .story-card__img {
           transform: scale(1.2);
           transition: var(--transition-duration);
