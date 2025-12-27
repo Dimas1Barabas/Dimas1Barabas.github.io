@@ -43,16 +43,19 @@
   flex-direction: column;
   align-items: center;
   gap: 100px;
-  width: var(--container-width-desktop);
-  margin-inline: auto;
+  max-width: var(--container-width-desktop);
+  width: 100%;
+  padding-inline: var(--padding-desktop);
   
   @include laptop {
-    width: var(--container-width-laptop);
+    max-width: var(--container-width-laptop);
+    padding-inline: var(--padding-laptop-mobile);
   }
   
   @include mobile {
-    width: var(--container-width-mobile);
+    max-width: var(--container-width-mobile);
     gap: 50px;
+    padding-inline: var(--padding-laptop-mobile);
     
     &--wtf40 {
       gap: 40px;

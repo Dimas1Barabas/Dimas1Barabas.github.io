@@ -34,11 +34,13 @@
     rgba(0, 0, 0, 0) 0.01%,
     rgba(0, 0, 0, 0.2) 100%);
   
+  --padding-desktop: 53px;
+  --padding-laptop-mobile: 21px;
   
   --transition-duration: all 0.3s ease;
   
-  --container-width-desktop: 1170px;
-  --container-width-laptop: 918px;
-  --container-width-mobile: 320px;
+  --container-width-desktop: calc(1170px + var(--padding-desktop) * 2);
+  --container-width-laptop: calc(918px + var(--padding-laptop-mobile) * 2);
+  --container-width-mobile: calc(320px + var(--padding-laptop-mobile) * 2);
   
 }

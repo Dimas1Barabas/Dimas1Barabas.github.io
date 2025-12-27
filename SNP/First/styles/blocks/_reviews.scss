@@ -27,19 +27,19 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      width: 570px;
-      height: 673px;
+      max-width: 570px;
+      min-height: 673px;
       padding: 40px;
       background-color: var(--color-beige-200);
       border-radius: 50px;
       
       @include laptop {
-        width: 450px;
-        height: 841px;
+        max-width: 450px;
+        min-height: 841px;
       }
       
       @include mobile {
-        width: 318px;
+        max-width: 318px;
         height: auto;
         padding: 20px;
         border-radius: 20px;

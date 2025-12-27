@@ -15,19 +15,20 @@
     
     &__link {
       position: relative;
-      width: 1170px;
-      height: 567px;
+      max-width: 1170px;
+      min-height: 567px;
       color: var(--color-white);
       border-radius: 50px;
       overflow: hidden;
       
       @include laptop {
-        width: 918px;
+        max-width: 918px;
+        min-height: 567px;
       }
       
       @include mobile {
-        width: 318px;
-        height: 455px;
+        max-width: 318px;
+        min-height: 455px;
         border-radius: 20px;
       }
       

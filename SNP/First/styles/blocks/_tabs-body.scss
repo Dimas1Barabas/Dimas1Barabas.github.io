@@ -2,16 +2,16 @@
 
 .tabs-body {
   display: grid;
-  grid-template-columns: repeat(3, 370px);
+  grid-template-columns: repeat(3, 1fr);
   gap: 30px;
   
   @include laptop {
-    grid-template-columns: repeat(2, 450px);
+    grid-template-columns: repeat(2, 1fr);
     gap: 18px;
   }
   
   @include mobile {
-    grid-template-columns: repeat(1, 318px);
+    grid-template-columns: repeat(1, 1fr);
     gap: 18px;
   }
   
@@ -21,18 +21,19 @@
   
   &__link {
     position: relative;
-    width: 370px;
+    max-width: 370px;
     height: 531px;
     color: var(--color-white);
     border-radius: 50px;
     overflow: hidden;
     
     @include laptop {
-      width: 450px;
+      max-width: 450px;
     }
     
     @include mobile {
-      @include square(318px);
+      max-width: 318px;
+      height: 318px;
       border-radius: 20px;
     }
     

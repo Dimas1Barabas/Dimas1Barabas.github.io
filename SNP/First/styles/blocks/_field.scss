@@ -1,6 +1,7 @@
 @use '../helpers' as *;
 
 .field {
+  width: 100%;
   
   &__label {
     @include p-normal;
@@ -57,7 +58,8 @@
   }
   
   &__input {
-    width: 500px;
+    width: 100%;
+    max-width: 500px;
     height: 68px;
     padding: 20px;
     @include p-normal;
@@ -67,11 +69,13 @@
     background-color: var(--color-beige-100);
     
     @include laptop {
-      width: 389px;
+      width: 100%;
+      max-width: 389px;
     }
     
     @include mobile {
-      width: 281px;
+      width: 100%;
+      max-width: 281px;
       height: 43px;
       padding: 10px;
       @include m-p-normal;

@@ -6,23 +6,29 @@
     display: flex;
     flex-direction: row;
     align-items: center;
+    justify-content: center;
     gap: 30px;
-    width: 771px;
-    height: 370px;
+    max-width: 771px;
+    min-height: 370px;
     
     @include mobile {
       flex-direction: column;
       align-items: center;
-      width: 291px;
-      height: 285px;
+      max-width: 291px;
+      min-height: 285px;
     }
     
     &__img {
-      @include square(370px);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 50%;
+      max-width: 370px;
+      min-height: 370px;
       
       @include mobile {
-        width: 130px;
-        height: 133px;
+        max-width: 130px;
+        min-height: 133px;
       }
       
       & > img {
@@ -40,12 +46,13 @@
       justify-content: center;
       align-items: start;
       gap: 20px;
-      width: 371px;
-      height: 162px;
+      width: 50%;
+      max-width: 371px;
+      min-height: 162px;
       
       @include mobile {
         text-align: center;
-        width: 291px;
+        max-width: 291px;
       }
       
       .contacts-body {
