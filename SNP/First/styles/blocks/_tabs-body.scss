@@ -10,6 +10,10 @@
     gap: 18px;
   }
   
+  @media (width <= 700px) {
+    grid-template-columns: repeat(1, 1fr);
+  }
+  
   @include mobile {
     grid-template-columns: repeat(1, 1fr);
     gap: 18px;
@@ -29,6 +33,12 @@
     
     @include laptop {
       max-width: 450px;
+    }
+    
+    @media (width <= 700px) {
+      max-width: 658px;
+      height: 418px;
+      border-radius: 30px;
     }
     
     @include mobile {

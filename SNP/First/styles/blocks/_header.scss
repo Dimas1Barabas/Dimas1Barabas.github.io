@@ -90,9 +90,17 @@
       max-width: 155px;
       @include p-normal;
       
+      @media (width <= 380px) {
+        @include m-p-normal;
+      }
+      
       @include mobile {
         max-width: 124px;
         @include m-p-normal;
+      }
+      
+      @media (width <= 300px) {
+        display: none;
       }
     }
   }

@@ -50,6 +50,22 @@
     &__title {
       @include H1;
       
+      @media (width <= 700px) {
+        font-family: 'Roboto-Bold', sans-serif;
+        font-weight: 700;
+        font-size: 64px;
+        line-height: 109%;
+        letter-spacing: 0.02em;
+      }
+      
+      @media (width <= 500px) {
+        font-family: 'Roboto-Bold', sans-serif;
+        font-weight: 700;
+        font-size: 44px;
+        line-height: 109%;
+        letter-spacing: 0.02em;
+      }
+      
       @include mobile {
         @include m-H1;
       }
@@ -57,14 +73,15 @@
       
     &__description {
       @include p-normal;
+      max-width: 562px;
       
       @include laptop {
-        padding-inline: 236px;
+        max-width: 405px;
       }
       
       @include mobile {
+        max-width: 310px;
         @include m-p-normal;
-        padding-inline: 5px;
       }
     }
     

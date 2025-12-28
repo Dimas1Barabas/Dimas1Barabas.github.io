@@ -7,6 +7,11 @@
   gap: 30px;
   color: var(--color-black);
   
+  @media (width <= 750px) {
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  
   @include mobile {
     gap: 10px;
     flex-wrap: wrap;

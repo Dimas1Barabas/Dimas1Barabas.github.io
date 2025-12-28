@@ -75,6 +75,7 @@
   }
   
   &__title {
+    hyphens: auto;
     @include H2;
     text-align: center;
     color: var(--color-black);

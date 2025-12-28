@@ -87,6 +87,10 @@
           gap: 5px;
         }
         
+        @media (width <= 310px) {
+          gap:  2px;
+        }
+        
         @include hover {
           & > svg {
             color: var(--color-black);
@@ -119,6 +123,10 @@
           position: relative;
           display: inline-block;
           transition: var(--transition-duration);
+          
+          @media (width <= 330px) {
+            display: none;
+          }
           
           &::after {
             content: '';

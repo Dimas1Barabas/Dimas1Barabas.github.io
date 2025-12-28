@@ -73,6 +73,11 @@
       max-width: 389px;
     }
     
+    @media (width <= 700px) {
+      width: 100%;
+      max-width: 600px;
+    }
+    
     @include mobile {
       width: 100%;
       max-width: 281px;
@@ -130,6 +135,13 @@
       border: 1px solid var(--color-beige-200);
       border-radius: 10px;
       @include p-normal;
+      
+      @media (width <= 700px) {
+        resize: none;
+        width: 100%;
+        height: 132px;
+        padding: 15px;
+      }
       
       @include mobile {
         resize: none;

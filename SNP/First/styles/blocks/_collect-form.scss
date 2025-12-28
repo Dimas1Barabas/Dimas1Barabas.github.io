@@ -11,6 +11,10 @@
     column-gap: 20px;
   }
   
+  @media (width <= 700px) {
+    grid-template-columns: repeat(1, 1fr);
+  }
+  
   @include mobile {
     gap: 30px;
     grid-template-columns: repeat(1, 1fr);
