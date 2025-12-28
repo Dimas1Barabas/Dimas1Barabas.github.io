@@ -8,15 +8,32 @@
     flex-direction: column;
     justify-content: center;
     gap: 50px;
+    max-width: 1170px;
+    min-height: 567px;
+    height: 100%;
+    width: 100%;
+    
+    @include laptop {
+      max-width: 918px;
+      min-height: 567px;
+      height: 100%;
+      width: 100%;
+    }
     
     @include mobile {
       gap: 20px;
+      max-width: 318px;
+      min-height: 455px;
+      height: 100%;
+      width: 100%;
     }
     
     &__link {
       position: relative;
       max-width: 1170px;
       min-height: 567px;
+      height: 100%;
+      width: 100%;
       color: var(--color-white);
       border-radius: 50px;
       overflow: hidden;
@@ -24,11 +41,15 @@
       @include laptop {
         max-width: 918px;
         min-height: 567px;
+        height: 100%;
+        width: 100%;
       }
       
       @include mobile {
         max-width: 318px;
         min-height: 455px;
+        height: 100%;
+        width: 100%;
         border-radius: 20px;
       }
       

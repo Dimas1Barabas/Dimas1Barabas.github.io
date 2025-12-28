@@ -51,6 +51,7 @@
       min-height: 162px;
       
       @include mobile {
+        width: 100%;
         text-align: center;
         max-width: 291px;
       }

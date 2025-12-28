@@ -18,15 +18,32 @@
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
-    width: 1274px;
+    max-width: 1274px;
+    width: 100%;
     height: 28px;
     padding-inline: 53px;
     @include p-normal;
     
+    @include laptop {
+      max-width: 961px;
+      width: 100%;
+      padding-inline: 21.5px;
+    }
+    
+    @media (width <= 700px) {
+      flex-direction: column;
+      gap: 7px;
+      max-width: 700px;
+      width: 100%;
+      height: 56px;
+      padding-inline: 21.5px;
+      @include m-p-normal;
+    }
     
     @include mobile {
       flex-direction: column;
       gap: 7px;
+      max-width: 360px;
       width: 100%;
       height: 56px;
       padding-inline: 21.5px;
@@ -42,6 +59,10 @@
       flex-direction: row;
       gap: 25px;
       
+      @media (width <= 700px) {
+        gap: 17px;
+      }
+      
       @include mobile {
         gap: 15px;
       }
@@ -56,6 +77,10 @@
         & > svg {
           color: var(--color-gray-300);
           transition: var(--transition-duration);
+        }
+        
+        @media (width <= 700px) {
+          gap: 7px;
         }
         
         @include mobile {

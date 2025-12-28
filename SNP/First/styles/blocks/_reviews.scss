@@ -13,14 +13,27 @@
     display: flex;
     flex-direction: row;
     gap: 30px;
+    max-width: 1170px;
+    width: 100%;
     
     @include laptop {
       gap: 18px;
+      max-width: 918px;
+      width: 100%;
+    }
+    
+    @media (width <= 750px) {
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 707px;
     }
     
     @include mobile {
       flex-direction: column;
       gap: 18px;
+      max-width: 318px;
+      width: 100%;
     }
     
     &__card {
@@ -36,6 +49,14 @@
       @include laptop {
         max-width: 450px;
         min-height: 841px;
+      }
+      
+      @media (width <= 750px) {
+        max-width: 707px;
+        height: auto;
+        min-height: auto;
+        padding: 30px;
+        border-radius: 30px;
       }
       
       @include mobile {
