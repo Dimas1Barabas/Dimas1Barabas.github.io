@@ -10,6 +10,13 @@
     }
   }
   
+  @media (width <= 480px) {
+    border-radius: 25px;
+    &:has(.mobile) {
+      display: none;
+    }
+  }
+  
   @include mobile {
     border-radius: 20px;
     &:has(.mobile) {

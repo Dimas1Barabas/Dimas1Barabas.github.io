@@ -46,6 +46,7 @@
   max-width: var(--container-width-desktop);
   width: 100%;
   padding-inline: var(--padding-desktop);
+  scroll-margin-top: 88px;
   
   @include laptop {
     max-width: var(--container-width-laptop);
@@ -70,6 +71,10 @@
   justify-content: center;
   gap: 30px;
   
+  @media (width <= 580px) {
+    gap: 23px;
+  }
+  
   @include mobile {
     gap: 20px;
   }
@@ -80,8 +85,24 @@
     text-align: center;
     color: var(--color-black);
     
+    @media (width <= 580px) {
+      font-size: 40px;
+      line-height: 118%;
+    }
+    
+    @media (width <= 420px) {
+      @include m-H2;
+    }
+    
     @include mobile {
       @include m-H2;
+    }
+    
+    
+    @media (width <= 357px) {
+      font-size: 30px;
+      line-height: 110%;
+      letter-spacing: 0.02em;
     }
   }
   
@@ -91,9 +112,20 @@
     text-align: center;
     color: var(--color-gray-300);
     
-    @include mobile {
+    @media (width <= 580px) {
+      font-size: 17px;
+    }
+    
+    @media (width <= 390px) {
       @include m-p-normal;
+    }
+    
+    @include mobile {
       max-width: 318px;
+    }
+    
+    @media (width <= 357px) {
+      font-size: 12px;
     }
   }
 }

@@ -9,7 +9,12 @@
     justify-content: center;
     gap: 30px;
     max-width: 771px;
-    min-height: 370px;
+    
+    @media (width <= 500px) {
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
     
     @media (width <= 400px) {
       gap: 10px;
@@ -19,7 +24,6 @@
       flex-direction: column;
       align-items: center;
       max-width: 291px;
-      min-height: 285px;
     }
     
     &__img {
@@ -28,10 +32,10 @@
       align-items: center;
       width: 50%;
       max-width: 370px;
-      min-height: 370px;
       
-      @media (width <= 400px) {
-        max-width: 130px;
+      @media (width <= 500px) {
+        width: auto;
+        max-width: 300px;
       }
       
       @include mobile {
@@ -42,8 +46,8 @@
       & > img {
         border-radius: 50px;
         
-        @media (width <= 550px) {
-          border-radius: 50%;
+        @media (width <= 500px) {
+          border-radius: 30px;
         }
         
         @include mobile {
@@ -62,6 +66,12 @@
       max-width: 371px;
       min-height: 162px;
       
+      @media (width <= 500px) {
+        width: auto;
+        align-items: center;
+        text-align: center;
+      }
+      
       @include mobile {
         width: 100%;
         text-align: center;
@@ -72,9 +82,14 @@
       .contacts-body {
         
         &__title {
-          hyphens: auto;
           @include H3;
           color: var(--color-black);
+          
+          @media (width <= 750px) {
+            font-weight: 500;
+            font-size: 29px;
+            line-height: 121%;
+          }
           
           @include mobile {
             @include m-H3;
@@ -82,9 +97,12 @@
         }
         
         &__description {
-          hyphens: auto;
           @include p-normal;
           color: var(--color-gray-300);
+          
+          @media (width <= 750px) {
+            font-size: 18px;
+          }
           
           @include mobile {
             @include m-p-normal;

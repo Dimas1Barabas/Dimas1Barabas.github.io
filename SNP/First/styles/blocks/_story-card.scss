@@ -67,8 +67,16 @@
         @include m-p-normal;
       }
       
-      & > span {
-        white-space: pre;
+      &-list {
+        @include p-normal;
+        
+        @include mobile {
+          @include m-p-normal;
+        }
+        
+        & > li {
+          white-space: pre;
+        }
       }
     }
   }

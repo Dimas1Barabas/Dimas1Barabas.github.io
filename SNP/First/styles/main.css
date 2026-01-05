@@ -283,6 +283,7 @@ button {
   max-width: var(--container-width-desktop);
   width: 100%;
   padding-inline: var(--padding-desktop);
+  scroll-margin-top: 88px;
 }
 @media (width <= 64rem) {
   .container {
@@ -308,6 +309,11 @@ button {
   justify-content: center;
   gap: 30px;
 }
+@media (width <= 580px) {
+  .header-container {
+    gap: 23px;
+  }
+}
 @media (width <= 22.5rem) {
   .header-container {
     gap: 20px;
@@ -322,12 +328,34 @@ button {
   text-align: center;
   color: var(--color-black);
 }
+@media (width <= 580px) {
+  .header-container__title {
+    font-size: 40px;
+    line-height: 118%;
+  }
+}
+@media (width <= 420px) {
+  .header-container__title {
+    font-family: "Roboto-Bold", sans-serif;
+    font-weight: 700;
+    font-size: 34px;
+    line-height: 112%;
+    letter-spacing: 0.02em;
+  }
+}
 @media (width <= 22.5rem) {
   .header-container__title {
     font-family: "Roboto-Bold", sans-serif;
     font-weight: 700;
     font-size: 34px;
     line-height: 112%;
+    letter-spacing: 0.02em;
+  }
+}
+@media (width <= 357px) {
+  .header-container__title {
+    font-size: 30px;
+    line-height: 110%;
     letter-spacing: 0.02em;
   }
 }
@@ -340,13 +368,27 @@ button {
   text-align: center;
   color: var(--color-gray-300);
 }
-@media (width <= 22.5rem) {
+@media (width <= 580px) {
+  .header-container__description {
+    font-size: 17px;
+  }
+}
+@media (width <= 390px) {
   .header-container__description {
     font-family: "Roboto-Regular", sans-serif;
     font-weight: 400;
     font-size: 16px;
     line-height: 142%;
+  }
+}
+@media (width <= 22.5rem) {
+  .header-container__description {
     max-width: 318px;
+  }
+}
+@media (width <= 357px) {
+  .header-container__description {
+    font-size: 12px;
   }
 }
 
@@ -439,7 +481,7 @@ a[class] {
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  max-width: 1054px;
+  max-width: 1282px;
   padding: 0 57px;
 }
 @media (width <= 64rem) {
@@ -1210,6 +1252,7 @@ a[class] {
   min-height: 152px;
   max-width: 100%;
   max-height: 300px;
+  width: 100%;
   padding: 20px;
   background-color: var(--color-beige-100);
   border: 1px solid var(--color-beige-200);
@@ -1560,6 +1603,16 @@ a[class] {
   flex-direction: column;
   gap: 30px;
 }
+@media (width <= 580px) {
+  .travel-photos-body {
+    gap: 20px;
+  }
+}
+@media (width <= 480px) {
+  .travel-photos-body {
+    gap: 18px;
+  }
+}
 @media (width <= 22.5rem) {
   .travel-photos-body {
     gap: 18px;
@@ -1577,11 +1630,29 @@ a[class] {
     gap: 20px;
   }
 }
+@media (width <= 580px) {
+  .travel-photos-body__row {
+    gap: 12px;
+    grid-template-rows: repeat(1, 200px);
+  }
+}
+@media (width <= 480px) {
+  .travel-photos-body__row {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(1, 110px);
+    gap: 10px;
+  }
+}
 @media (width <= 22.5rem) {
   .travel-photos-body__row {
     grid-template-columns: repeat(2, 1fr);
     grid-template-rows: repeat(1, 110px);
     gap: 10px;
+  }
+}
+@media (width <= 480px) {
+  .travel-photos-body__row-mobile-spec {
+    gap: 18px;
   }
 }
 @media (width <= 22.5rem) {
@@ -1598,6 +1669,17 @@ a[class] {
     grid-template-columns: repeat(4, 1fr);
   }
 }
+@media (width <= 580px) {
+  .travel-photos-body__row-col5 {
+    grid-template-rows: repeat(1, 200px);
+  }
+}
+@media (width <= 480px) {
+  .travel-photos-body__row-col5 {
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(1, 110px);
+  }
+}
 @media (width <= 22.5rem) {
   .travel-photos-body__row-col5 {
     grid-template-columns: repeat(3, 1fr);
@@ -1611,6 +1693,14 @@ a[class] {
 }
 @media (width <= 64rem) {
   .travel-photo:has(.laptop) {
+    display: none;
+  }
+}
+@media (width <= 480px) {
+  .travel-photo {
+    border-radius: 25px;
+  }
+  .travel-photo:has(.mobile) {
     display: none;
   }
 }
@@ -1811,7 +1901,21 @@ a[class] {
     line-height: 142%;
   }
 }
-.story-card-content__description > span {
+.story-card-content__description-list {
+  font-family: "Roboto-Regular", sans-serif;
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 142%;
+}
+@media (width <= 22.5rem) {
+  .story-card-content__description-list {
+    font-family: "Roboto-Regular", sans-serif;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 142%;
+  }
+}
+.story-card-content__description-list > li {
   white-space: pre;
 }
 .story-card-links {
@@ -1923,7 +2027,13 @@ a[class] {
   justify-content: center;
   gap: 30px;
   max-width: 771px;
-  min-height: 370px;
+}
+@media (width <= 500px) {
+  .contacts-wrapper {
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
 }
 @media (width <= 400px) {
   .contacts-wrapper {
@@ -1935,7 +2045,6 @@ a[class] {
     flex-direction: column;
     align-items: center;
     max-width: 291px;
-    min-height: 285px;
   }
 }
 .contacts-wrapper__img {
@@ -1944,11 +2053,11 @@ a[class] {
   align-items: center;
   width: 50%;
   max-width: 370px;
-  min-height: 370px;
 }
-@media (width <= 400px) {
+@media (width <= 500px) {
   .contacts-wrapper__img {
-    max-width: 130px;
+    width: auto;
+    max-width: 300px;
   }
 }
 @media (width <= 22.5rem) {
@@ -1960,9 +2069,9 @@ a[class] {
 .contacts-wrapper__img > img {
   border-radius: 50px;
 }
-@media (width <= 550px) {
+@media (width <= 500px) {
   .contacts-wrapper__img > img {
-    border-radius: 50%;
+    border-radius: 30px;
   }
 }
 @media (width <= 22.5rem) {
@@ -1980,6 +2089,13 @@ a[class] {
   max-width: 371px;
   min-height: 162px;
 }
+@media (width <= 500px) {
+  .contacts-wrapper__body {
+    width: auto;
+    align-items: center;
+    text-align: center;
+  }
+}
 @media (width <= 22.5rem) {
   .contacts-wrapper__body {
     width: 100%;
@@ -1989,12 +2105,18 @@ a[class] {
   }
 }
 .contacts-wrapper__body .contacts-body__title {
-  hyphens: auto;
   font-family: "Roboto-Medium", sans-serif;
   font-weight: 500;
   font-size: 35px;
   line-height: 122%;
   color: var(--color-black);
+}
+@media (width <= 750px) {
+  .contacts-wrapper__body .contacts-body__title {
+    font-weight: 500;
+    font-size: 29px;
+    line-height: 121%;
+  }
 }
 @media (width <= 22.5rem) {
   .contacts-wrapper__body .contacts-body__title {
@@ -2006,12 +2128,16 @@ a[class] {
   }
 }
 .contacts-wrapper__body .contacts-body__description {
-  hyphens: auto;
   font-family: "Roboto-Regular", sans-serif;
   font-weight: 400;
   font-size: 20px;
   line-height: 142%;
   color: var(--color-gray-300);
+}
+@media (width <= 750px) {
+  .contacts-wrapper__body .contacts-body__description {
+    font-size: 18px;
+  }
 }
 @media (width <= 22.5rem) {
   .contacts-wrapper__body .contacts-body__description {

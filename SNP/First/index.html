@@ -37,7 +37,7 @@
         <ul class="header-wrapper__menu-list">
           <li class="header-wrapper__item">
             <a
-              href="#tures"
+              href="#tours"
               class="header-wrapper__link"
             >
               Туры
@@ -82,13 +82,13 @@
         <p class="hero-wrapper__description">
           Идейные соображения высшего порядка, а также рамки и место обучения кадров
         </p>
-        <button class="hero-wrapper__search-button" onclick="window.location.href='#tures'">
+        <button class="hero-wrapper__search-button" onclick="window.location.href='#tours'">
           Найти тур
         </button>
       </div>
     </section>
     
-    <section class="choose container" id="tures" aria-labelledby="choose-title" data-js-tabs>
+    <section class="choose container" id="tours" aria-labelledby="choose-title" data-js-tabs>
       <header class="choose-header header-container">
         <h2 class="choose-header__title header-container__title" id="choose-title">Выбери свой тур</h2>
         <div
@@ -451,7 +451,7 @@
         </p>
       </header>
       <div class="collect-body">
-        <form onsubmit="event.preventDefault(); window.location.href='#tures'" class="collect-form" id="form-create-tour">
+        <form onsubmit="event.preventDefault(); window.location.href='#tours'" class="collect-form" id="form-create-tour">
           <div class="collect-form__col field">
             <label
               for="name"
@@ -578,12 +578,12 @@
                 <input
                   type="radio"
                   class="field__input-set-wrap-radio"
-                  id=">18"
+                  id="adult-yes"
                   name="radio"
                   required
                 >
                 <label
-                  for=">18"
+                  for="adult-yes"
                   class="field__label"
                 >
                   Да
@@ -593,11 +593,11 @@
                 <input
                   type="radio"
                   class="field__input-set-wrap-radio"
-                  id="<18"
+                  id="adult-no"
                   name="radio"
                 >
                 <label
-                  for="<18"
+                  for="adult-no"
                   class="field__label"
                 >
                   Нет
@@ -810,12 +810,12 @@
               <p class="story-card-content__description">
                 Идейные соображения высшего порядка, а также рамки и место
                 обучения кадров обеспечивает широкому кругу (специалистов) участие
-                в формировании новых предложений: <br><br>
-<!--                расстояние между больше похоже на br
-                    Нужно ли делать списком ?-->
-                <span>  &bull;   вкусная еда</span><br>
-                <span>  &bull;   дешевый транспорт</span><br>
-                <span>  &bull;   красивый город.</span>
+                в формировании новых предложений:
+                <ul class="story-card-content__description-list">
+                  <li>  &bull;   вкусная еда</li>
+                  <li>  &bull;   дешевый транспорт</li>
+                  <li>  &bull;   красивый город.</li>
+                </ul>
               </p>
             </div>
             <div class="story-card-links">
