@@ -1,22 +1,29 @@
 import {useState} from 'react';
 import {
-  type AppSate,
+  type AppSate, createAppSelector,
   useAppDispatch,
   useAppSelector,
-  type User,
+  type User, type UserId,
   type UserRemoveSelectedAction,
   type UserSelectedAction
 } from './store.ts';
 
-const selectSortedUsers = (state: AppSate, sort: 'ask' | 'desc') => state.users.ids
-    .map(id => state.users.entities[id])
-    .sort((a, b) => {
-      if(sort === 'ask') {
-        return a.name.localeCompare(b.name);
-      } else {
-        return b.name.localeCompare(a.name);
-      }
-    })
+const selectSortedUsers =
+  createAppSelector(
+    (state: AppSate) => state.users.ids,
+    (state: AppSate) => state.users.entities,
+    (_: AppSate, sort: 'asc' | 'desc') => sort,
+    (ids, entities, sort) =>
+      ids
+        .map(id => entities[id])
+        .sort((a, b) => {
+          if(sort === 'asc') {
+            return a.name.localeCompare(b.name);
+          } else {
+            return b.name.localeCompare(a.name);
+          }
+        })
+  )
 
 const selectSelectedUser = (state: AppSate) =>
   state.users.selectedUserId
@@ -26,7 +33,7 @@ const selectSelectedUser = (state: AppSate) =>
 
 
 export function UserList() {
-  const [sortType, setSortType] = useState<'ask' | 'desc'>('ask')
+  const [sortType, setSortType] = useState<'asc' | 'desc'>('asc')
   
   const sortedUsers = useAppSelector((state) =>
     selectSortedUsers(state, sortType)
@@ -39,7 +46,7 @@ export function UserList() {
       {!selectedUser ? (
         <div>
           <div>
-            <button onClick={() => setSortType('ask')}>ASK</button>
+            <button onClick={() => setSortType('asc')}>ASC</button>
             <button onClick={() => setSortType('desc')}>DESK</button>
           </div>
           <ul>
@@ -71,7 +78,8 @@ function UserListItem({ user }: { user: User }) {
   )
 }
 
-function SelectedUser({user}: { user: User }){
+function SelectedUser({ userId }: { userId: UserId }){
+  const user = useAppSelector((state) => state.users.entities[userId])
   const dispatch = useAppDispatch();
   
   const handleBackButtonClick = () => {
