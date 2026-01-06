@@ -1,33 +1,48 @@
 import './App.css'
-import {store} from './store.ts';
-import {useEffect, useReducer} from 'react';
+import {
+  type CounterId,
+  type DecrementAction,
+  type IncrementAction,
+  selectCounter,
+  useAppSelector
+} from './store.ts';
+import {useDispatch} from 'react-redux';
+import {UserList} from './UserList.tsx';
 
 function App() {
-  const [_, forceUpdate] = useReducer((x) => x + 1, 0)
-  
-  useEffect(() => {
-    const unsubsribe = store.subscribe(() => {
-      forceUpdate()
-    });
-    
-    return unsubsribe
-  }, []);
-  // TODO 45
   
   return (
     <div className="card">
-      counter {store.getState().counters}
-      <button onClick={() =>
-        store.dispatch({ type: 'increment' })
-      }>
+      <Counter counterId={'first'}/>
+      <Counter counterId={'second'}/>
+      
+      <UserList />
+    </div>
+  )
+}
+
+export function Counter({ counterId }: {counterId: CounterId}) {
+  const dispatch = useDispatch()
+  const counterState = useAppSelector(state => selectCounter(state, counterId))
+  
+  return (
+    <>
+      counter {counterState?.counter}
+      <button
+        onClick={() =>
+        dispatch({ type: 'increment', payload: { counterId } } satisfies IncrementAction)
+        }
+      >
         Increment
       </button>
-      <button onClick={() =>
-        store.dispatch({ type: 'decrement' })
-      }>
+      <button
+        onClick={() =>
+        dispatch({ type: 'decrement', payload: { counterId } } satisfies DecrementAction)
+        }
+      >
         Decrement
       </button>
-    </div>
+    </>
   )
 }
 
