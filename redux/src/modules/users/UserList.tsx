@@ -1,20 +1,34 @@
-import {memo, useState} from 'react';
+import {memo, useEffect, useState} from 'react';
 import {
   useAppDispatch,
-  useAppSelector
+  useAppSelector, useAppStore
 } from '../../store.ts';
 import {
   type UserId, usersSlice
 } from './users.slice.ts';
+import {useDispatch} from 'react-redux';
+import {fetchUsers} from './model/fetch-users.ts';
 
 export function UserList() {
+  const dispatch = useDispatch()
+  const appStore = useAppStore();
   const [sortType, setSortType] = useState<'asc' | 'desc'>('asc')
+  
+  const isPending = useAppSelector(usersSlice.selectors.selectIsFetchingUsersPending)
+    fetchUsers(appStore.dispatch, appStore.getState)
+  useEffect(() => {
+
+  }, [dispatch, appStore]);
   
   const sortedUsers = useAppSelector((state) =>
     usersSlice.selectors.selectSortedUsers(state, sortType)
   )
   
   const selectedUserId = useAppSelector(usersSlice.selectors.selectSelectedUserId)
+  
+  if(isPending) return (
+    <div>Loading...</div>
+  )
   
   return (
     <div>

@@ -1,0 +1,39 @@
+{
+  "users": [
+    {
+      "id": "user1",
+      "name": "John",
+      "description": "first user"
+    },
+    {
+      "id": "user2",
+      "name": "ref",
+      "description": "second user"
+    },
+    {
+      "id": "user3",
+      "name": "alex",
+      "description": "3 user"
+    },
+    {
+      "id": "user4",
+      "name": "shdhxgssf345676",
+      "description": "4 user"
+    },
+    {
+      "id": "user5",
+      "name": "sgsdgrsthge543",
+      "description": "5 user"
+    },
+    {
+      "id": "user6",
+      "name": "aafrawefadlex",
+      "description": "6 user"
+    },
+    {
+      "id": "user7",
+      "name": "gdfg",
+      "description": "7 user"
+    }
+  ]
+}
