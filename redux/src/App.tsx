@@ -1,13 +1,6 @@
 import './App.css'
-import {
-  type CounterId,
-  type DecrementAction,
-  type IncrementAction,
-  selectCounter,
-  useAppSelector
-} from './store.ts';
-import {useDispatch} from 'react-redux';
-import {UserList} from './UserList.tsx';
+import {UserList} from './modules/users/UserList.tsx';
+import {Counter} from './modules/counters/counters.tsx';
 
 function App() {
   
@@ -15,34 +8,8 @@ function App() {
     <div className="card">
       <Counter counterId={'first'}/>
       <Counter counterId={'second'}/>
-      
       <UserList />
     </div>
-  )
-}
-
-export function Counter({ counterId }: {counterId: CounterId}) {
-  const dispatch = useDispatch()
-  const counterState = useAppSelector(state => selectCounter(state, counterId))
-  
-  return (
-    <>
-      counter {counterState?.counter}
-      <button
-        onClick={() =>
-        dispatch({ type: 'increment', payload: { counterId } } satisfies IncrementAction)
-        }
-      >
-        Increment
-      </button>
-      <button
-        onClick={() =>
-        dispatch({ type: 'decrement', payload: { counterId } } satisfies DecrementAction)
-        }
-      >
-        Decrement
-      </button>
-    </>
   )
 }
 
