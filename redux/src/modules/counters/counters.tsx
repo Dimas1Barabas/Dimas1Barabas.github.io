@@ -3,7 +3,7 @@ import {useDispatch} from 'react-redux';
 import {useAppSelector} from '../../store.ts';
 import {bindActionCreators} from '@reduxjs/toolkit';
 
-export function Counter({ counterId }: {counterId: CounterId}) {
+export function Counter({ counterId = 'first' }: {counterId: CounterId}) {
   const dispatch = useDispatch()
   const counterState = useAppSelector(state =>
     selectCounter(state, counterId)

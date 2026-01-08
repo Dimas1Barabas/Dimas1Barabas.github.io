@@ -1,8 +1,9 @@
+import {type AppThunk} from '../../../store.ts';
 import {usersSlice} from '../users.slice.ts';
-import {api} from '../../../shared/api.ts';
-import {type AppDispatch, type AppSate} from '../../../store.ts';
 
-export const fetchUsers = (dispatch: AppDispatch, getState: () => AppSate) => {
+export const fetchUsers =
+  (): AppThunk =>
+  (dispatch, getState, { api }) => {
   const isIdle = usersSlice.selectors.selectIsFetchingUsersIdle(
     getState()
   )
