@@ -1,4 +1,6 @@
-import {createSelector, createSlice, type PayloadAction} from '@reduxjs/toolkit';
+import {fetchUsers} from './model/fetch-users.ts';
+import {createSlice, type ExtraArgument} from '../../shared/redux.ts';
+import type {PayloadAction} from '@reduxjs/toolkit';
 
 export type UserId = string;
 
@@ -13,6 +15,7 @@ type UserState = {
   ids: UserId[];
   fetchingUsersStatus: 'idle' | "pending" | "success" | "failed";
   fetchUserStatus: 'idle' | "pending" | "success" | "failed";
+  deleteUserStatus: 'idle' | "pending" | "success" | "failed";
 }
 
 export const initialUsersList: User[] = Array.from(
@@ -29,6 +32,7 @@ const initialUsersState: UserState = {
   ids: [],
   fetchingUsersStatus: 'idle',
   fetchUserStatus: 'idle',
+  deleteUserStatus: 'idle',
 }
 
 export const usersSlice = createSlice({
@@ -59,40 +63,77 @@ export const usersSlice = createSlice({
     selectIsFetchingUsersIdle: (state) => state.fetchingUsersStatus === 'idle',
     
     selectIsFetchUserPending: (state) => state.fetchUserStatus === 'pending',
+    
+    selectIsDeleteUserPending: (state) => state.fetchUserStatus === 'pending',
   },
-  reducers: {
-    fetchUsersPending: (state) => {
-      state.fetchingUsersStatus = 'pending';
-    },
-    
-    fetchUsersSuccess: (state, action: PayloadAction<{users: User[]}>) => {
-      const {users} = action.payload
-      
-      state.fetchingUsersStatus = 'success';
-      state.entities = users.reduce((acc, user) => {
-        acc[user.id] = user;
-        return acc
-      }, {} as Record<UserId, User>)
-      state.ids = users.map((user) => user.id)
-    },
-    
-    fetchUsersFailed: (state) => {
-      state.fetchingUsersStatus = 'failed';
-    },
-    
-    fetchUserPending: (state) => {
-      state.fetchUserStatus = 'pending';
-    },
-    
-    fetchUserSuccess: (state, action: PayloadAction<{user: User}>) => {
-      const { user } = action.payload;
-      
-      state.fetchUserStatus = 'success';
-      state.entities[user.id] = user;
-    },
-    
-    fetchUserFailed: (state) => {
-      state.fetchUserStatus = 'failed';
-    }
-  }
+  reducers: (creator) => {{
+  
+    fetchUsers: creator.asyncThunk<User, {userId: UserId}, {extra: ExtraArgument}>(
+      (params, thunkAPI) => {
+        return thunkAPI.extra.api.getUser(params.userId)
+      }, {
+        pending: (state) => {
+          state.fetchUserStatus = 'pending';
+        },
+        fulfilled: (state, action) => {
+          const user = action.payload
+          
+          state.fetchUserStatus = 'success';
+          state.entities[user.id] = user
+        },
+        rejected: (state) => {
+          state.fetchUserStatus = 'failed';
+        },
+      }
+    )
+/*
+
+
+fetchUserPending: (state) => {
+state.fetchUserStatus = 'pending';
+},
+
+fetchUserSuccess: (state, action: PayloadAction<{user: User}>) => {
+const { user } = action.payload;
+
+state.fetchUserStatus = 'success';
+state.entities[user.id] = user;
+},
+
+fetchUserFailed: (state) => {
+state.fetchUserStatus = 'failed';
+},
+
+deleteUserPending: (state) => {
+state.fetchUserStatus = 'pending';
+},
+
+deleteUserSuccess: (state, action: PayloadAction<{ userId: UserId }>) => {
+state.fetchUserStatus = 'success';
+
+delete state.entities[action.payload.userId];
+state.ids = state.ids.filter(id => id !== action.payload.userId);
+},
+
+deleteUserFailed: (state) => {
+state.fetchUserStatus = 'failed';
+}
+*/
+}},
+extraReducers: builder => {
+builder.addCase(fetchUsers.pending, (state) => {
+state.fetchUserStatus = 'pending';
+}),
+builder.addCase(fetchUsers.fulfilled, (state, action) => {
+state.fetchUserStatus = 'success';
+const users = action.payload
+
+state.entities = users.reduce((acc, user) => {
+  acc[user.id] = user
+  return acc
+}, {} as Record<UserId, User>);
+state.ids = users.map((user) => user.id)
+}),
+builder.addCase(fetchUsers.rejected, (state, action) => {})
+}
 })

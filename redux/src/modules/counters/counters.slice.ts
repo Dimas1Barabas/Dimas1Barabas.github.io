@@ -1,4 +1,4 @@
-import type {AppSate} from '../../store.ts';
+import type {AppSate} from '../../app/store.ts';
 import {createAction, createReducer} from '@reduxjs/toolkit';
 
 type CounterState = {

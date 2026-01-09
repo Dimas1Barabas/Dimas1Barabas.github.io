@@ -1,24 +1,17 @@
-import {memo, useEffect, useState} from 'react';
+import {memo, useState} from 'react';
 import {
   useAppDispatch,
-  useAppSelector, useAppStore
-} from '../../store.ts';
+  useAppSelector
+} from '../../app/store.ts';
 import {
   type UserId, usersSlice
 } from './users.slice.ts';
-import {fetchUsers} from './model/fetch-users.ts';
 import {useNavigate} from 'react-router-dom';
 
 export function UserList() {
-  const dispatch = useAppDispatch()
-  const appStore = useAppStore();
   const [sortType, setSortType] = useState<'asc' | 'desc'>('asc')
   
   const isPending = useAppSelector(usersSlice.selectors.selectIsFetchingUsersPending)
-  
-  useEffect(() => {
-    dispatch(fetchUsers())
-  }, [dispatch, appStore]);
   
   const sortedUsers = useAppSelector((state) =>
     usersSlice.selectors.selectSortedUsers(state, sortType)
@@ -59,7 +52,7 @@ const UserListItem = memo(function UserListItem({
   }
   
   if(!user) {
-    return null //TODO 59
+    return null
   }
   
   return (

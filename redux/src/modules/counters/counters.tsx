@@ -1,6 +1,6 @@
 import {type CounterId, decrementAction, incrementAction, selectCounter} from './counters.slice.ts';
 import {useDispatch} from 'react-redux';
-import {useAppSelector} from '../../store.ts';
+import {useAppSelector} from '../../app/store.ts';
 import {bindActionCreators} from '@reduxjs/toolkit';
 
 export function Counter({ counterId = 'first' }: {counterId: CounterId}) {
