@@ -3,8 +3,7 @@ import {UserList} from '../modules/users/UserList.tsx';
 import {Counter} from '../modules/counters/counters.tsx';
 import {UserInfo} from '../modules/users/user-info.tsx';
 import {store} from './store.ts';
-import {fetchUsers} from '../modules/users/model/fetch-users.ts';
-import {fetchUser} from '../modules/users/model/fetch-user.ts';
+import {usersApi} from '../modules/users/api.ts';
 
 const loadStore = () => new Promise(resolve => {
   setTimeout(() => resolve(store), 0)
@@ -33,8 +32,8 @@ v        </header>
          <UserList />
         ),
         loader: () => {
-          loadStore().then(() => {
-            store.dispatch(fetchUsers())
+          loadStore().then(async () => {
+            store.dispatch(usersApi.util.prefetch("getUsers", undefined, {}))
           })
           return null
         }
@@ -46,7 +45,7 @@ v        </header>
         ),
         loader: ({params}) => {
           loadStore().then(() => {
-            store.dispatch(fetchUser(params.id ?? ""))
+            store.dispatch(usersApi.util.prefetch('getUser', params.id ?? '', {}))
           })
           
           return null

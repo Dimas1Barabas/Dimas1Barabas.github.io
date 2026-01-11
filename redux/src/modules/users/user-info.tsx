@@ -1,34 +1,32 @@
-import {type UserId, usersSlice} from './users.slice.ts';
-import {useAppDispatch, useAppSelector} from '../../app/store.ts';
+import {type UserId} from './users.slice.ts';
 import {useNavigate, useParams} from 'react-router-dom';
-import {useEffect} from 'react';
-import {fetchUser} from './model/fetch-user.ts';
+import {usersApi} from './api.ts';
+import {skipToken} from '@reduxjs/toolkit/query';
+import {useAppSelector} from '../../shared/redux.ts';
 import {deleteUser} from './model/delete-user.ts';
 
 export function UserInfo() {
-  const dispatch = useAppDispatch()
+  const dispatch = useAppDispatch();
   const navigate = useNavigate()
-  const {id = ""} = useParams<{id: UserId}>()
-  const isPending = useAppSelector(
-    usersSlice.selectors.selectIsFetchUserPending
-  )
+  const {id} = useParams<{id: UserId}>()
+  const {data: user, isLoading: isLoadingUser} = usersApi.useGetUserQuery(id ?? skipToken)
   
-  const isDeletePending = useAppSelector(
-    usersSlice.selectors.selectIsDeleteUserPending
-  )
-  const user: any = useAppSelector((state) =>
-    usersSlice.selectors.selectUserById(state, id)
+  const  isLoadingDelete = useAppSelector((state) =>
+    usersApi.endpoints.deleteUser.select(id ?? skipToken)(state).isLoading
   )
   
   const handleBackButtonClick = () => {
     navigate('..', {relative: 'path'})
   }
   
-  const handleDeletebuttonClick = () => {
-    dispatch(deleteUser(id)).then(() => navigate('..', {relative: 'path'}))
+  const handleDeleteButtonClick = async () => {
+    if(!id) return
+    
+    await dispatch(deleteUser(id))
+    navigate('..', {relative: 'path'})
   }
   
-  if(isPending || !user) {
+  if(isLoadingUser || !user) {
     return <div>Loading...</div>
   }
   
@@ -38,8 +36,8 @@ export function UserInfo() {
       <h2>{user.name}</h2>
       <p>{user.description}</p>
       <button
-        disabled={isDeletePending}
-        onClick={handleDeletebuttonClick}
+        disabled={isLoadingDelete}
+        onClick={handleDeleteButtonClick}
       >
         Delete
       </button>
