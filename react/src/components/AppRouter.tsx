@@ -1,8 +1,9 @@
 import {Redirect, Route, Routes} from 'react-router-dom';
 import {privateRoutes, publicRoutes, RouteName} from '../router';
+import {useTypedSelector} from '../hooks/useTypedSelector.ts';
 
 const AppRouter = () => {
-  const auth = true
+  const {isAuth} = useTypedSelector(state => state.auth)
   
   return (
     auth
