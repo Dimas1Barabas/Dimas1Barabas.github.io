@@ -3,7 +3,7 @@
   justify-content: center;
   align-items: center;
   column-gap: 12px;
-  height: var(--input-height);
+  min-height: var(--input-height);
   max-width: 100%;
   width: 100%;
   overflow: hidden;
@@ -79,6 +79,9 @@
 .todo-item__label {
   color: var(--color-accent);
   width: 60%;
+  height: auto;
+  padding-block: 10px;
+  overflow-wrap: break-word;
   overflow: hidden;
 }
 

@@ -191,7 +191,7 @@ class Todo {
             <button
               class="todo-item__edit-button"
               type="button"
-              title="Редактировать"
+              title="Изменить"
               data-js-todo-item-edit-button="${id}"
             >
               Изменить
@@ -201,7 +201,7 @@ class Todo {
             class="todo-item__delete-button"
             type="button"
             aria-label="Delete"
-            title="Delete"
+            title="Удалить"
             data-js-todo-item-delete-button
           >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -310,7 +310,7 @@ class Todo {
   }
   
   onDeleteAllButtonClick = () => {
-    const isConfirmed = confirm('Are you sure you want to delete all?')
+    const isConfirmed = confirm('Вы точно хотите удалить все задачи?')
     if (isConfirmed) {
       this.state.filteredItems = null
       this.searchTaskInputElement.value = ''
