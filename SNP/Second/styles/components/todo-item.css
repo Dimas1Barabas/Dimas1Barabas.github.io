@@ -5,6 +5,8 @@
   column-gap: 12px;
   height: var(--input-height);
   max-width: 100%;
+  width: 100%;
+  overflow: hidden;
   padding-left: 10px;
   border: var(--border);
   border-radius: var(--border-radius);
