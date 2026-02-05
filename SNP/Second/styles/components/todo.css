@@ -9,8 +9,16 @@
   border: var(--border);
   border-radius: var(--border-radius);
   
+  @media (width < 850px) {
+    padding: 20px;
+  }
+  
   @media (width < 520px) {
     padding: 10px;
+  }
+  
+  @media (width < 420px) {
+    padding: 5px;
   }
 }
 
@@ -84,6 +92,10 @@
   width: 100%;
   display: grid;
   row-gap: var(--todoListRowGap);
+  
+  @media (width < 520px) {
+    row-gap: 4px;
+  }
 }
 
 .todo__empty-message {

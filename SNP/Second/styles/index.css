@@ -15,7 +15,6 @@
   color: var(--color-accent);
   cursor: pointer;
   border-radius: 4px;
-  margin-right: 8px;
 }
 
 .filter-button.active,
@@ -26,7 +25,16 @@
 }
 
 .todo__filters {
-  margin: 10px 0;
+  margin-left: 5px;
+  margin-right: 5px;
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  
+  @media (width < 520px) {
+    gap: 5px;
+    flex-direction: column;
+  }
 }
 
 
@@ -39,6 +47,14 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  
+  @media (width < 520px) {
+    gap: 5px;
+  }
+  
+  @media (width < 420px) {
+    gap: 2px;
+  }
 }
 
 .todo-item__edit-button {
@@ -52,8 +68,12 @@
   border-radius: var(--border-radius);
   user-select: none;
   
-  @media (width < 520px) {
+  @media (width < 620px) {
     padding: 10px;
+  }
+  
+  @media (width < 420px) {
+    padding: 0;
   }
   
   &:hover {

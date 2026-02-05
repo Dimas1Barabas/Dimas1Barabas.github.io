@@ -7,8 +7,16 @@ body {
   font-family: 'Inter', sans-serif;
   background-color: var(--color-dark-2);
   
-  @media (width < 520px) {
-    padding: 20px;
+  @media (width < 850px) {
+    padding: 40px;
+  }
+  
+  @media (width < 720px) {
+    padding: 10px;
+  }
+  
+  @media (width < 620px) {
+    padding: 5px;
   }
 }
 

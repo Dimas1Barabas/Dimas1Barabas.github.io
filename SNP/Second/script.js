@@ -222,11 +222,14 @@ class Todo {
   }
   
   addItem(title) {
-    this.state.items.push({
+    const newItem = {
       id: crypto?.randomUUID() ?? Date.now().toString(),
-      title: title,
+      title: title.trim(),
       isChecked: false,
-    })
+    }
+    
+    this.state.items.unshift(newItem)
+    
     this.saveItemsToLocalStorage()
     this.refreshFilter()
   }
@@ -257,7 +260,6 @@ class Todo {
     const newTodoItemTitle = this.newTaskInputElement.value
     if (newTodoItemTitle.trim().length > 0) {
       this.addItem(newTodoItemTitle)
-      this.resetFilter()
       this.newTaskInputElement.value = ''
       this.newTaskInputElement.focus()
     }
