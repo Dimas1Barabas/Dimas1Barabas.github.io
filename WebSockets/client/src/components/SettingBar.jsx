@@ -1,9 +1,10 @@
-import styles from '../styles/toolbar.module.scss';
+import styles from '../styles/settingsbar.module.scss';
+import '../styles/variables.scss';
 import toolState from "../store/toolState";
 
 const SettingBar = () => {
   return (
-    <div className={styles.settingBar}>
+    <div className={styles.setbar}>
       <label htmlFor="line-width">
         Толщина линии
       </label>

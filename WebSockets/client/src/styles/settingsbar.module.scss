@@ -1,0 +1,10 @@
+.setbar {
+  background-color: white;
+  display: flex;
+  align-items: center;
+  position: absolute;
+  height: var(--toolbar-height);
+  width: 100%;
+  box-shadow: 0 4px 5px gray;
+  top: var(--toolbar-height);
+}

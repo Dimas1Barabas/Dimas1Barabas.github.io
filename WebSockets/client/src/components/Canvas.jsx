@@ -1,4 +1,5 @@
 import styles from '../styles/canvas.module.scss';
+import '../styles/variables.scss';
 import Brush from '../tools/Brush.js';
 import {useEffect, useRef, useState} from 'react';
 import {observer} from "mobx-react-lite";

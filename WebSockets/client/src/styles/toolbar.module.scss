@@ -90,15 +90,3 @@
   background: url('../assets/img/save.png') no-repeat center center;
   margin-right: 10px;
 }
-
-
-.setting-bar {
-  height: var(--toolbar-height);
-  background-color: white;
-  display: flex;
-  align-items: center;
-  position: absolute;
-  width: 100%;
-  box-shadow: 0 4px 5px gray;
-  top: var(--toolbar-height);
-}

@@ -1,4 +1,5 @@
 import styles from '../styles/toolbar.module.scss';
+import '../styles/variables.scss';
 import toolState from "../store/toolState";
 import Brush from "../tools/Brush";
 import canvasState from "../store/canvasState";
