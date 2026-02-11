@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Nunito } from 'next/font/google';
 import './globals.css';
 import {Header} from '@/components/shared/header';
+import { ReactNode } from 'react';
 
 const nunito = Nunito({
   subsets: ['cyrillic'],
@@ -17,7 +18,7 @@ export const metadata: Metadata = {
 export default function RootLayout({
                                      children,
                                    }: Readonly<{
-  children: React.ReactNode;
+  children: ReactNode;
 }>) {
   return (
     <html lang="en">
