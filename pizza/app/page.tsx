@@ -43,7 +43,8 @@ export default function Home() {
                     items: [{price: 550}]
                   },
                 ]}
-               categoryId={1}
+                categoryId={1}
+                className="scroll-mt-[92px]"
               />
               <ProductsGroupList
                 title="Комбо"
@@ -134,6 +135,7 @@ export default function Home() {
                   },
                 ]}
                 categoryId={2}
+                className="scroll-mt-[92px]"
               />
               <ProductsGroupList
                 title="Закуски"
@@ -224,6 +226,7 @@ export default function Home() {
                   },
                 ]}
                 categoryId={3}
+                className="scroll-mt-[92px]"
               />
               <ProductsGroupList
                 title="Коктейли"
@@ -314,6 +317,7 @@ export default function Home() {
                   },
                 ]}
                 categoryId={4}
+                className="scroll-mt-[92px]"
               />
               <ProductsGroupList
                 title="Кофе"
@@ -404,6 +408,7 @@ export default function Home() {
                   },
                 ]}
                 categoryId={5}
+                className="scroll-mt-[92px]"
               />
               <ProductsGroupList
                 title="Напитки"
@@ -494,6 +499,7 @@ export default function Home() {
                   },
                 ]}
                 categoryId={6}
+                className="scroll-mt-[92px]"
               />
               <ProductsGroupList
                 title="Десерты"
@@ -584,6 +590,7 @@ export default function Home() {
                   },
                 ]}
                 categoryId={7}
+                className="scroll-mt-[92px]"
               />
               <ProductsGroupList
                 title="Десерты"
@@ -674,6 +681,7 @@ export default function Home() {
                   },
                 ]}
                 categoryId={8}
+                className="scroll-mt-[92px]"
               />
             </div>
             
@@ -682,7 +690,6 @@ export default function Home() {
             {/*  <span className="text-sm text-gray-400">5 из 65</span>*/}
             {/*</div>*/}
           </div>
-          //TODO 2 : 24
         </div>
       </Container>
     </>
