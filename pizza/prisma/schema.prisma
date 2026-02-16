@@ -10,8 +10,18 @@ model User {
   id Int @id @default(autoincrement())
 
   fullName String
-  email    String
+  email    String @unique
   password String
+
+  createAt DateTime @default(now())
+  updateAt DateTime @updatedAt
+}
+
+model Category {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  products Product[]
 
   createAt DateTime @default(now())
   updateAt DateTime @updatedAt
@@ -23,6 +33,93 @@ model Product {
   name     String
   imageUrl String
 
+  ingredients Ingredient[]
+  items       ProductItem[]
+
+  category   Category @relation(fields: [categoryId], references: [id])
+  categoryId Int
+
   createAt DateTime @default(now())
   updateAt DateTime @updatedAt
+}
+
+model ProductItem {
+  id Int @id @default(autoincrement())
+
+  price     Int
+  size      Int?
+  pizzaType Int?
+
+  cartItem CartItem[]
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId Int
+}
+
+model Ingredient {
+  id Int @id @default(autoincrement())
+
+  name     String
+  price    Int
+  imageUrl String
+
+  products Product[]
+  cartItem CartItem[]
+
+  createAt DateTime @default(now())
+  updateAt DateTime @updatedAt
+}
+
+model Cart {
+  id Int @id @default(autoincrement())
+
+  user   User? @relation(fields: [userId], references: [id])
+  userId Int?
+
+  items CartItem[]
+
+  token String
+
+  totalAmount Int @default(0)
+
+  createAt DateTime @default(now())
+  updateAt DateTime @updatedAt
+}
+
+model CartItem {
+  id Int @id @default(autoincrement())
+
+  cart   Cart @relation(fields: [cartId], references: [id])
+  cartId Int
+
+  productItem   ProductItem @relation(fields: [productItemId], references: [id])
+  productItemId Int
+
+  quantity Int
+
+  ingredients Ingredient[]
+
+  createAt DateTime @default(now())
+  updateAt DateTime @updatedAt
+}
+
+model Order {
+  id Int @id @default(autoincrement())
+
+  user   User? @relation(fields: [userId], references: [id])
+  userId Int
+
+  token String
+
+  totalAmount Int
+  status      OrderStatus
+  peymentId   String?
+
+  items Json
+}
+
+enum OrderStatus {
+  PENDING
+  SUCCEEDED
+  CANCELLED
 }
