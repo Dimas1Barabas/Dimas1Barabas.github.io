@@ -15,7 +15,7 @@ model User {
   role     UserRole @default(USER)
 
   provider   String?
-  providerId String? // TODO 4 07 
+  providerId String?
 
   cart             Cart?
   orders           Order[]
@@ -141,9 +141,11 @@ model VerificationCode {
   user   User @relation(fields: [userId], references: [id])
   userId Int  @unique
 
-  code String
+  code String @unique
 
   createAt DateTime @default(now())
+
+  @@unique([userId, code])
 }
 
 enum OrderStatus {
