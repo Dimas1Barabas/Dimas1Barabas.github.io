@@ -9,7 +9,7 @@ export { FilterCheckbox, type FilterCheckboxProps } from './filter-checkbox';
 export {RangeSlider} from './range-slider'
 export {CheckboxFiltersGroup} from './checkbox-filters-group';
 export { ProductsGroupList } from './products-group-list';
-// export { SearchInput } from './search-input';
+export { SearchInput } from './search-input';
 // export { PizzaImage } from './pizza-image';
 // export { ChooseProductForm } from './choose-product-form';
 // export { ChoosePizzaForm } from './choose-pizza-form';
