@@ -8,10 +8,10 @@ const randomDecimalNumber = (min: number, max: number) => {
 };
 
 const generateProductItem = ({
-                               productId,
-                               pizzaType,
-                               size,
-                             }: {
+ productId,
+ pizzaType,
+ size,
+}: {
   productId: number;
   pizzaType?: 1 | 2;
   size?: 20 | 30 | 40;
@@ -23,7 +23,7 @@ const generateProductItem = ({
     size,
   } as Prisma.ProductItemUncheckedCreateInput;
 };
-// TODO 4 25
+
 async function up() {
   await prisma.user.createMany({
     data: [
