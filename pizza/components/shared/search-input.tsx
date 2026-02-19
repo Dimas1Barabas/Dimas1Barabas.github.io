@@ -19,7 +19,7 @@ export const SearchInput: FC<Props> = ({className}) => {
   useClickAway(ref, () => {
     setFocused(false)
   })
-  
+  // TODO 5 45
   useEffect(() => {
     Api.products.search(searchQuery)
   }, [searchQuery]);
@@ -41,7 +41,6 @@ export const SearchInput: FC<Props> = ({className}) => {
           value={searchQuery}
           onChange={setSearchQuery}
         />
-        //TODO 5 45
         <div className={cn(
           'absolute w-full bg-white rounded-2xl py-2 top-14 shadow-md transition-all duration-200 invisible opacity-0 z-30',
           focused && 'visible opacity-100 top-12'
