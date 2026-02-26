@@ -119,9 +119,7 @@ class Todo {
   }
   
   filter() {
-    const itemsToFilter = [...this.state.items] 
-    
-    let filtered = itemsToFilter
+    let filtered = this.state.items
     
     if (this.state.filterType === 'active') {
       filtered = filtered.filter(item => !item.isChecked)
