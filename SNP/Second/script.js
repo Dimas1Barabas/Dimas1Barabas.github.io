@@ -321,13 +321,13 @@ class Todo {
     }
   }
   
-  onClick = ({ target }) => {
+  onDeleteItemClick = ({ target }) => {
     const deleteButton = target.closest(this.selectors.itemDeleteButton)
     if (deleteButton) {
       const itemElement = deleteButton.closest(this.selectors.item)
-      const itemCheckboxElement = itemElement.querySelector(this.selectors.itemCheckbox)
       itemElement.classList.add(this.stateClasses.isDisappearing)
-      setTimeout(() => this.deleteItem(itemCheckboxElement.id), 400)
+      
+      setTimeout(() => this.deleteItem(itemElement.dataset.jsTodoItem), 400)
     }
   }
   
@@ -347,7 +347,7 @@ class Todo {
     this.rootElement.addEventListener('blur', this.onEditInputBlur, true)
     this.rootElement.addEventListener('keydown', this.onEditInputKeydown, true)
     this.deleteAllButtonElement.addEventListener('click', this.onDeleteAllButtonClick)
-    this.listElement.addEventListener('click', this.onClick)
+    this.listElement.addEventListener('click', this.onDeleteItemClick)
     this.listElement.addEventListener('change', this.onChange)
   }
 }
