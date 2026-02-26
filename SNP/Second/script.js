@@ -88,8 +88,7 @@ class Todo {
   
   startEditing(id, title) {
     this.state.editingItemId = id
-    
-    this.refreshFilter()
+    this.render()
     
     requestAnimationFrame(() => {
       const editInput = this.rootElement.querySelector(`[data-js-todo-item-edit-input="${id}"]`)
