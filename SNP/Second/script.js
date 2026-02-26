@@ -272,14 +272,16 @@ class Todo {
   }
   
   onFilterButtonClick = ({ target }) => {
-    if (target.matches(this.selectors.filterButtons)) {
-      this.setFilter(target.dataset.jsTodoFilter)
+    const button = target.closest(this.selectors.filterButtons)
+    if (button) {
+      this.setFilter(button.dataset.jsTodoFilter)
     }
   }
   
   onEditButtonClick = ({ target }) => {
-    if (target.matches(this.selectors.itemEditButton)) {
-      const itemId = target.dataset.jsTodoItemEditButton
+    const button = target.closest(this.selectors.itemEditButton)
+    if (button) {
+      const itemId = button.dataset.jsTodoItemEditButton
       const item = this.state.items.find(item => item.id === itemId)
       if (item) {
         this.startEditing(itemId, item.title)
@@ -320,8 +322,9 @@ class Todo {
   }
   
   onClick = ({ target }) => {
-    if (target.matches(this.selectors.itemDeleteButton)) {
-      const itemElement = target.closest(this.selectors.item)
+    const deleteButton = target.closest(this.selectors.itemDeleteButton)
+    if (deleteButton) {
+      const itemElement = deleteButton.closest(this.selectors.item)
       const itemCheckboxElement = itemElement.querySelector(this.selectors.itemCheckbox)
       itemElement.classList.add(this.stateClasses.isDisappearing)
       setTimeout(() => this.deleteItem(itemCheckboxElement.id), 400)
@@ -329,8 +332,9 @@ class Todo {
   }
   
   onChange = ({ target }) => {
-    if (target.matches(this.selectors.itemCheckbox)) {
-      this.toggleCheckedState(target.id)
+    const checkbox = target.closest(this.selectors.itemCheckbox)
+    if (checkbox) {
+      this.toggleCheckedState(checkbox.id)
     }
   }
   
