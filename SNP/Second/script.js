@@ -11,7 +11,6 @@ class Todo {
     list: '[data-js-todo-list]',
     item: '[data-js-todo-item]',
     itemCheckbox: '[data-js-todo-item-checkbox]',
-    itemLabel: '[data-js-todo-item-label]',
     itemEditButton: '[data-js-todo-item-edit-button]',
     itemEditInput: '[data-js-todo-item-edit-input]',
     itemDeleteButton: '[data-js-todo-item-delete-button]',
