@@ -234,10 +234,10 @@ class Todo {
   deleteItem(id) {
     this.state.items = this.state.items.filter((item) => item.id !== id)
     if (this.state.editingItemId === id) {
-      this.stopEditing()
-    } else {
-      this.refreshFilter()
+      this.state.editingItemId = null
     }
+    
+    this.refreshFilter()
     this.saveItemsToLocalStorage()
   }
   
