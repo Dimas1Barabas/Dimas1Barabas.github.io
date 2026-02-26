@@ -108,7 +108,7 @@ class Todo {
   
   updateItemTitle(id, newTitle) {
     if (newTitle.trim().length === 0) {
-      this.stopEditing()
+      this.deleteItem(id)
       return
     }
     
