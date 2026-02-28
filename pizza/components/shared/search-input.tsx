@@ -19,7 +19,6 @@ export const SearchInput: FC<Props> = ({className}) => {
   useClickAway(ref, () => {
     setFocused(false)
   })
-  
   // TODO 5 45
   useEffect(() => {
     Api.products.search(searchQuery)
