@@ -1,0 +1,18 @@
+{
+  "name": "focus-timer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pomodoro-виджет на Svelte, собираемый в Custom Element для встраивания в Vue-приложение",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "svelte": "^5.56.8",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.0"
+  }
+}
