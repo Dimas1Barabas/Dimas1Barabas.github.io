@@ -26,6 +26,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'О проекте' },
   },
   {
+    path: '/focus',
+    name: 'focus',
+    component: () => import('@/views/FocusView.vue'),
+    meta: { title: 'Фокус' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('@/views/NotFoundView.vue'),

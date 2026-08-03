@@ -6,7 +6,16 @@ import { fileURLToPath, URL } from 'node:url'
 export default defineConfig({
   // Относительный базовый путь — чтобы сборка работала и в подпапке GitHub Pages.
   base: './',
-  plugins: [vue()],
+  plugins: [
+    vue({
+      template: {
+        compilerOptions: {
+          // <focus-timer> — Custom Element из Svelte-микрофронта, не Vue-компонент.
+          isCustomElement: (tag) => tag === 'focus-timer',
+        },
+      },
+    }),
+  ],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

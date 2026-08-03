@@ -9,6 +9,7 @@ const links = [
   { to: '/', label: 'Обзор' },
   { to: '/tasks', label: 'Задачи' },
   { to: '/board', label: 'Доска' },
+  { to: '/focus', label: 'Фокус' },
   { to: '/about', label: 'О проекте' },
 ] as const
 
