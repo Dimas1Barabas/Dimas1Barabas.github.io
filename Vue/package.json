@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "type-check": "vue-tsc --noEmit"
+    "type-check": "vue-tsc --noEmit",
+    "build:widget": "pnpm -C focus-timer build",
+    "build:all": "pnpm -C focus-timer build && pnpm build"
   },
   "dependencies": {
     "pinia": "^4.0.2",

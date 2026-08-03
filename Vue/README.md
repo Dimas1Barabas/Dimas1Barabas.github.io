@@ -12,6 +12,7 @@
 | **TypeScript**    | Типизация компонентов и стора     |
 | **Vue Router**    | Маршрутизация между страницами    |
 | **Pinia**         | Управление состоянием             |
+| **Svelte 5**      | Pomodoro-виджет (микрофронт)      |
 | **Vite**          | Сборка и dev-сервер               |
 
 ## Возможности
@@ -20,8 +21,32 @@
 - ➕ Создание / редактирование / удаление задач через модальное окно
 - 🗂️ Канбан-доска с перетаскиванием карточек между колонками
 - 📊 Дашборд со статистикой, прогрессом выполнения и ближайшими дедлайнами
+- 🍅 Pomodoro-таймер «Фокус» — **микрофронт на Svelte**, встроенный как Custom Element
 - 🌙 Тёмная и светлая темы (выбор запоминается)
 - 💾 Автосохранение в localStorage
+
+## Микрофронт на Svelte
+
+Страница **Фокус** (`/focus`) использует Pomodoro-таймер, написанный на **Svelte 5**.
+Это отдельный подпроект `focus-timer/`, который собирается в саморегистрирующийся
+**Custom Element** (`<focus-timer>`) и кладётся в `public/`. Vue-приложение грузит
+бандл в рантайме через `<script>` и общается с виджетом через DOM-событие `complete`.
+
+Архитектура:
+
+```
+focus-timer/  →  pnpm build  →  public/focus-timer.js  →  Vue грузит в рантайме
+  (Svelte)                          (IIFE Custom Element)      <focus-timer @complete>
+```
+
+Полностью пересобрать виджет и приложение:
+
+```bash
+pnpm build:widget   # только Svelte-виджет → public/focus-timer.js
+pnpm build:all      # виджет + Vue-приложение
+```
+
+Изменять виджет можно отдельно: `pnpm -C focus-timer dev` поднимет standalone-режим без Vue.
 
 ## Запуск
 
@@ -47,7 +72,10 @@ src/
 ├─ stores/             Pinia-стор задач (CRUD, фильтры, статистика)
 ├─ types/              доменные типы и справочники
 ├─ utils/              утилиты форматирования дат
-└─ views/              страницы: Dashboard, Tasks, Board, About, NotFound
+└─ views/              страницы: Dashboard, Tasks, Board, Focus, About, NotFound
+
+focus-timer/           отдельный Svelte-микрофронт (Pomodoro), собирается в Custom Element
+public/focus-timer.js  собранный бандл виджета (грузится Vue в рантайме)
 ```
 
 ## Что посмотреть в коде
