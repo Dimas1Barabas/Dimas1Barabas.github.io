@@ -4,8 +4,9 @@ import { fileURLToPath, URL } from 'node:url'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  // Относительный базовый путь — чтобы сборка работала и в подпапке GitHub Pages.
-  base: './',
+  // Базовый путь = подпапка, в которой лежит сборка на GitHub Pages.
+  // Совпадает с базой роутера (createWebHistory(import.meta.env.BASE_URL)).
+  base: '/Vue/dist/',
   plugins: [
     vue({
       template: {

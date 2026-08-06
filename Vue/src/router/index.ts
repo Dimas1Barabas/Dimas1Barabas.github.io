@@ -40,7 +40,9 @@ const routes: RouteRecordRaw[] = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // База берётся из vite-конфига (base: '/Vue/dist/'), чтобы маршруты
+  // правильно работали в подпапке GitHub Pages.
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes,
   scrollBehavior() {
     return { top: 0 }
