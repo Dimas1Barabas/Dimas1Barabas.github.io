@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Проекты Дмитрия Никитина — фронтенд-разработка." />
+    <title>Дмитрий Никитин · Проекты</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --bg-soft: #161b22;
+        --border: #30363d;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --accent: #58a6ff;
+        --accent-2: #79c0ff;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        background: radial-gradient(1200px 600px at 80% -10%, #1b2433 0%, transparent 60%), var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 22px 0; flex-wrap: wrap; gap: 12px;
+      }
+      .brand { font-weight: 700; letter-spacing: .2px; }
+      .brand a { color: var(--text); text-decoration: none; }
+      .nav a {
+        color: var(--muted); text-decoration: none; margin-left: 18px; font-size: 14px;
+        transition: color .15s ease;
+      }
+      .nav a:hover { color: var(--accent-2); }
+
+      .hero { padding: 72px 0 40px; }
+      .hero h1 {
+        font-size: clamp(34px, 6vw, 56px); margin: 0 0 14px; letter-spacing: -.02em; line-height: 1.05;
+      }
+      .hero h1 .grad {
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
+        -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+      }
+      .hero p { color: var(--muted); font-size: 18px; max-width: 560px; margin: 0; }
+
+      .section-title {
+        display: flex; align-items: baseline; justify-content: space-between;
+        margin: 48px 0 18px;
+      }
+      .section-title h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 0; }
+      .section-title .count { color: var(--muted); font-size: 13px; }
+
+      .grid {
+        display: grid; gap: 14px;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      }
+      .card {
+        display: flex; align-items: center; justify-content: space-between;
+        background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px;
+        padding: 18px 18px; text-decoration: none; color: var(--text);
+        transition: transform .15s ease, border-color .15s ease, background .15s ease;
+      }
+      .card:hover { transform: translateY(-2px); border-color: var(--accent); background: #1c2230; }
+      .card .name { font-weight: 600; font-size: 16px; }
+      .card .tag { color: var(--muted); font-size: 12px; margin-top: 3px; }
+      .card .arrow { color: var(--muted); transition: transform .15s ease, color .15s ease; }
+      .card:hover .arrow { color: var(--accent); transform: translateX(3px); }
+
+      footer { margin: 64px 0 40px; padding-top: 22px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+      footer a { color: var(--accent-2); text-decoration: none; }
+
+      @media (max-width: 560px) { .hero { padding: 48px 0 24px; } }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="brand"><a href="/">Дмитрий Никитин</a></div>
+        <nav class="nav">
+          <a href="https://github.com/Dimas1Barabas" target="_blank" rel="noopener">GitHub</a>
+        </nav>
+      </header>
+
+      <section class="hero">
+        <h1>Мои <span class="grad">проекты</span></h1>
+        <p>Фронтенд-разработка: landing pages, веб-приложения и интерфейсы. Демо живут прямо на этом хостинге.</p>
+      </section>
+
+      <div class="section-title">
+        <h2>Демо</h2>
+        <span class="count">11 проектов</span>
+      </div>
+
+      <div class="grid">
+        <a class="card" href="/Vue/dist/">
+          <div><div class="name">TaskFlow</div><div class="tag">Vue 3 · TypeScript · Pinia</div></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="card" href="/Calculator/">
+          <div><div class="name">Калькулятор</div><div class="tag">Веб-приложение</div></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="card" href="/Future-tech/">
+          <div><div class="name">Future Tech</div><div class="tag">Лендинг</div></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="card" href="/Natural%20Forest/">
+          <div><div class="name">Natural Forest</div><div class="tag">Лендинг</div></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="card" href="/New%20Spring%20Collection/">
+          <div><div class="name">New Spring Collection</div><div class="tag">Лендинг</div></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="card" href="/PlantShop/">
+          <div><div class="name">Plant Shop</div><div class="tag">Магазин</div></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="card" href="/Watch/">
+          <div><div class="name">Watches</div><div class="tag">Лендинг</div></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="card" href="/leedconver/">
+          <div><div class="name">Leadconveer</div><div class="tag">Проект</div></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="card" href="/netflix/">
+          <div><div class="name">Netflix</div><div class="tag">Клон</div></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="card" href="/react/">
+          <div><div class="name">React</div><div class="tag">Примеры</div></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="card" href="/redux/">
+          <div><div class="name">Redux</div><div class="tag">Примеры</div></div>
+          <div class="arrow">→</div>
+        </a>
+      </div>
+
+      <footer>
+        Исходники всех проектов — в
+        <a href="https://github.com/Dimas1Barabas/Dimas1Barabas.github.io" target="_blank" rel="noopener">репозитории на GitHub</a>.
+      </footer>
+    </div>
+  </body>
+</html>
