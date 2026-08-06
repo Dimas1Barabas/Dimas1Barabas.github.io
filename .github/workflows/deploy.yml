@@ -13,7 +13,7 @@ permissions:
 # Ключевое: только один деплой за раз, новый отменяет зависший старый.
 # Это лечит «deployment_queued» и накопление падающих запусков.
 concurrency:
-  group: pages
+  group: gh-pages-deploy-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
