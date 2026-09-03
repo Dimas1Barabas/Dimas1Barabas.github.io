@@ -4,9 +4,9 @@ import { useAppStore } from '../stores/app';
 const appStore = useAppStore();
 
 const services = [
-  { name: 'web', stack: 'Vue 3 · Vite · Pinia', url: 'http://localhost:8080', note: 'SPA, раздаётся nginx' },
-  { name: 'api', stack: 'NestJS 11 · TypeORM', url: 'http://localhost:3000/api', note: 'REST: фильмы, брони, health' },
-  { name: 'postgres', stack: 'PostgreSQL 16', url: 'localhost:5432', note: 'фильмы и брони' },
+  { name: 'web', stack: 'Vue 3 · Vite · Pinia', url: 'http://localhost:18080', note: 'SPA, раздаётся nginx' },
+  { name: 'api', stack: 'NestJS 11 · TypeORM', url: 'http://localhost:13000/api', note: 'REST: фильмы, брони, health' },
+  { name: 'postgres', stack: 'PostgreSQL 16', url: 'localhost:15432', note: 'фильмы и брони' },
   { name: 'redis', stack: 'Redis 7', url: 'localhost:6379', note: 'кэш списка фильмов (TTL 60 c)' },
   { name: 'rabbitmq', stack: 'RabbitMQ 3.13', url: 'localhost:15672', note: 'обмен cinema (topic)' },
   { name: 'worker', stack: 'Go 1.24 · amqp091', url: 'http://localhost:8081', note: 'обработка оплаты' },
@@ -108,8 +108,8 @@ const flow = [
 cd Dimas1Barabas.github.io/fullstackProject
 docker compose up --build
 
-# web      → http://localhost:8080
-# api      → http://localhost:3000/api/health
+# web      → http://localhost:18080
+# api      → http://localhost:13000/api/health
 # rabbitmq → http://localhost:15672 (guest/guest)
 # worker   → http://localhost:8081/stats</pre>
       <p class="arch__note">

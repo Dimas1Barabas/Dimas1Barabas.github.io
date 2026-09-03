@@ -33,12 +33,15 @@ docker compose up --build
 
 | Сервис | Адрес | Примечание |
 |---|---|---|
-| web (SPA) | http://localhost:8080 | nginx, /api → api |
-| api (NestJS) | http://localhost:3000/api/health | health-check трёх зависимостей |
+| web (SPA) | http://localhost:18080 | nginx, /api → api |
+| api (NestJS) | http://localhost:13000/api/health | health-check трёх зависимостей |
 | RabbitMQ UI | http://localhost:15672 | guest / guest |
 | worker (Go) | http://localhost:8081/stats | счётчики обработанных броней |
-| PostgreSQL | localhost:5432 | cine / cine, БД cine |
+| PostgreSQL | localhost:15432 | cine / cine, БД cine |
 | Redis | localhost:6379 | кэш фильмов, TTL 60 c |
+
+Host-порты 13000/15432/18080 выбраны, чтобы не конфликтовать
+с типичными локальными сервисами (3000/5432/8080).
 
 При первом старте API сеет 6 фильмов в Postgres (если таблица пуста).
 
@@ -47,15 +50,15 @@ docker compose up --build
 ```bash
 docker compose up -d postgres redis rabbitmq
 
-# API
+# API (порт задаётся через PORT, если 3000 занят)
 cd apps/api
 npm install
-npm run start:dev        # http://localhost:3000/api
+PORT=13000 npm run start:dev   # http://localhost:13000/api
 
 # Web (в отдельном терминале)
 cd apps/web
 npm install
-npm run dev              # http://localhost:5173 (прокси /api → :3000)
+npm run dev              # http://localhost:5173 (прокси /api → :13000)
 
 # Go-воркер
 cd services/ticket-worker

@@ -39,7 +39,7 @@ export class Booking {
   @Column({ type: 'text', nullable: true })
   message: string | null;
 
-  @Column({ name: 'processed_by', length: 64, nullable: true })
+  @Column({ name: 'processed_by', type: 'varchar', length: 64, nullable: true })
   processedBy: string | null;
 
   @Column({ name: 'processed_at', type: 'timestamptz', nullable: true })

@@ -1,10 +1,10 @@
-import { RabbitMQModule } from '@golevelup/nestjs-rabbitmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BookingsModule } from './bookings/bookings.module';
 import { HealthController } from './health/health.controller';
 import { MoviesModule } from './movies/movies.module';
+import { rabbitMqModule } from './rabbit/rabbitmq.config';
 import { RedisModule } from './redis/redis.module';
 
 @Module({
@@ -27,18 +27,7 @@ import { RedisModule } from './redis/redis.module';
     }),
 
     // RabbitMQ — транспорт событий между API и Go-воркером
-    RabbitMQModule.forRoot({
-      uri: process.env.RABBITMQ_URL ?? 'amqp://guest:guest@localhost:5672/',
-      exchanges: [
-        {
-          name: 'cinema',
-          type: 'topic',
-          createExchangeIfNotExists: true,
-          options: { durable: true },
-        },
-      ],
-      connectionInitOptions: { wait: true, reject: true, timeout: 60_000 },
-    }),
+    rabbitMqModule,
 
     RedisModule,
     MoviesModule,

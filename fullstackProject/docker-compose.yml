@@ -7,8 +7,10 @@ services:
       POSTGRES_USER: cine
       POSTGRES_PASSWORD: cine
       POSTGRES_DB: cine
+    # host-порты выбраны из «высоких», чтобы не конфликтовать
+    # с локальными postgres/node-процессами на 5432/3000/8080
     ports:
-      - '5432:5432'
+      - '15432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -46,7 +48,7 @@ services:
       REDIS_URL: redis://redis:6379
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
     ports:
-      - '3000:3000'
+      - '13000:3000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,7 +74,7 @@ services:
   web:
     build: ./apps/web
     ports:
-      - '8080:80'
+      - '18080:80'
     depends_on:
       - api
     restart: unless-stopped
