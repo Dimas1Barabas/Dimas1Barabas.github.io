@@ -14,6 +14,7 @@ export const useBookingsStore = defineStore('bookings', {
     error: null as string | null,
     creating: false,
     pollTimer: null as ReturnType<typeof setInterval> | null,
+    unsubscribe: null as (() => void) | null,
   }),
   actions: {
     async refresh(): Promise<void> {
@@ -53,10 +54,14 @@ export const useBookingsStore = defineStore('bookings', {
       }
     },
 
-    /** Живой опрос списка (в демо-режиме движок обновляет сам) */
+    /** Живой опрос списка; в демо-режиме движок обновляет мгновенно */
     startPolling(): void {
       this.stopPolling();
       void this.refresh();
+      const app = useAppStore();
+      if (app.mode === 'demo') {
+        this.unsubscribe = demoEngine.onChange(() => void this.refresh());
+      }
       this.pollTimer = setInterval(() => {
         if (document.visibilityState === 'visible') void this.refresh();
       }, POLL_MS);
@@ -66,6 +71,10 @@ export const useBookingsStore = defineStore('bookings', {
       if (this.pollTimer) {
         clearInterval(this.pollTimer);
         this.pollTimer = null;
+      }
+      if (this.unsubscribe) {
+        this.unsubscribe();
+        this.unsubscribe = null;
       }
     },
   },
