@@ -1,0 +1,18 @@
+# зависимости
+node_modules/
+
+# сборка
+apps/api/dist/
+apps/web/dist/
+
+# тесты
+coverage/
+
+# локальные env и артефакты
+.env
+.env.*
+*.exe
+ticket-worker
+
+# IDE
+.idea/
