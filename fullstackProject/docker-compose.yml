@@ -56,7 +56,6 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    restart: unless-stopped
 
   worker:
     build: ./services/ticket-worker
@@ -69,7 +68,6 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-    restart: unless-stopped
 
   web:
     build: ./apps/web
@@ -77,7 +75,8 @@ services:
       - '18080:80'
     depends_on:
       - api
-    restart: unless-stopped
+    # без restart-политики: контейнеры не поднимаются сами при старте Docker Desktop —
+    # только по `docker compose up`
 
 volumes:
   pgdata:
