@@ -65,7 +65,28 @@ cd services/ticket-worker
 go run .                 # слушает RabbitMQ, /stats на :8081
 ```
 
-Тесты API: `cd apps/api && npm test`
+## Тесты
+
+Три уровня, фронт и бэк:
+
+```bash
+# фронт: vitest (24 теста) — форматтеры, демо-движок, сторы pinia, компоненты
+cd apps/web && npm test
+
+# API: юнит (20 тестов) — логика брони, кэш, health
+cd apps/api && npm test
+
+# API: интеграционные (10) — полный HTTP-стек Nest (роутинг, ValidationPipe,
+# контроллеры → сервисы → фейковые Postgres/RabbitMQ/Redis на Map)
+cd apps/api && npm run test:integration
+
+# API: e2e против живого docker-стенда (health, кэш, полный цикл с Go-воркером;
+# если стек не поднят — корректно пропускается с предупреждением)
+cd apps/api && npm run test:e2e
+```
+
+База стенда для e2e переопределяется через `E2E_BASE_URL` (по умолчанию
+`http://localhost:13000/api`).
 
 ## Как устроено
 
