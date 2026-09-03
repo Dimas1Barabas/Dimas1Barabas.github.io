@@ -12,7 +12,6 @@ coverage/
 .env
 .env.*
 *.exe
-ticket-worker
 
 # IDE
 .idea/
