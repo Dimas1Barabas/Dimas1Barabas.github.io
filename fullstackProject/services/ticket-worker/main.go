@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -85,7 +86,7 @@ type BookingCreated struct {
 	MovieID      string    `json:"movieId"`
 	MovieTitle   string    `json:"movieTitle"`
 	CustomerName string    `json:"customerName"`
-	Seats        int       `json:"seats"`
+	Seats        []string  `json:"seats"` // коды «ряд-место», например "5-7"
 	TotalRub     int       `json:"totalRub"`
 	CreatedAt    time.Time `json:"createdAt"`
 }
@@ -164,13 +165,12 @@ func process(cfg Config, ev BookingCreated) BookingProcessed {
 	)
 	time.Sleep(latency)
 
-	row := rand.IntN(12) + 1
 	now := time.Now().UTC().Format(time.RFC3339)
 	if rand.Float64() < cfg.SuccessRate {
 		return BookingProcessed{
 			BookingID:   ev.BookingID,
 			Status:      "CONFIRMED",
-			Message:     fmt.Sprintf("Оплата %d ₽ прошла. Ряд %d, места %s. Приятного просмотра!", ev.TotalRub, row, seatList(ev.Seats)),
+			Message:     fmt.Sprintf("Оплата %d ₽ прошла. Места %s. Приятного просмотра!", ev.TotalRub, strings.Join(ev.Seats, ", ")),
 			ProcessedBy: cfg.WorkerID,
 			ProcessedAt: now,
 		}
@@ -182,18 +182,6 @@ func process(cfg Config, ev BookingCreated) BookingProcessed {
 		ProcessedBy: cfg.WorkerID,
 		ProcessedAt: now,
 	}
-}
-
-// seatList — «места 5, 6, 7» для чека
-func seatList(seats int) string {
-	out := ""
-	for i := 0; i < seats; i++ {
-		if i > 0 {
-			out += ", "
-		}
-		out += strconv.Itoa(rand.IntN(15) + 1)
-	}
-	return out
 }
 
 // ---------- консьюмер RabbitMQ ----------
@@ -257,8 +245,8 @@ func handleDelivery(cfg Config, stats *Stats, ch *amqp.Channel, d amqp.Delivery)
 		return
 	}
 
-	log.Printf("← %s: «%s», %d мест, %d ₽",
-		ev.BookingID, ev.MovieTitle, ev.Seats, ev.TotalRub)
+	log.Printf("← %s: «%s», места %s, %d ₽",
+		ev.BookingID, ev.MovieTitle, strings.Join(ev.Seats, ", "), ev.TotalRub)
 
 	result := process(cfg, ev)
 	body, err := json.Marshal(result)
