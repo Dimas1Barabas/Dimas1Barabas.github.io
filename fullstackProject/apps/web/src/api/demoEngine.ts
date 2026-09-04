@@ -3,15 +3,28 @@ import type {
   BookingStats,
   CreateBookingPayload,
   Movie,
+  SeatMap,
 } from './types';
+import { ApiError } from './client';
+import {
+  HALL_CAPACITY,
+  HALL_ROWS,
+  HALL_SEATS_PER_ROW,
+  allSeatCodes,
+  compareSeats,
+  isValidSeat,
+} from '../utils/hall';
 
 /**
  * Демо-режим: браузерная симуляция бэкенда для GitHub Pages.
  * Повторяет поведение реального стенда:
  *  - фильмы с пометкой источника «кэш»/«БД» (как Redis-кэш API);
- *  - созданная бронь получает PENDING, а через 1,2–2,8 с «воркер»
- *    (те же тайминги и вероятность успеха, что у Go ticket-worker)
- *    выносит вердикт CONFIRMED/FAILED.
+ *  - карта занятости зала, детерминированно посеянная при первом заходе
+ *    (в живом стенде места занимают брони в Postgres);
+ *  - созданная бронь держит выбранные места; конфликт мест — 409, как
+ *    уникальный констрейнт (movie_id, seat) в API;
+ *  - через 1,2–2,8 с «воркер» (те же тайминги и вероятность успеха, что у
+ *    Go ticket-worker) выносит вердикт; при FAILED места освобождаются.
  */
 
 const SUCCESS_RATE = 0.9;
@@ -113,6 +126,8 @@ class DemoEngine {
   private bookings: Booking[] = [];
   private listeners = new Set<Listener>();
   private firstLoad = true;
+  /** movieId → занятые места (посев ленивый, при первом обращении) */
+  private occupied = new Map<string, Set<string>>();
 
   onChange(cb: Listener): () => void {
     this.listeners.add(cb);
@@ -123,10 +138,49 @@ class DemoEngine {
     this.listeners.forEach((cb) => cb());
   }
 
+  /** сброс состояния (тесты) */
+  reset(): void {
+    this.bookings = [];
+    this.occupied.clear();
+    this.firstLoad = true;
+  }
+
   movies(): { source: 'cache' | 'db'; data: Movie[] } {
     const source = this.firstLoad ? 'db' : 'cache';
     this.firstLoad = false;
     return { source, data: DEMO_MOVIES };
+  }
+
+  /**
+   * Детерминированный «посев» занятости: без случайностей, чтобы демо
+   * выглядел живым, а тесты — стабильными (~20% зала занято).
+   */
+  private occupiedFor(movieId: string): Set<string> {
+    let seats = this.occupied.get(movieId);
+    if (!seats) {
+      seats = new Set<string>();
+      let h = 0;
+      for (const ch of movieId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      for (const code of allSeatCodes()) {
+        const [row, num] = code.split('-').map(Number);
+        if ((h + row * 7 + num * 3) % 5 === 0) seats.add(code);
+      }
+      this.occupied.set(movieId, seats);
+    }
+    return seats;
+  }
+
+  seatMap(movieId: string): SeatMap {
+    if (!DEMO_MOVIES.some((m) => m.id === movieId)) {
+      throw new Error('Фильм не найден');
+    }
+    const occupied = [...this.occupiedFor(movieId)].sort(compareSeats);
+    return {
+      movieId,
+      layout: { rows: HALL_ROWS, seatsPerRow: HALL_SEATS_PER_ROW },
+      occupied,
+      free: HALL_CAPACITY - occupied.length,
+    };
   }
 
   list(): Booking[] {
@@ -144,6 +198,28 @@ class DemoEngine {
     const movie = DEMO_MOVIES.find((m) => m.id === payload.movieId);
     if (!movie) throw new Error('Фильм не найден');
 
+    const seats = [...new Set(payload.seats)].sort(compareSeats);
+    const invalid = seats.filter((s) => !isValidSeat(s));
+    if (invalid.length > 0) {
+      throw new ApiError('HTTP 400', 400, JSON.stringify({
+        statusCode: 400,
+        message: `Некорректные места: ${invalid.join(', ')}`,
+      }));
+    }
+
+    // уникальный констрейнт (movie_id, seat) в миниатюре
+    const occupied = this.occupiedFor(movie.id);
+    const seatsTaken = seats.filter((s) => occupied.has(s));
+    if (seatsTaken.length > 0) {
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Места уже заняты: ${seatsTaken.join(', ')}`,
+        seatsTaken,
+      }));
+    }
+    seats.forEach((s) => occupied.add(s));
+
     const booking: Booking = {
       id: uuid(),
       movieId: movie.id,
@@ -151,8 +227,8 @@ class DemoEngine {
       movieHue: movie.hue,
       movieGenreIcon: movie.genreIcon,
       customerName: payload.customerName.trim(),
-      seats: payload.seats,
-      totalRub: movie.priceRub * payload.seats,
+      seats,
+      totalRub: movie.priceRub * seats.length,
       status: 'PENDING',
       message: null,
       processedBy: null,
@@ -168,20 +244,19 @@ class DemoEngine {
       const ok = Math.random() < SUCCESS_RATE;
       booking.status = ok ? 'CONFIRMED' : 'FAILED';
       booking.message = ok
-        ? `Оплата ${booking.totalRub} ₽ прошла. Ряд ${1 + Math.floor(Math.random() * 12)}, места ${this.seatList(booking.seats)}. Приятного просмотра!`
+        ? `Оплата ${booking.totalRub} ₽ прошла. Места ${booking.seats.join(', ')}. Приятного просмотра!`
         : `Платёж отклонён банком (код ${10 + Math.floor(Math.random() * 90)}). Бронь отменена, деньги не списаны.`;
       booking.processedBy = 'go-worker (демо)';
       booking.processedAt = new Date().toISOString();
+      if (!ok) {
+        // оплата не прошла — места возвращаются в продажу (как в API)
+        const occupiedSet = this.occupiedFor(movie.id);
+        booking.seats.forEach((s) => occupiedSet.delete(s));
+      }
       this.notify();
     }, delay);
 
     return booking;
-  }
-
-  private seatList(seats: number): string {
-    return Array.from({ length: seats }, () =>
-      String(1 + Math.floor(Math.random() * 15)),
-    ).join(', ');
   }
 }
 

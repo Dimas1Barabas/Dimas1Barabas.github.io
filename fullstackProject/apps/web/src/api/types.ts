@@ -13,6 +13,15 @@ export interface Movie {
 
 export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'FAILED';
 
+/** карта занятости зала сеанса — GET /api/movies/:id/seats */
+export interface SeatMap {
+  movieId: string;
+  layout: { rows: number; seatsPerRow: number };
+  /** коды занятых мест «ряд-место» */
+  occupied: string[];
+  free: number;
+}
+
 export interface Booking {
   id: string;
   movieId: string;
@@ -20,7 +29,8 @@ export interface Booking {
   movieHue: number;
   movieGenreIcon: string;
   customerName: string;
-  seats: number;
+  /** коды мест «ряд-место», например ["5-7", "5-8"] */
+  seats: string[];
   totalRub: number;
   status: BookingStatus;
   message: string | null;
@@ -45,5 +55,5 @@ export interface HealthResponse {
 export interface CreateBookingPayload {
   movieId: string;
   customerName: string;
-  seats: number;
+  seats: string[];
 }

@@ -11,6 +11,11 @@ export function formatPrice(rub: number): string {
   return `${rub.toLocaleString('ru-RU')} ₽`;
 }
 
+/** Коды мест в человеческий вид: ["5-7","5-8"] → «5-7, 5-8» */
+export function formatSeats(seats: string[]): string {
+  return seats.join(', ');
+}
+
 export function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;

@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import StatusBadge from '../components/StatusBadge.vue';
 import { useBookingsStore } from '../stores/bookings';
-import { formatPrice, timeAgo } from '../utils/format';
+import { formatPrice, formatSeats, timeAgo } from '../utils/format';
 
 const store = useBookingsStore();
 const now = ref(Date.now());
@@ -69,9 +69,8 @@ const updatedAgo = computed(() => timeAgo(store.lastUpdated));
           <div class="booking-row__main">
             <h3 class="booking-row__title">{{ booking.movieTitle }}</h3>
             <p class="booking-row__meta">
-              {{ booking.customerName }} · {{ booking.seats }}
-              {{ booking.seats === 1 ? 'место' : 'мест' }} ·
-              {{ formatPrice(booking.totalRub) }}
+              {{ booking.customerName }} · места {{ formatSeats(booking.seats) }}
+              · {{ formatPrice(booking.totalRub) }}
             </p>
             <p
               v-if="booking.message"

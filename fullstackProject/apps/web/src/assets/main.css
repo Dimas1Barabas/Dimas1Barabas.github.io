@@ -467,41 +467,109 @@ main.container {
   box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
 }
 
-.stepper {
-  display: inline-flex;
-  align-items: center;
-  gap: 14px;
+/* ---------- карта зала ---------- */
+
+.hall {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 9px;
-  padding: 6px 8px;
+  padding: 14px 12px 10px;
 }
 
-.stepper__btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
+.hall__screen {
+  width: 70%;
+  margin: 0 auto 14px;
+  height: 7px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, transparent, var(--accent-2), transparent);
+  text-align: center;
+  font-size: 9px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--muted);
+  line-height: 7px;
+  text-indent: 0.4em;
+}
+
+.hall__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 5px;
+}
+
+.hall__row-label {
+  width: 14px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  flex: none;
+}
+
+.hall__seat {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg-soft);
-  color: var(--text);
-  font-size: 16px;
+  color: var(--muted);
+  font-size: 11px;
   cursor: pointer;
+  padding: 0;
 }
 
-.stepper__btn:hover:not(:disabled) {
+.hall__seat:hover:not(:disabled) {
   border-color: var(--accent);
+  color: var(--text);
 }
 
-.stepper__btn:disabled {
-  opacity: 0.4;
+.hall__seat--selected {
+  background: var(--accent);
+  border-color: var(--accent-2);
+  color: #0d1117;
+  font-weight: 700;
+}
+
+.hall__seat--taken {
+  background: var(--bg-softer);
+  border-color: var(--bg-softer);
+  opacity: 0.45;
   cursor: default;
 }
 
-.stepper__value {
-  min-width: 24px;
-  text-align: center;
-  font-size: 16px;
-  font-weight: 700;
+.hall__legend {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin: 12px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.hall__legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hall__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+.hall__dot--taken {
+  background: var(--bg-softer);
+  border-color: var(--bg-softer);
+  opacity: 0.5;
+}
+
+.hall__dot--selected {
+  background: var(--accent);
+  border-color: var(--accent-2);
 }
 
 .modal__error {

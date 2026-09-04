@@ -1,25 +1,41 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { Booking, Movie } from '../api/types';
-import { formatPrice, formatSession } from '../utils/format';
+import { ApiError } from '../api/client';
+import { formatPrice, formatSession, formatSeats } from '../utils/format';
 import { useBookingsStore } from '../stores/bookings';
+import { useMoviesStore } from '../stores/movies';
+import SeatPicker from './SeatPicker.vue';
 
 const props = defineProps<{ movie: Movie | null }>();
 const emit = defineEmits<{ close: []; created: [booking: Booking] }>();
 
 const bookingsStore = useBookingsStore();
+const moviesStore = useMoviesStore();
 
 const customerName = ref('');
-const seats = ref(2);
+const selected = ref<string[]>([]);
 const submitting = ref(false);
 const error = ref<string | null>(null);
 
+const seatMap = computed(() => moviesStore.seatMap);
 const total = computed(() =>
-  props.movie ? props.movie.priceRub * seats.value : 0,
+  props.movie && seatMap.value
+    ? props.movie.priceRub * selected.value.length
+    : 0,
 );
 
-function clampSeats(value: number): void {
-  seats.value = Math.min(8, Math.max(1, value));
+/** список конфликтных мест из тела 409-ответа API */
+function seatsTakenFrom(err: unknown): string[] {
+  if (err instanceof ApiError) {
+    try {
+      const body = JSON.parse(err.body) as { seatsTaken?: string[] };
+      if (Array.isArray(body.seatsTaken)) return body.seatsTaken;
+    } catch {
+      /* тело не JSON — покажем общий текст */
+    }
+  }
+  return [];
 }
 
 async function submit(): Promise<void> {
@@ -28,31 +44,47 @@ async function submit(): Promise<void> {
     error.value = 'Введите имя (минимум 2 символа)';
     return;
   }
+  if (!selected.value.length) {
+    error.value = 'Выберите хотя бы одно место';
+    return;
+  }
   submitting.value = true;
   error.value = null;
   try {
     const booking = await bookingsStore.create({
       movieId: props.movie.id,
       customerName: customerName.value,
-      seats: seats.value,
+      seats: selected.value,
     });
     emit('created', booking);
   } catch (err) {
-    error.value =
-      err instanceof Error ? err.message : 'Не удалось создать бронь';
+    if (err instanceof ApiError && err.status === 409) {
+      // место успели занять прямо под выбором — обновляем карту
+      const taken = seatsTakenFrom(err);
+      error.value = taken.length
+        ? `Места уже заняты: ${formatSeats(taken)} — выберите другие`
+        : 'Выбранные места уже заняты — обновите выбор';
+      selected.value = selected.value.filter((s) => !taken.includes(s));
+      void moviesStore.loadSeats(props.movie.id);
+    } else {
+      error.value =
+        err instanceof Error ? err.message : 'Не удалось создать бронь';
+    }
   } finally {
     submitting.value = false;
   }
 }
 
-// сброс формы при каждом открытии
+// при каждом открытии — свежая карта зала и пустой выбор
 watch(
   () => props.movie,
-  () => {
+  (movie) => {
     customerName.value = '';
-    seats.value = 2;
+    selected.value = [];
     error.value = null;
+    if (movie) void moviesStore.loadSeats(movie.id);
   },
+  { immediate: true },
 );
 </script>
 
@@ -102,26 +134,23 @@ watch(
             </label>
 
             <div class="field">
-              <span class="field__label">Места</span>
-              <div class="stepper">
-                <button
-                  class="stepper__btn"
-                  type="button"
-                  :disabled="seats <= 1"
-                  @click="clampSeats(seats - 1)"
-                >
-                  −
-                </button>
-                <span class="stepper__value">{{ seats }}</span>
-                <button
-                  class="stepper__btn"
-                  type="button"
-                  :disabled="seats >= 8"
-                  @click="clampSeats(seats + 1)"
-                >
-                  +
-                </button>
-              </div>
+              <span class="field__label">
+                Места (свободно {{ seatMap?.free ?? '…' }}, максимум 8)
+              </span>
+              <p v-if="moviesStore.seatsLoading" class="hint">
+                Загружаем карту зала…
+              </p>
+              <SeatPicker
+                v-else-if="seatMap"
+                v-model="selected"
+                :rows="seatMap.layout.rows"
+                :seats-per-row="seatMap.layout.seatsPerRow"
+                :occupied="seatMap.occupied"
+                :max="8"
+              />
+              <p v-else-if="error !== null" class="hint hint--error">
+                Карта зала недоступна
+              </p>
             </div>
 
             <p v-if="error" class="modal__error">{{ error }}</p>
@@ -129,20 +158,30 @@ watch(
             <p class="modal__note">
               После создания бронь получит статус «в обработке»: событие уйдёт в
               RabbitMQ, а Go-воркер ticket-worker «проведёт оплату» и вернёт
-              вердикт.
+              вердикт. Занятые места защищены констрейнтом в Postgres — дважды
+              одно место продать нельзя.
             </p>
           </div>
 
           <footer class="modal__foot">
-            <span class="modal__total">Итого: {{ formatPrice(total) }}</span>
+            <span class="modal__total">
+              Итого: {{ formatPrice(total) }}
+              <template v-if="selected.length">
+                · места {{ formatSeats(selected) }}
+              </template>
+            </span>
             <div class="modal__actions">
-              <button class="btn btn--ghost" type="button" @click="emit('close')">
+              <button
+                class="btn btn--ghost"
+                type="button"
+                @click="emit('close')"
+              >
                 Отмена
               </button>
               <button
                 class="btn"
                 type="button"
-                :disabled="submitting"
+                :disabled="submitting || !selected.length"
                 @click="submit"
               >
                 {{ submitting ? 'Отправляем…' : 'Забронировать' }}

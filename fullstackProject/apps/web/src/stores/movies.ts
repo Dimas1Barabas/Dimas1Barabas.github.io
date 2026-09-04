@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { api } from '../api/client';
 import { demoEngine } from '../api/demoEngine';
-import type { Movie } from '../api/types';
+import type { Movie, SeatMap } from '../api/types';
 import { useAppStore } from './app';
 
 export const useMoviesStore = defineStore('movies', {
@@ -11,6 +11,9 @@ export const useMoviesStore = defineStore('movies', {
     source: 'db' as 'cache' | 'db',
     loading: false,
     error: null as string | null,
+    /** карта занятости зала выбранного фильма (для модалки брони) */
+    seatMap: null as SeatMap | null,
+    seatsLoading: false,
   }),
   actions: {
     async load(): Promise<void> {
@@ -32,6 +35,20 @@ export const useMoviesStore = defineStore('movies', {
         this.error = err instanceof Error ? err.message : 'Ошибка загрузки';
       } finally {
         this.loading = false;
+      }
+    },
+
+    /** Занятость мест не кэшируется — гонка за место решается на бэкенде */
+    async loadSeats(movieId: string): Promise<void> {
+      this.seatsLoading = true;
+      const app = useAppStore();
+      try {
+        this.seatMap =
+          app.mode === 'demo'
+            ? demoEngine.seatMap(movieId)
+            : await api.seatMap(movieId);
+      } finally {
+        this.seatsLoading = false;
       }
     },
   },

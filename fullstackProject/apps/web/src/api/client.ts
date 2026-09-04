@@ -4,6 +4,7 @@ import type {
   CreateBookingPayload,
   HealthResponse,
   Movie,
+  SeatMap,
 } from './types';
 
 /** Базовый URL API. По умолчанию — тот же origin (vite-proxy / nginx) */
@@ -47,6 +48,8 @@ export const api = {
     request<{ source: 'cache' | 'db'; data: Movie[] }>('/movies'),
   bookings: () => request<Booking[]>('/bookings'),
   stats: () => request<BookingStats>('/bookings/stats'),
+  /** карта занятости зала сеанса (без кэша — всегда свежая) */
+  seatMap: (movieId: string) => request<SeatMap>(`/movies/${movieId}/seats`),
   createBooking: (payload: CreateBookingPayload) =>
     request<Booking>('/bookings', {
       method: 'POST',

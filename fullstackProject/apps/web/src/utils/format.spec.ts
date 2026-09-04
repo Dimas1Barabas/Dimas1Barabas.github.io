@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { formatDuration, formatPrice, formatSession, timeAgo } from './format';
+import {
+  formatDuration,
+  formatPrice,
+  formatSeats,
+  formatSession,
+  timeAgo,
+} from './format';
 
 describe('formatPrice', () => {
   it('добавляет знак рубля', () => {
@@ -9,6 +15,16 @@ describe('formatPrice', () => {
   it('группирует разряды как в ru-RU', () => {
     expect(formatPrice(2000)).toBe(`${(2000).toLocaleString('ru-RU')} ₽`);
     expect(formatPrice(1350)).toBe(`${(1350).toLocaleString('ru-RU')} ₽`);
+  });
+});
+
+describe('formatSeats', () => {
+  it('коды мест через запятую', () => {
+    expect(formatSeats(['5-7', '5-8'])).toBe('5-7, 5-8');
+  });
+
+  it('одно место — без запятых', () => {
+    expect(formatSeats(['1-10'])).toBe('1-10');
   });
 });
 
