@@ -58,6 +58,54 @@ describe('CineBooking e2e: живой docker-стенд', () => {
     expect(second.source).toBe('cache');
   });
 
+  it('seats: карта зала с геометрией 8×10', async () => {
+    if (!available) return;
+    const movies = await api<{ data: { id: string }[] }>('/movies');
+    const map = await api<{
+      layout: { rows: number; seatsPerRow: number };
+      occupied: string[];
+      free: number;
+    }>(`/movies/${movies.data[0].id}/seats`);
+
+    expect(map.layout).toEqual({ rows: 8, seatsPerRow: 10 });
+    expect(map.free + map.occupied.length).toBe(80);
+    for (const seat of map.occupied) {
+      expect(seat).toMatch(/^\d+-\d+$/);
+    }
+  });
+
+  it('одно место нельзя забронировать дважды: 409 со списком мест', async () => {
+    if (!available) return;
+    const movies = await api<{ data: { id: string }[] }>('/movies');
+    const body = {
+      movieId: movies.data[0].id,
+      customerName: 'E2E Гонка',
+      seats: ['1-1'],
+    };
+
+    const first = await fetch(`${BASE}/bookings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(first.status).toBe(201);
+
+    const second = await fetch(`${BASE}/bookings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(second.status).toBe(409);
+    const conflict = (await second.json()) as { seatsTaken: string[] };
+    expect(conflict.seatsTaken).toContain('1-1');
+
+    // место видно занятым в карте
+    const map = await api<{ occupied: string[] }>(
+      `/movies/${movies.data[0].id}/seats`,
+    );
+    expect(map.occupied).toContain('1-1');
+  });
+
   it('полный цикл: POST → PENDING → Go-воркер → вердикт', async () => {
     if (!available) return;
     const movies = await api<{ data: { id: string; title: string }[] }>('/movies');
@@ -72,7 +120,7 @@ describe('CineBooking e2e: живой docker-стенд', () => {
       body: JSON.stringify({
         movieId: movie.id,
         customerName: 'E2E Дмитрий',
-        seats: 2,
+        seats: ['8-8', '8-9'],
       }),
     });
 

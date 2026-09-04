@@ -70,14 +70,15 @@ go run .                 # слушает RabbitMQ, /stats на :8081
 Три уровня, фронт и бэк:
 
 ```bash
-# фронт: vitest (24 теста) — форматтеры, демо-движок, сторы pinia, компоненты
+# фронт: vitest (37 тестов) — форматтеры, зал, демо-движок, сторы pinia, компоненты
 cd apps/web && npm test
 
-# API: юнит (20 тестов) — логика брони, кэш, health
+# API: юнит (30 тестов) — логика брони, места/конфликт, кэш, health
 cd apps/api && npm test
 
-# API: интеграционные (10) — полный HTTP-стек Nest (роутинг, ValidationPipe,
-# контроллеры → сервисы → фейковые Postgres/RabbitMQ/Redis на Map)
+# API: интеграционные (18) — полный HTTP-стек Nest (роутинг, ValidationPipe,
+# контроллеры → сервисы → фейковые Postgres/RabbitMQ/Redis на Map),
+# включая 409-конфликт мест и освобождение при FAILED
 cd apps/api && npm run test:integration
 
 # API: e2e против живого docker-стенда (health, кэш, полный цикл с Go-воркером;
@@ -95,15 +96,21 @@ cd apps/api && npm run test:e2e
 1. `GET /api/movies` — SPA получает сеансы. Ответ помечен источником:
    при попадании в Redis-кэш (`movies:all`, TTL 60 c) список не ходит в
    Postgres — во фронтенде это видно по бейджу «из кэша».
-2. `POST /api/bookings {movieId, customerName, seats}` — бронь сохраняется
-   в Postgres со статусом `PENDING` и мгновенно возвращается клиенту.
-3. API публикует `booking.created` в topic-обмен `cinema` (RabbitMQ).
-4. Go-воркер `ticket-worker` консьюмит `worker.booking.created`
+2. `GET /api/movies/:id/seats` — карта занятости зала 8×10 (без кэша,
+   всегда свежая) для сетки мест в модалке брони.
+3. `POST /api/bookings {movieId, customerName, seats: ["5-7", "5-8"]}` —
+   в одной транзакции сохраняется бронь `PENDING` и занимаются места.
+   Арбитр в гонке за место — составной уникальный констрейнт
+   `(movie_id, seat)` таблицы `seat_occupancy`: проигравший получает
+   409 со списком занятых мест (`seatsTaken`).
+4. API публикует `booking.created` в topic-обмен `cinema` (RabbitMQ).
+5. Go-воркер `ticket-worker` консьюмит `worker.booking.created`
    (prefetch = 1), имитирует оплату 1,2–2,8 с с вероятностью успеха ~90%,
-   публикует `booking.processed` с вердиктом, рядом/местами и своим именем.
-5. NestJS слушает `api.booking.processed` и обновляет бронь в Postgres:
-   `CONFIRMED`/`FAILED` + сообщение от воркера.
-6. SPA опрашивает `GET /api/bookings` каждые 3 c — статус меняется на глазах.
+   публикует `booking.processed` с вердиктом, местами и своим именем.
+6. NestJS слушает `api.booking.processed` и обновляет бронь в Postgres:
+   `CONFIRMED`/`FAILED` + сообщение от воркера. При `FAILED` занятые
+   места освобождаются — их снова можно купить.
+7. SPA опрашивает `GET /api/bookings` каждые 3 c — статус меняется на глазах.
 
 ### Каталоги
 
@@ -135,6 +142,8 @@ rm -rf ../../CineBooking && cp -r dist ../../CineBooking
 ## Заметки
 
 - `synchronize: true` у TypeORM оставлен для простоты демо; для продакшена —
-  миграции (`TYPEORM_SYNCHRONIZE=false`).
+  миграции (`TYPEORM_SYNCHRONIZE=false`). После перехода на конкретные места
+  (колонка `seats` стала `jsonb`) старый docker-том с базой нужно сбросить:
+  `docker compose down -v && docker compose up --build`.
 - Обмен `cinema` объявляют и API, и воркер одинаковыми параметрами —
   кто стартует первым, тот и создаёт.
