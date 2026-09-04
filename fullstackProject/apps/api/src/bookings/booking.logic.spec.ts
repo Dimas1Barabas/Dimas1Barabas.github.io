@@ -1,14 +1,35 @@
+import { BadRequestException } from '@nestjs/common';
 import { Booking } from './booking.entity';
-import { applyProcessed, computeTotal } from './booking.logic';
+import { applyProcessed, computeTotal, normalizeSeats } from './booking.logic';
 
 describe('computeTotal', () => {
   it.each([
-    [450, 1, 450],
-    [450, 3, 1350],
-    [250, 8, 2000],
-    [320, 0, 0],
-  ])('цена %d × места %d = %d', (price, seats, expected) => {
+    [450, ['5-1'], 450],
+    [450, ['5-1', '5-2', '5-3'], 1350],
+    [250, Array.from({ length: 8 }, (_, i) => `1-${i + 1}`), 2000],
+    [320, [], 0],
+  ])('цена %d × %d мест = %d', (price, seats, expected) => {
     expect(computeTotal(price, seats)).toBe(expected);
+  });
+});
+
+describe('normalizeSeats', () => {
+  it('убирает дубли и сортирует по ряду, затем по месту', () => {
+    expect(normalizeSeats(['2-10', '3-1', '2-9', '3-1'])).toEqual([
+      '2-9',
+      '2-10',
+      '3-1',
+    ]);
+  });
+
+  it.each([
+    ['не «ряд-место»', ['5']],
+    ['ряд вне зала', ['9-1']],
+    ['место вне ряда', ['1-11']],
+    ['ноль', ['0-1']],
+    ['отрицательное', ['-1-2']],
+  ])('400 на неверный код: %s', (_case, seats) => {
+    expect(() => normalizeSeats(seats)).toThrow(BadRequestException);
   });
 });
 
@@ -41,7 +62,7 @@ describe('applyProcessed', () => {
     const booking = {
       id: 'b-1',
       customerName: 'Аноним',
-      seats: 2,
+      seats: ['5-7', '5-8'],
       totalRub: 900,
       status: 'PENDING',
     } as Booking;
@@ -49,7 +70,7 @@ describe('applyProcessed', () => {
     const result = applyProcessed(booking, event);
 
     expect(result.customerName).toBe('Аноним');
-    expect(result.seats).toBe(2);
+    expect(result.seats).toEqual(['5-7', '5-8']);
     expect(result.totalRub).toBe(900);
   });
 });

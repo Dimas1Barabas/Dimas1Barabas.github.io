@@ -6,11 +6,16 @@ import { Booking } from './booking.entity';
 import { BookingsConsumer } from './bookings.consumer';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
+import { SeatOccupancy } from './seat-occupancy.entity';
+import { SeatsController } from './seats.controller';
 
 @Module({
   // rabbitMqModule — чтобы инжектить AmqpConnection (публикация событий)
-  imports: [TypeOrmModule.forFeature([Booking, Movie]), rabbitMqModule],
-  controllers: [BookingsController],
+  imports: [
+    TypeOrmModule.forFeature([Booking, Movie, SeatOccupancy]),
+    rabbitMqModule,
+  ],
+  controllers: [BookingsController, SeatsController],
   providers: [BookingsService, BookingsConsumer],
 })
 export class BookingsModule {}

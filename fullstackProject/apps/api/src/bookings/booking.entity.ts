@@ -26,8 +26,9 @@ export class Booking {
   @Column({ name: 'customer_name', length: 60 })
   customerName: string;
 
-  @Column({ type: 'smallint' })
-  seats: number;
+  /** конкретные места: коды «ряд-место», например ["5-7", "5-8"] */
+  @Column({ type: 'jsonb' })
+  seats: string[];
 
   @Column({ name: 'total_rub', type: 'int' })
   totalRub: number;
@@ -59,7 +60,7 @@ export interface BookingDto {
   movieHue: number;
   movieGenreIcon: string;
   customerName: string;
-  seats: number;
+  seats: string[];
   totalRub: number;
   status: BookingStatus;
   message: string | null;

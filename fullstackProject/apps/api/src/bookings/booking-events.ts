@@ -6,7 +6,8 @@ export interface BookingCreatedEvent {
   movieId: string;
   movieTitle: string;
   customerName: string;
-  seats: number;
+  /** коды мест «ряд-место», например ["5-7", "5-8"] */
+  seats: string[];
   totalRub: number;
   createdAt: string;
 }

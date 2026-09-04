@@ -1,11 +1,11 @@
-import { Type } from 'class-transformer';
 import {
-  IsInt,
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsString,
   IsUUID,
-  Max,
+  Matches,
   MaxLength,
-  Min,
   MinLength,
 } from 'class-validator';
 
@@ -18,9 +18,14 @@ export class CreateBookingDto {
   @MaxLength(60)
   customerName!: string;
 
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(8, { message: 'Максимум 8 мест за один заказ' })
-  seats!: number;
+  /** коды мест «ряд-место»; принадлежность залу проверяет сервис */
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Выберите хотя бы одно место' })
+  @ArrayMaxSize(8, { message: 'Максимум 8 мест за один заказ' })
+  @IsString({ each: true })
+  @Matches(/^\d+-\d+$/, {
+    each: true,
+    message: 'Код места — «ряд-место», например 5-7',
+  })
+  seats!: string[];
 }
