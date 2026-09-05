@@ -9,7 +9,7 @@ const services = [
   { name: 'postgres', stack: 'PostgreSQL 16', url: 'localhost:15432', note: 'фильмы и брони' },
   { name: 'redis', stack: 'Redis 7', url: 'localhost:6379', note: 'кэш списка фильмов (TTL 60 c)' },
   { name: 'rabbitmq', stack: 'RabbitMQ 3.13', url: 'localhost:15672', note: 'обмен cinema (topic)' },
-  { name: 'worker', stack: 'Go 1.24 · amqp091', url: 'http://localhost:8081', note: 'обработка оплаты' },
+  { name: 'worker', stack: 'Go 1.24 · amqp091', url: 'http://localhost:8081', note: 'оплата и возвраты' },
 ];
 
 const flow = [
@@ -19,6 +19,8 @@ const flow = [
   { step: '4', title: 'Go-воркер', text: 'ticket-worker консьюмит очередь worker.booking.created, «проводит оплату» (1,2–2,8 с, ~90% успеха) и публикует booking.processed.' },
   { step: '5', title: 'consume booking.processed', text: 'NestJS слушает очередь api.booking.processed и обновляет статус брони в Postgres: CONFIRMED или FAILED + сообщение от воркера.' },
   { step: '6', title: 'GET /api/bookings', text: 'Фронт опрашивает список каждые 3 секунды — бронь «оживает» на глазах: PENDING → результат.' },
+  { step: '7', title: 'POST /api/bookings/:id/cancel', text: 'Компенсирующая сага: подтверждённую бронь можно отменить. Условный UPDATE переводит её в CANCELLING (двойной клик получает 409), API публикует booking.cancelled.' },
+  { step: '8', title: 'booking.refunded', text: 'Go-воркер «возвращает платёж» (0,8–1,6 с, ~90% успеха). Успех → CANCELLED и места снова в продаже; отказ → бронь откатывается в CONFIRMED.' },
 ];
 </script>
 
@@ -69,7 +71,10 @@ const flow = [
           <small>topic-обмен cinema</small>
         </div>
       </div>
-      <div class="arrow arrow--mq">booking.created ↓ · booking.processed ↑</div>
+      <div class="arrow arrow--mq">
+        booking.created ↓ · booking.processed ↑<br />
+        booking.cancelled ↓ · booking.refunded ↑
+      </div>
       <div class="node node--go">
         <span class="node__icon">🐹</span>
         <strong>Go ticket-worker</strong>

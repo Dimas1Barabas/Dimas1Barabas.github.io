@@ -36,7 +36,7 @@ docker compose up --build
 | web (SPA) | http://localhost:18080 | nginx, /api → api |
 | api (NestJS) | http://localhost:13000/api/health | health-check трёх зависимостей |
 | RabbitMQ UI | http://localhost:15672 | guest / guest |
-| worker (Go) | http://localhost:8081/stats | счётчики обработанных броней |
+| worker (Go) | http://localhost:8081/stats | счётчики оплат и возвратов |
 | PostgreSQL | localhost:15432 | cine / cine, БД cine |
 | Redis | localhost:6379 | кэш фильмов, TTL 60 c |
 
@@ -70,15 +70,15 @@ go run .                 # слушает RabbitMQ, /stats на :8081
 Три уровня, фронт и бэк:
 
 ```bash
-# фронт: vitest (37 тестов) — форматтеры, зал, демо-движок, сторы pinia, компоненты
+# фронт: vitest (42 теста) — форматтеры, зал, демо-движок, сторы pinia, компоненты
 cd apps/web && npm test
 
-# API: юнит (30 тестов) — логика брони, места/конфликт, кэш, health
+# API: юнит (38 тестов) — логика брони, места/конфликт, отмена/возврат, кэш, health
 cd apps/api && npm test
 
-# API: интеграционные (18) — полный HTTP-стек Nest (роутинг, ValidationPipe,
+# API: интеграционные (24) — полный HTTP-стек Nest (роутинг, ValidationPipe,
 # контроллеры → сервисы → фейковые Postgres/RabbitMQ/Redis на Map),
-# включая 409-конфликт мест и освобождение при FAILED
+# включая 409-конфликт мест, освобождение при FAILED и сагу отмены
 cd apps/api && npm run test:integration
 
 # API: e2e против живого docker-стенда (health, кэш, полный цикл с Go-воркером;
@@ -111,6 +111,31 @@ cd apps/api && npm run test:e2e
    `CONFIRMED`/`FAILED` + сообщение от воркера. При `FAILED` занятые
    места освобождаются — их снова можно купить.
 7. SPA опрашивает `GET /api/bookings` каждые 3 c — статус меняется на глазах.
+
+### Сага отмены (компенсация)
+
+Подтверждённую бронь можно отменить — это отдельная асинхронная сага
+с тем же воркером:
+
+```
+CONFIRMED ── POST /api/bookings/:id/cancel ──▶ CANCELLING
+                          │ booking.cancelled (cinema)
+                          ▼
+                Go-воркер: «возврат платежа» 0,8–1,6 с (~90% успеха)
+                          │ booking.refunded
+          успех ◀─────────┴─────────▶ отказ (REFUND_FAILED)
+            ▼                               ▼
+CANCELLED + места свободны      бронь откатывается в CONFIRMED
+```
+
+- Переход `CONFIRMED → CANCELLING` — условный `UPDATE … WHERE status =
+  'CONFIRMED'`: двойной клик по «Отменить» разрешается на стороне БД,
+  проигравший получает 409 с текущим статусом.
+- Места освобождаются **только после вердикта воркера** — если «банк»
+  откажет в возврате, места остаются за клиентом, а бронь возвращается
+  в `CONFIRMED` с сообщением об ошибке.
+- Consumer `booking.refunded` идемпотентен: повторное событие (ределивери)
+  по брони вне статуса `CANCELLING` пропускается.
 
 ### Каталоги
 
