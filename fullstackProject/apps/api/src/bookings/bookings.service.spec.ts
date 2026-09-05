@@ -5,6 +5,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { Movie } from '../movies/movie.entity';
 import { Booking } from './booking.entity';
+import { BookingStream } from './booking-stream';
 import { BookingsService } from './bookings.service';
 import { SeatOccupancy } from './seat-occupancy.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
@@ -51,6 +52,8 @@ describe('BookingsService (unit)', () => {
   let moviesRepo: { findOneByOrFail: jest.Mock };
   let occupancyRepo: { find: jest.Mock; delete: jest.Mock };
   let rabbit: { publish: jest.Mock };
+  /** SSE-шина: спаем, что после мутаций ушли события */
+  let stream: { emit: jest.Mock };
   /** что «INSERT INTO seat_occupancy» сделал внутри транзакции */
   let emInsert: jest.Mock;
 
@@ -62,11 +65,18 @@ describe('BookingsService (unit)', () => {
       findOneByOrFail: jest.fn(),
       // условный UPDATE … WHERE status='CONFIRMED' по умолчанию проходит
       update: jest.fn(async () => ({ affected: 1 })),
-      createQueryBuilder: jest.fn(),
+      // GROUP BY по статусам: по умолчанию пустая выборка
+      createQueryBuilder: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      })),
     };
     moviesRepo = { findOneByOrFail: jest.fn(async () => movieFixture) };
     occupancyRepo = { find: jest.fn(async () => []), delete: jest.fn() };
     rabbit = { publish: jest.fn() };
+    stream = { emit: jest.fn() };
     emInsert = jest.fn(async () => undefined);
 
     // «транзакция» сразу выполняет callback с эмуляцией EntityManager:
@@ -91,6 +101,7 @@ describe('BookingsService (unit)', () => {
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(SeatOccupancy), useValue: occupancyRepo },
         { provide: AmqpConnection, useValue: rabbit },
+        { provide: BookingStream, useValue: stream },
       ],
     }).compile();
 
@@ -365,6 +376,61 @@ describe('BookingsService (unit)', () => {
 
       expect(bookingsRepo.save).not.toHaveBeenCalled();
       expect(occupancyRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('SSE: уведомление подключённых клиентов', () => {
+    it('create → событие с новой бронью и статистикой', async () => {
+      await service.create({
+        movieId: 'movie-1',
+        customerName: 'Дмитрий',
+        seats: ['1-1'],
+      });
+
+      expect(stream.emit).toHaveBeenCalledTimes(1);
+      const payload = stream.emit.mock.calls[0][0];
+      expect(payload.booking).toMatchObject({
+        movieId: 'movie-1',
+        status: 'PENDING',
+        movieTitle: 'Рекурсия',
+      });
+      expect(payload.stats).toEqual({
+        PENDING: 0,
+        CONFIRMED: 0,
+        FAILED: 0,
+        CANCELLING: 0,
+        CANCELLED: 0,
+      });
+    });
+
+    it('handleProcessed → событие с вердиктом воркера', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue(bookingFixture());
+
+      await service.handleProcessed({
+        bookingId: 'booking-1',
+        status: 'CONFIRMED',
+        message: 'Оплата прошла',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:00:05Z',
+      });
+
+      expect(stream.emit).toHaveBeenCalledTimes(1);
+      const payload = stream.emit.mock.calls[0][0];
+      expect(payload.booking.status).toBe('CONFIRMED');
+    });
+
+    it('пропущенный ределивери → без события', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue(bookingFixture());
+
+      await service.handleRefunded({
+        bookingId: 'booking-1',
+        status: 'CANCELLED',
+        message: 'Возврат 1200 ₽ зачислен',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:05:00Z',
+      });
+
+      expect(stream.emit).not.toHaveBeenCalled();
     });
   });
 

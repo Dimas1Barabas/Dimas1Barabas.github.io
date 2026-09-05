@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Movie } from '../movies/movie.entity';
 import { rabbitMqModule } from '../rabbit/rabbitmq.config';
 import { Booking } from './booking.entity';
+import { BookingStream } from './booking-stream';
 import { BookingsConsumer } from './bookings.consumer';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
@@ -16,6 +17,6 @@ import { SeatsController } from './seats.controller';
     rabbitMqModule,
   ],
   controllers: [BookingsController, SeatsController],
-  providers: [BookingsService, BookingsConsumer],
+  providers: [BookingsService, BookingsConsumer, BookingStream],
 })
 export class BookingsModule {}

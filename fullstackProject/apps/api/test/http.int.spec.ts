@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { DataSource, FindOperator } from 'typeorm';
 import { BookingsController } from '../src/bookings/bookings.controller';
+import { BookingStream } from '../src/bookings/booking-stream';
 import { BookingsService } from '../src/bookings/bookings.service';
 import { SeatsController } from '../src/bookings/seats.controller';
 import { HealthController } from '../src/health/health.controller';
@@ -224,6 +225,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       providers: [
         MoviesService,
         BookingsService,
+        BookingStream,
         RedisService,
         { provide: REDIS_CLIENT, useValue: redisFake(redisStore) },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },

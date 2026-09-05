@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, In, Repository } from 'typeorm';
 import { Movie } from '../movies/movie.entity';
+import { BookingStream } from './booking-stream';
 import {
   BookingCancelledEvent,
   BookingCreatedEvent,
@@ -60,7 +61,19 @@ export class BookingsService {
     @InjectRepository(SeatOccupancy)
     private readonly occupancy: Repository<SeatOccupancy>,
     private readonly rabbit: AmqpConnection,
+    private readonly stream: BookingStream,
   ) {}
+
+  /** толкает изменение брони подключённым SSE-клиентам */
+  private async push(
+    booking: Booking,
+    movie: Movie,
+  ): Promise<void> {
+    this.stream.emit({
+      booking: toBookingDto(booking, movie),
+      stats: await this.stats(),
+    });
+  }
 
   /**
    * Создаёт бронь со статусом PENDING и публикует событие в RabbitMQ —
@@ -136,6 +149,7 @@ export class BookingsService {
     this.logger.log(
       `Бронь ${booking.id} (${movie.title}, места ${booking.seats.join(', ')}) → в очередь`,
     );
+    await this.push(booking, movie);
 
     return toBookingDto(booking, movie);
   }
@@ -187,6 +201,7 @@ export class BookingsService {
     );
 
     booking.status = 'CANCELLING';
+    await this.push(booking, movie);
     return toBookingDto(booking, movie);
   }
 
@@ -241,6 +256,7 @@ export class BookingsService {
     this.logger.log(
       `Бронь ${event.bookingId} → ${event.status} (${event.processedBy})`,
     );
+    await this.push(booking, await this.movies.findOneByOrFail({ id: booking.movieId }));
   }
 
   /** Callback события booking.refunded от Go-воркера */
@@ -264,5 +280,6 @@ export class BookingsService {
     this.logger.log(
       `Возврат ${event.bookingId} → ${event.status} (${event.processedBy})`,
     );
+    await this.push(updated, await this.movies.findOneByOrFail({ id: booking.movieId }));
   }
 }
