@@ -52,6 +52,12 @@ export interface BookingStats {
   CANCELLED: number;
 }
 
+/** событие SSE «booking» из /bookings/stream: изменённая бронь + статистика */
+export interface BookingStreamPayload {
+  booking: Booking;
+  stats: BookingStats;
+}
+
 export interface HealthResponse {
   status: 'ok' | 'degraded';
   checks: Record<string, 'up' | 'down'>;

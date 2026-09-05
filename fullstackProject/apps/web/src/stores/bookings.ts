@@ -1,10 +1,13 @@
 import { defineStore } from 'pinia';
-import { ApiError, api } from '../api/client';
+import { ApiError, api, apiUrl } from '../api/client';
 import { demoEngine } from '../api/demoEngine';
-import type { Booking, BookingStats, CreateBookingPayload } from '../api/types';
+import type {
+  Booking,
+  BookingStats,
+  BookingStreamPayload,
+  CreateBookingPayload,
+} from '../api/types';
 import { useAppStore } from './app';
-
-const POLL_MS = 3000;
 
 /** сообщение из тела 409/400-ответа API об отмене */
 function cancelErrorMessage(err: ApiError): string {
@@ -32,7 +35,8 @@ export const useBookingsStore = defineStore('bookings', {
     creating: false,
     /** id броней, по которым летит запрос отмены (кнопка «Отменить») */
     cancelling: [] as string[],
-    pollTimer: null as ReturnType<typeof setInterval> | null,
+    /** живое SSE-соединение (live-режим) */
+    source: null as EventSource | null,
     unsubscribe: null as (() => void) | null,
   }),
   actions: {
@@ -98,28 +102,52 @@ export const useBookingsStore = defineStore('bookings', {
       await this.refresh();
     },
 
-    /** Живой опрос списка; в демо-режиме движок обновляет мгновенно */
-    startPolling(): void {
-      this.stopPolling();
-      void this.refresh();
+    /**
+     * Живые обновления без опроса: в live-режиме — SSE /bookings/stream
+     * (браузер сам переподключается при обрыве, по onopen делаем resync),
+     * в демо-режиме — подписка на локальный движок.
+     */
+    startListening(): void {
+      this.stopListening();
       const app = useAppStore();
       if (app.mode === 'demo') {
+        void this.refresh();
         this.unsubscribe = demoEngine.onChange(() => void this.refresh());
+        return;
       }
-      this.pollTimer = setInterval(() => {
-        if (document.visibilityState === 'visible') void this.refresh();
-      }, POLL_MS);
+      const source = new EventSource(apiUrl('/bookings/stream'));
+      source.onopen = () => void this.refresh(); // catch-up после (пере)подключения
+      source.addEventListener('booking', (event) => {
+        // по проводам data идёт JSON-строкой — парсим в контракта события
+        this.applyStreamEvent(
+          JSON.parse((event as MessageEvent).data as string) as BookingStreamPayload,
+        );
+      });
+      this.source = source;
     },
 
-    stopPolling(): void {
-      if (this.pollTimer) {
-        clearInterval(this.pollTimer);
-        this.pollTimer = null;
+    stopListening(): void {
+      if (this.source) {
+        this.source.close();
+        this.source = null;
       }
       if (this.unsubscribe) {
         this.unsubscribe();
         this.unsubscribe = null;
       }
+    },
+
+    /** событие SSE «booking»: upsert брони в списке + свежая статистика */
+    applyStreamEvent(payload: BookingStreamPayload): void {
+      const idx = this.bookings.findIndex((b) => b.id === payload.booking.id);
+      if (idx === -1) {
+        this.bookings.unshift(payload.booking);
+      } else {
+        this.bookings.splice(idx, 1, payload.booking);
+      }
+      this.stats = payload.stats;
+      this.lastUpdated = Date.now();
+      this.error = null;
     },
   },
 });

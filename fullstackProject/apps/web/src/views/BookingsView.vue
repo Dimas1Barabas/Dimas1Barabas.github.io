@@ -1,24 +1,32 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import StatusBadge from '../components/StatusBadge.vue';
+import { useAppStore } from '../stores/app';
 import { useBookingsStore } from '../stores/bookings';
 import { formatPrice, formatSeats, timeAgo } from '../utils/format';
 
 const store = useBookingsStore();
+const app = useAppStore();
 const now = ref(Date.now());
 let tick: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
-  store.startPolling();
+  store.startListening();
   tick = setInterval(() => (now.value = Date.now()), 1000);
 });
 
 onUnmounted(() => {
-  store.stopPolling();
+  store.stopListening();
   if (tick) clearInterval(tick);
 });
 
 const updatedAgo = computed(() => timeAgo(store.lastUpdated));
+
+const liveHint = computed(() =>
+  app.mode === 'live'
+    ? 'Статусы приходят мгновенно — Server-Sent Events, без опроса'
+    : 'Статусы приходят мгновенно — локальная симуляция воркера',
+);
 
 function isCancelling(id: string): boolean {
   return store.cancelling.includes(id);
@@ -30,9 +38,7 @@ function isCancelling(id: string): boolean {
     <div class="page-head">
       <div>
         <h1 class="page-title">Мои брони</h1>
-        <p class="page-sub">
-          Список обновляется автоматически (опрос каждые 3 с)
-        </p>
+        <p class="page-sub">{{ liveHint }}</p>
       </div>
       <span class="chip">обновлено: {{ updatedAgo }}</span>
     </div>

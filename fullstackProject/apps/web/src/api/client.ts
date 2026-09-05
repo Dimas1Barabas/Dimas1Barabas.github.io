@@ -10,6 +10,11 @@ import type {
 /** Базовый URL API. По умолчанию — тот же origin (vite-proxy / nginx) */
 const BASE: string = import.meta.env.VITE_API_URL ?? '/api';
 
+/** полный URL эндпоинта — для EventSource, которому нужен обычный путь */
+export function apiUrl(path: string): string {
+  return `${BASE}${path}`;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,

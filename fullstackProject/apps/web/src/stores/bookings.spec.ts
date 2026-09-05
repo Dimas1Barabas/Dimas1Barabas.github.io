@@ -1,10 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoEngine } from '../api/demoEngine';
 import { useAppStore } from './app';
 import { useBookingsStore } from './bookings';
 import { useMoviesStore } from './movies';
-import type { SeatMap } from '../api/types';
+import type { Booking, BookingStats, SeatMap } from '../api/types';
 
 /** первое свободное место — чтобы тесты не зависели от посева занятости */
 function freeSeats(map: SeatMap, count: number): string[] {
@@ -21,12 +21,47 @@ function freeSeats(map: SeatMap, count: number): string[] {
   return seats;
 }
 
+/** EventSource-двойник: помнит URL и слушателей, умеет «приносить» события */
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  url: string;
+  closed = false;
+  onopen: (() => void) | null = null;
+  private listeners = new Map<string, Set<(ev: { data: string }) => void>>();
+
+  constructor(url: string) {
+    this.url = url;
+    FakeEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, cb: (ev: { data: string }) => void): void {
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type)!.add(cb);
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+
+  dispatch(type: string, payload: unknown): void {
+    this.listeners
+      .get(type)
+      ?.forEach((cb) => cb({ data: JSON.stringify(payload) }));
+  }
+}
+
 describe('stores: демо-режим целиком (movies + bookings)', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.useFakeTimers();
     demoEngine.reset();
+    FakeEventSource.instances = [];
+    vi.stubGlobal('EventSource', FakeEventSource);
     useAppStore().mode = 'demo';
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('movies store грузит из движка и помечает источник', async () => {
@@ -85,26 +120,68 @@ describe('stores: демо-режим целиком (movies + bookings)', () =>
     expect(bookings.lastUpdated).not.toBeNull();
   });
 
-  it('startPolling подписывается на движок и останавливается', async () => {
+  it('startListening в демо-режиме подписывается на движок, не открывая SSE', async () => {
     const movies = useMoviesStore();
     await movies.load();
     const bookings = useBookingsStore();
 
     const before = demoEngine.list().length;
-    bookings.startPolling();
-    expect(bookings.pollTimer).not.toBeNull();
+    bookings.startListening();
+    expect(bookings.source).toBeNull(); // демо — без EventSource
+    expect(bookings.unsubscribe).not.toBeNull();
 
     const [seat] = freeSeats(demoEngine.seatMap(movies.movies[0].id), 1);
     await bookings.create({
       movieId: movies.movies[0].id,
-      customerName: 'Опрос',
+      customerName: 'Подписка',
       seats: [seat],
     });
-    // мгновенное обновление через подписку, не дожидаясь 3-секундного тика
+    // мгновенное обновление через подписку движка
     expect(bookings.bookings.length).toBe(before + 1);
 
-    bookings.stopPolling();
-    expect(bookings.pollTimer).toBeNull();
+    bookings.stopListening();
+    expect(bookings.unsubscribe).toBeNull();
+  });
+
+  it('live: EventSource → /api/bookings/stream, события upsert-ят бронь и статистику', () => {
+    useAppStore().mode = 'live';
+    const bookings = useBookingsStore();
+    bookings.startListening();
+
+    const es = FakeEventSource.instances.at(-1)!;
+    expect(es.url).toBe('/api/bookings/stream');
+
+    const stats: BookingStats = {
+      PENDING: 0,
+      CONFIRMED: 1,
+      FAILED: 0,
+      CANCELLING: 0,
+      CANCELLED: 0,
+    };
+    const booking = {
+      id: 'b-sse-1',
+      status: 'CONFIRMED',
+    } as Booking;
+
+    // новая бронь появляется в списке
+    es.dispatch('booking', { booking, stats });
+    expect(bookings.bookings[0]).toMatchObject({ id: 'b-sse-1', status: 'CONFIRMED' });
+    expect(bookings.stats.CONFIRMED).toBe(1);
+    expect(bookings.lastUpdated).not.toBeNull();
+    expect(bookings.error).toBeNull();
+
+    // изменение той же брони — upsert на месте, без дубля в списке
+    es.dispatch('booking', {
+      booking: { ...booking, status: 'CANCELLED' },
+      stats: { ...stats, CONFIRMED: 0, CANCELLED: 1 },
+    });
+    expect(bookings.bookings).toHaveLength(1);
+    expect(bookings.bookings[0].status).toBe('CANCELLED');
+    expect(bookings.stats.CANCELLED).toBe(1);
+
+    bookings.stopListening();
+    expect(es.closed).toBe(true);
+    expect(bookings.source).toBeNull();
   });
 
   it('cancel: сага в списке и статистике — CANCELLING, затем CANCELLED', async () => {
