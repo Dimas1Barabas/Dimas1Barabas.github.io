@@ -70,15 +70,15 @@ go run .                 # слушает RabbitMQ, /stats на :8081
 Три уровня, фронт и бэк:
 
 ```bash
-# фронт: vitest (42 теста) — форматтеры, зал, демо-движок, сторы pinia, компоненты
+# фронт: vitest (43 теста) — форматтеры, зал, демо-движок, сторы pinia, компоненты
 cd apps/web && npm test
 
-# API: юнит (38 тестов) — логика брони, места/конфликт, отмена/возврат, кэш, health
+# API: юнит (43 теста) — логика брони, места/конфликт, отмена/возврат, SSE, кэш, health
 cd apps/api && npm test
 
-# API: интеграционные (24) — полный HTTP-стек Nest (роутинг, ValidationPipe,
+# API: интеграционные (25) — полный HTTP-стек Nest (роутинг, ValidationPipe,
 # контроллеры → сервисы → фейковые Postgres/RabbitMQ/Redis на Map),
-# включая 409-конфликт мест, освобождение при FAILED и сагу отмены
+# включая 409-конфликт мест, сагу отмены и SSE-стрим по живому HTTP
 cd apps/api && npm run test:integration
 
 # API: e2e против живого docker-стенда (health, кэш, полный цикл с Go-воркером;
@@ -110,7 +110,12 @@ cd apps/api && npm run test:e2e
 6. NestJS слушает `api.booking.processed` и обновляет бронь в Postgres:
    `CONFIRMED`/`FAILED` + сообщение от воркера. При `FAILED` занятые
    места освобождаются — их снова можно купить.
-7. SPA опрашивает `GET /api/bookings` каждые 3 c — статус меняется на глазах.
+7. SPA получает изменения мгновенно по Server-Sent Events:
+   `GET /api/bookings/stream` (EventSource). Каждая мутация брони —
+   create/cancel/processed/refunded — эмитит событие `booking` с самой
+   бронью и свежей статистикой; каждые 25 c идёт heartbeat `ping`.
+   При обрыве браузер переподключается сам, а по `onopen` фронт делает
+   полный resync через `GET /bookings`. Опроса больше нет.
 
 ### Сага отмены (компенсация)
 
@@ -172,3 +177,5 @@ rm -rf ../../CineBooking && cp -r dist ../../CineBooking
   `docker compose down -v && docker compose up --build`.
 - Обмен `cinema` объявляют и API, и воркер одинаковыми параметрами —
   кто стартует первым, тот и создаёт.
+- SSE через nginx требует `proxy_buffering off` (уже в `apps/web/nginx.conf`),
+  иначе события осядут в буфере прокси и не дойдут до EventSource.

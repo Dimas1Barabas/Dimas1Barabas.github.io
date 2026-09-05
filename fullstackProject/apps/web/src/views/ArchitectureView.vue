@@ -18,7 +18,7 @@ const flow = [
   { step: '3', title: 'publish booking.created', text: 'API публикует событие в topic-обмен cinema (routing key booking.created) — ответственный сервис подхватит его асинхронно.' },
   { step: '4', title: 'Go-воркер', text: 'ticket-worker консьюмит очередь worker.booking.created, «проводит оплату» (1,2–2,8 с, ~90% успеха) и публикует booking.processed.' },
   { step: '5', title: 'consume booking.processed', text: 'NestJS слушает очередь api.booking.processed и обновляет статус брони в Postgres: CONFIRMED или FAILED + сообщение от воркера.' },
-  { step: '6', title: 'GET /api/bookings', text: 'Фронт опрашивает список каждые 3 секунды — бронь «оживает» на глазах: PENDING → результат.' },
+  { step: '6', title: 'SSE /api/bookings/stream', text: 'Фронт держит постоянное соединение (EventSource): каждое изменение брони прилетает событием «booking» с бронью и статистикой — без опроса. При обрыве браузер переподключается и делает полный resync.' },
   { step: '7', title: 'POST /api/bookings/:id/cancel', text: 'Компенсирующая сага: подтверждённую бронь можно отменить. Условный UPDATE переводит её в CANCELLING (двойной клик получает 409), API публикует booking.cancelled.' },
   { step: '8', title: 'booking.refunded', text: 'Go-воркер «возвращает платёж» (0,8–1,6 с, ~90% успеха). Успех → CANCELLED и места снова в продаже; отказ → бронь откатывается в CONFIRMED.' },
 ];
