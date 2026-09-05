@@ -85,6 +85,23 @@ class FakeBookingRepo {
     return found;
   }
 
+  /** условный UPDATE … WHERE id = ? AND status = ? (сага отмены) */
+  async update(
+    criteria: { id?: string; status?: string },
+    patch: Partial<Booking>,
+  ): Promise<{ affected: number }> {
+    let affected = 0;
+    for (const row of this.rows) {
+      const byId = !criteria.id || row.id === criteria.id;
+      const byStatus = !criteria.status || row.status === criteria.status;
+      if (byId && byStatus) {
+        Object.assign(row, patch);
+        affected++;
+      }
+    }
+    return { affected };
+  }
+
   createQueryBuilder() {
     const self = this;
     const qb: Record<string, unknown> = {};
@@ -441,6 +458,167 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         .post('/api/bookings')
         .send({ movieId: movie.id, customerName: 'Повтор', seats: ['2-2'] });
       expect(rebook.status).toBe(201);
+    });
+  });
+
+  describe('сага отмены: возврат через Go-воркера', () => {
+    /** создаёт и «оплачивает» бронь — готова к отмене */
+    async function confirmedBooking(movieId: string, seats: string[], name: string) {
+      const created = (
+        await request(app.getHttpServer()).post('/api/bookings').send({
+          movieId,
+          customerName: name,
+          seats,
+        })
+      ).body;
+      await bookingsService.handleProcessed({
+        bookingId: created.id,
+        status: 'CONFIRMED',
+        message: 'Оплата прошла',
+        processedBy: 'go-worker-1',
+        processedAt: new Date().toISOString(),
+      });
+      return created;
+    }
+
+    it('cancel: CONFIRMED → CANCELLING, публикация booking.cancelled', async () => {
+      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+      const movie = movies[3];
+      const created = await confirmedBooking(movie.id, ['3-5', '3-6'], 'Отмена');
+
+      rabbitPublish.mockClear();
+      const res = await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/cancel`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('CANCELLING');
+      expect(rabbitPublish).toHaveBeenCalledWith(
+        'cinema',
+        'booking.cancelled',
+        expect.objectContaining({
+          bookingId: created.id,
+          seats: ['3-5', '3-6'],
+          totalRub: created.totalRub,
+        }),
+      );
+
+      // до вердикта возврата места держатся занятыми
+      const map = await request(app.getHttpServer())
+        .get(`/api/movies/${movie.id}/seats`);
+      expect(map.body.occupied).toEqual(expect.arrayContaining(['3-5', '3-6']));
+
+      // повторная отмена по CANCELLING — 409: гонку закрыл статус
+      const again = await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/cancel`);
+      expect(again.status).toBe(409);
+    });
+
+    it('booking.refunded CANCELLED → места свободны и снова покупаемы', async () => {
+      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+      const movie = movies[4];
+      const created = await confirmedBooking(movie.id, ['7-1'], 'Возврат');
+      await request(app.getHttpServer()).post(`/api/bookings/${created.id}/cancel`);
+
+      // то, что в реальном стеке делает Go ticket-worker через RabbitMQ
+      await bookingsService.handleRefunded({
+        bookingId: created.id,
+        status: 'CANCELLED',
+        message: 'Возврат зачислен',
+        processedBy: 'go-worker-1',
+        processedAt: new Date().toISOString(),
+      });
+
+      const list = (await request(app.getHttpServer()).get('/api/bookings')).body;
+      const cancelled = list.find((b: { id: string }) => b.id === created.id);
+      expect(cancelled.status).toBe('CANCELLED');
+      expect(cancelled.message).toContain('Возврат');
+
+      const map = await request(app.getHttpServer())
+        .get(`/api/movies/${movie.id}/seats`);
+      expect(map.body.occupied).not.toContain('7-1');
+
+      const rebook = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .send({ movieId: movie.id, customerName: 'Снова', seats: ['7-1'] });
+      expect(rebook.status).toBe(201);
+    });
+
+    it('booking.refunded REFUND_FAILED → откат в CONFIRMED, места держатся', async () => {
+      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+      const movie = movies[5];
+      const created = await confirmedBooking(movie.id, ['8-10'], 'Банк не смог');
+      await request(app.getHttpServer()).post(`/api/bookings/${created.id}/cancel`);
+
+      await bookingsService.handleRefunded({
+        bookingId: created.id,
+        status: 'REFUND_FAILED',
+        message: 'Банк отклонил возврат (код 77).',
+        processedBy: 'go-worker-1',
+        processedAt: new Date().toISOString(),
+      });
+
+      const list = (await request(app.getHttpServer()).get('/api/bookings')).body;
+      const restored = list.find((b: { id: string }) => b.id === created.id);
+      expect(restored.status).toBe('CONFIRMED');
+      expect(restored.message).toContain('возврат');
+
+      const map = await request(app.getHttpServer())
+        .get(`/api/movies/${movie.id}/seats`);
+      expect(map.body.occupied).toContain('8-10');
+    });
+
+    it('409 на отмену брони не в CONFIRMED (PENDING)', async () => {
+      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+      const created = (
+        await request(app.getHttpServer()).post('/api/bookings').send({
+          movieId: movies[0].id,
+          customerName: 'Нетерпеливый',
+          seats: ['1-8'],
+        })
+      ).body;
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/cancel`);
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ status: 'PENDING' });
+    });
+
+    it('404 на отмену несуществующей брони', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/bookings/00000000-0000-0000-0000-000000000000/cancel');
+      expect(res.status).toBe(404);
+    });
+
+    it('ределивери booking.refunded по закрытой саге — без последствий', async () => {
+      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+      const movie = movies[4];
+      const created = await confirmedBooking(movie.id, ['2-9'], 'Дубль');
+      await request(app.getHttpServer()).post(`/api/bookings/${created.id}/cancel`);
+      await bookingsService.handleRefunded({
+        bookingId: created.id,
+        status: 'CANCELLED',
+        message: 'Возврат зачислен',
+        processedBy: 'go-worker-1',
+        processedAt: new Date().toISOString(),
+      });
+
+      // тот же вердикт приходит повторно (например, из-за ретрая)
+      await bookingsService.handleRefunded({
+        bookingId: created.id,
+        status: 'CANCELLED',
+        message: 'Возврат зачислен',
+        processedBy: 'go-worker-1',
+        processedAt: new Date().toISOString(),
+      });
+
+      const list = (await request(app.getHttpServer()).get('/api/bookings')).body;
+      const cancelled = list.find((b: { id: string }) => b.id === created.id);
+      expect(cancelled.status).toBe('CANCELLED');
+
+      const map = await request(app.getHttpServer())
+        .get(`/api/movies/${movie.id}/seats`);
+      expect(map.body.occupied).not.toContain('2-9');
     });
   });
 

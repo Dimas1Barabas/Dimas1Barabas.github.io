@@ -106,4 +106,35 @@ describe('stores: демо-режим целиком (movies + bookings)', () =>
     bookings.stopPolling();
     expect(bookings.pollTimer).toBeNull();
   });
+
+  it('cancel: сага в списке и статистике — CANCELLING, затем CANCELLED', async () => {
+    const movies = useMoviesStore();
+    await movies.load();
+    const [seat] = freeSeats(demoEngine.seatMap(movies.movies[0].id), 1);
+    const bookings = useBookingsStore();
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
+    await bookings.create({
+      movieId: movies.movies[0].id,
+      customerName: 'Отмена',
+      seats: [seat],
+    });
+
+    await vi.advanceTimersByTimeAsync(3000);
+    await bookings.refresh();
+    expect(bookings.bookings[0].status).toBe('CONFIRMED');
+
+    await bookings.cancel(bookings.bookings[0].id);
+    expect(bookings.bookings[0].status).toBe('CANCELLING');
+    expect(bookings.stats.CANCELLING).toBeGreaterThanOrEqual(1);
+    expect(bookings.cancelling).toEqual([]); // запрос завершён
+
+    // возврат «воркера» в окне 0,8–1,6 c
+    await vi.advanceTimersByTimeAsync(2000);
+    randomSpy.mockRestore();
+    await bookings.refresh();
+
+    expect(bookings.bookings[0].status).toBe('CANCELLED');
+    expect(bookings.stats.CANCELLED).toBeGreaterThanOrEqual(1);
+    expect(bookings.error).toBeNull();
+  });
 });

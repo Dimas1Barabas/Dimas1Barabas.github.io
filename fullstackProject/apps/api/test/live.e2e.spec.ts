@@ -127,21 +127,11 @@ describe('CineBooking e2e: живой docker-стенд', () => {
     expect(created.status).toBe('PENDING');
 
     // ждём вердикт воркера (обработка 1,2–2,8 c + накладные)
-    let booking: { status: string; message: string | null; processedBy: string | null } | null =
-      null;
-    for (let attempt = 0; attempt < 20; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      const list = await api<
-        { id: string; status: string; message: string | null; processedBy: string | null }[]
-      >('/bookings');
-      booking = list.find((b) => b.id === created.id) ?? null;
-      if (booking && booking.status !== 'PENDING') break;
-    }
+    const booking = await waitForStatus(created.id, 'PENDING');
 
-    expect(booking).not.toBeNull();
-    expect(['CONFIRMED', 'FAILED']).toContain(booking!.status);
-    expect(booking!.message).toBeTruthy();
-    expect(booking!.processedBy).toBe('go-worker-1');
+    expect(['CONFIRMED', 'FAILED']).toContain(booking.status);
+    expect(booking.message).toBeTruthy();
+    expect(booking.processedBy).toBe('go-worker-1');
   });
 
   it('stats: форма ответа', async () => {
@@ -150,5 +140,63 @@ describe('CineBooking e2e: живой docker-стенд', () => {
     expect(stats).toHaveProperty('PENDING');
     expect(stats).toHaveProperty('CONFIRMED');
     expect(stats).toHaveProperty('FAILED');
+    expect(stats).toHaveProperty('CANCELLING');
+    expect(stats).toHaveProperty('CANCELLED');
+  });
+
+  it('сага отмены: cancel → CANCELLING → Go-воркер возвращает платёж', async () => {
+    if (!available) return;
+    const movies = await api<{ data: { id: string; title: string }[] }>('/movies');
+    const movie = movies.data[0];
+
+    // добиваемся подтверждённой брони (воркер отказывает в ~10% случаев)
+    let bookingId = '';
+    for (let attempt = 0; attempt < 5 && !bookingId; attempt++) {
+      const created = await api<{ id: string }>('/bookings', {
+        method: 'POST',
+        body: JSON.stringify({
+          movieId: movie.id,
+          customerName: `E2E отмена ${attempt}`,
+          seats: [`7-${attempt + 1}`],
+        }),
+      });
+      const verdict = await waitForStatus(created.id, 'PENDING');
+      if (verdict.status === 'CONFIRMED') bookingId = created.id;
+    }
+    expect(bookingId).not.toBe('');
+
+    const cancelling = await api<{ id: string; status: string }>(
+      `/bookings/${bookingId}/cancel`,
+      { method: 'POST' },
+    );
+    expect(cancelling.status).toBe('CANCELLING');
+
+    // повторная отмена по CANCELLING — 409 (гонку закрыл статус)
+    const again = await fetch(`${BASE}/bookings/${bookingId}/cancel`, {
+      method: 'POST',
+    });
+    expect(again.status).toBe(409);
+
+    // ждём вердикт возврата (0,8–1,6 c + накладные)
+    const final = await waitForStatus(bookingId, 'CANCELLING');
+    expect(['CANCELLED', 'CONFIRMED']).toContain(final.status); // CONFIRMED = банк не вернул
   });
 });
+
+interface E2EBooking {
+  id: string;
+  status: string;
+  message: string | null;
+  processedBy: string | null;
+}
+
+/** ждёт, пока бронь покинет статус `from`; возвращает саму бронь */
+async function waitForStatus(id: string, from: string): Promise<E2EBooking> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    const list = await api<E2EBooking[]>('/bookings');
+    const booking = list.find((b) => b.id === id);
+    if (booking && booking.status !== from) return booking;
+  }
+  throw new Error(`бронь ${id} не покинула статус ${from}`);
+}

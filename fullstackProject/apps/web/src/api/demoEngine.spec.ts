@@ -204,4 +204,73 @@ describe('demoEngine', () => {
       demoEngine.create({ movieId: 'нет-такого', customerName: 'X', seats: ['1-1'] }),
     ).toThrow();
   });
+
+  it('cancel: CONFIRMED → CANCELLING → возврат освобождает место', async () => {
+    const movie = demoEngine.movies().data[0];
+    const seat = freeSeat(demoEngine.seatMap(movie.id));
+    // 0.1 < SUCCESS_RATE и < REFUND_SUCCESS_RATE: и оплата, и возврат проходят
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
+    demoEngine.create({ movieId: movie.id, customerName: 'Отмена', seats: [seat] });
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(demoEngine.list()[0].status).toBe('CONFIRMED');
+
+    const cancelling = demoEngine.cancel(demoEngine.list()[0].id);
+    expect(cancelling.status).toBe('CANCELLING');
+    // до вердикта возврата место держится занятым
+    expect(demoEngine.seatMap(movie.id).occupied).toContain(seat);
+
+    // возврат срабатывает в окне 0,8–1,6 c
+    await vi.advanceTimersByTimeAsync(2000);
+    randomSpy.mockRestore();
+    const done = demoEngine.list()[0];
+    expect(done.status).toBe('CANCELLED');
+    expect(done.message).toContain('Возврат');
+    expect(done.processedBy).toBe('go-worker (демо)');
+    expect(demoEngine.seatMap(movie.id).occupied).not.toContain(seat);
+
+    // место снова можно купить
+    expect(() =>
+      demoEngine.create({ movieId: movie.id, customerName: 'Повтор', seats: [seat] }),
+    ).not.toThrow();
+  });
+
+  it('cancel: не-CONFIRMED бронь — ApiError 409', () => {
+    const movie = demoEngine.movies().data[0];
+    const seat = freeSeat(demoEngine.seatMap(movie.id));
+    const booking = demoEngine.create({
+      movieId: movie.id,
+      customerName: 'Нетерпеливый',
+      seats: [seat],
+    });
+
+    expect(() => demoEngine.cancel(booking.id)).toThrow(ApiError);
+    try {
+      demoEngine.cancel(booking.id);
+    } catch (err) {
+      expect((err as ApiError).status).toBe(409);
+      expect(JSON.parse((err as ApiError).body).status).toBe('PENDING');
+    }
+  });
+
+  it('cancel: REFUND_FAILED откатывает в CONFIRMED, место держится', async () => {
+    const movie = demoEngine.movies().data[0];
+    const seat = freeSeat(demoEngine.seatMap(movie.id));
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1); // оплата проходит
+    demoEngine.create({ movieId: movie.id, customerName: 'Банк не смог', seats: [seat] });
+    await vi.advanceTimersByTimeAsync(3000);
+
+    randomSpy.mockReturnValue(0.95); // 0.95 > REFUND_SUCCESS_RATE → отказ возврата
+    demoEngine.cancel(demoEngine.list()[0].id);
+    await vi.advanceTimersByTimeAsync(2000);
+    randomSpy.mockRestore();
+
+    const restored = demoEngine.list()[0];
+    expect(restored.status).toBe('CONFIRMED');
+    expect(restored.message).toContain('возврат');
+    expect(demoEngine.seatMap(movie.id).occupied).toContain(seat);
+  });
+
+  it('cancel: несуществующая бронь — ошибка', () => {
+    expect(() => demoEngine.cancel('нет-такого')).toThrow();
+  });
 });
