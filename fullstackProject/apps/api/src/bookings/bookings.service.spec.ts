@@ -45,6 +45,7 @@ describe('BookingsService (unit)', () => {
     save: jest.Mock;
     find: jest.Mock;
     findOneByOrFail: jest.Mock;
+    update: jest.Mock;
     createQueryBuilder: jest.Mock;
   };
   let moviesRepo: { findOneByOrFail: jest.Mock };
@@ -59,6 +60,8 @@ describe('BookingsService (unit)', () => {
       save: jest.fn(async (x: Partial<Booking>) => ({ ...bookingFixture(), ...x })),
       find: jest.fn(),
       findOneByOrFail: jest.fn(),
+      // условный UPDATE … WHERE status='CONFIRMED' по умолчанию проходит
+      update: jest.fn(async () => ({ affected: 1 })),
       createQueryBuilder: jest.fn(),
     };
     moviesRepo = { findOneByOrFail: jest.fn(async () => movieFixture) };
@@ -194,6 +197,57 @@ describe('BookingsService (unit)', () => {
     });
   });
 
+  describe('cancel', () => {
+    beforeEach(() => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        status: 'CONFIRMED',
+      });
+    });
+
+    it('переводит CONFIRMED-бронь в CANCELLING', async () => {
+      const result = await service.cancel('booking-1');
+
+      expect(result.status).toBe('CANCELLING');
+      expect(bookingsRepo.update).toHaveBeenCalledWith(
+        { id: 'booking-1', status: 'CONFIRMED' },
+        { status: 'CANCELLING' },
+      );
+    });
+
+    it('публикует booking.cancelled с суммой возврата', async () => {
+      await service.cancel('booking-1');
+
+      expect(rabbit.publish).toHaveBeenCalledWith(
+        'cinema',
+        'booking.cancelled',
+        expect.objectContaining({
+          bookingId: 'booking-1',
+          movieTitle: 'Рекурсия',
+          seats: ['5-7', '5-8', '5-9'],
+          totalRub: 1200,
+        }),
+      );
+    });
+
+    it('409 с текущим статусом, если UPDATE не затронул строку', async () => {
+      bookingsRepo.update.mockResolvedValue({ affected: 0 });
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        status: 'PENDING',
+      });
+
+      const promise = service.cancel('booking-1');
+
+      await expect(promise).rejects.toBeInstanceOf(ConflictException);
+      const err = (await promise.catch((e: unknown) => e)) as ConflictException;
+      expect(err.getStatus()).toBe(409);
+      expect(err.getResponse()).toMatchObject({ status: 'PENDING' });
+      // сага не запущена — события нет
+      expect(rabbit.publish).not.toHaveBeenCalled();
+    });
+  });
+
   describe('stats', () => {
     it('считает брони по статусам, заполняя нули', async () => {
       bookingsRepo.createQueryBuilder.mockReturnValue({
@@ -203,12 +257,19 @@ describe('BookingsService (unit)', () => {
         getRawMany: jest.fn().mockResolvedValue([
           { status: 'CONFIRMED', count: '2' },
           { status: 'PENDING', count: '1' },
+          { status: 'CANCELLED', count: '3' },
         ]),
       });
 
       const result = await service.stats();
 
-      expect(result).toEqual({ PENDING: 1, CONFIRMED: 2, FAILED: 0 });
+      expect(result).toEqual({
+        PENDING: 1,
+        CONFIRMED: 2,
+        FAILED: 0,
+        CANCELLING: 0,
+        CANCELLED: 3,
+      });
     });
   });
 
@@ -248,6 +309,62 @@ describe('BookingsService (unit)', () => {
       expect(occupancyRepo.delete).toHaveBeenCalledWith({
         bookingId: 'booking-1',
       });
+    });
+  });
+
+  describe('handleRefunded', () => {
+    function cancellingFixture(): Booking {
+      return { ...bookingFixture(), status: 'CANCELLING' };
+    }
+
+    it('CANCELLED — закрывает сагу и освобождает места', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue(cancellingFixture());
+
+      await service.handleRefunded({
+        bookingId: 'booking-1',
+        status: 'CANCELLED',
+        message: 'Возврат 1200 ₽ зачислен',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:05:00Z',
+      });
+
+      const saved = bookingsRepo.save.mock.calls[0][0] as Booking;
+      expect(saved.status).toBe('CANCELLED');
+      expect(saved.message).toBe('Возврат 1200 ₽ зачислен');
+      expect(occupancyRepo.delete).toHaveBeenCalledWith({
+        bookingId: 'booking-1',
+      });
+    });
+
+    it('REFUND_FAILED — откатывает в CONFIRMED, места держит', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue(cancellingFixture());
+
+      await service.handleRefunded({
+        bookingId: 'booking-1',
+        status: 'REFUND_FAILED',
+        message: 'Банк отклонил возврат',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:05:00Z',
+      });
+
+      const saved = bookingsRepo.save.mock.calls[0][0] as Booking;
+      expect(saved.status).toBe('CONFIRMED');
+      expect(occupancyRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('пропускает событие по бронь не в CANCELLING (ределивери)', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue(bookingFixture());
+
+      await service.handleRefunded({
+        bookingId: 'booking-1',
+        status: 'CANCELLED',
+        message: 'Возврат 1200 ₽ зачислен',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:05:00Z',
+      });
+
+      expect(bookingsRepo.save).not.toHaveBeenCalled();
+      expect(occupancyRepo.delete).not.toHaveBeenCalled();
     });
   });
 

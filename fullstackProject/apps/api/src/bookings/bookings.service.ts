@@ -4,9 +4,19 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, In, Repository } from 'typeorm';
 import { Movie } from '../movies/movie.entity';
-import { BookingCreatedEvent, BookingProcessedEvent } from './booking-events';
+import {
+  BookingCancelledEvent,
+  BookingCreatedEvent,
+  BookingProcessedEvent,
+  BookingRefundedEvent,
+} from './booking-events';
 import { Booking, BookingDto, BookingStatus, toBookingDto } from './booking.entity';
-import { applyProcessed, computeTotal, normalizeSeats } from './booking.logic';
+import {
+  applyProcessed,
+  applyRefunded,
+  computeTotal,
+  normalizeSeats,
+} from './booking.logic';
 import {
   HALL_CAPACITY,
   HALL_ROWS,
@@ -139,6 +149,47 @@ export class BookingsService {
     return rows.map((row) => toBookingDto(row));
   }
 
+  /**
+   * Компенсирующая сага: просим Go-воркер вернуть платёж.
+   * Бронь уходит в CANCELLING условным UPDATE из CONFIRMED — двойной клик
+   * по «Отменить» разрешается на стороне БД, проигравший получает 409.
+   * Места держатся занятыми до вердикта воркера (booking.refunded).
+   */
+  async cancel(id: string): Promise<BookingDto> {
+    const booking = await this.bookings.findOneByOrFail({ id });
+    const movie = await this.movies.findOneByOrFail({ id: booking.movieId });
+
+    const switched = await this.bookings.update(
+      { id, status: 'CONFIRMED' },
+      { status: 'CANCELLING' },
+    );
+    if (!switched.affected) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Отменить можно только подтверждённую бронь (сейчас: ${booking.status})`,
+        status: booking.status,
+      });
+    }
+
+    const event: BookingCancelledEvent = {
+      bookingId: booking.id,
+      movieId: booking.movieId,
+      movieTitle: booking.movie.title,
+      customerName: booking.customerName,
+      seats: booking.seats,
+      totalRub: booking.totalRub,
+      cancelledAt: new Date().toISOString(),
+    };
+    this.rabbit.publish('cinema', 'booking.cancelled', event);
+    this.logger.log(
+      `Отмена брони ${booking.id} (${booking.movie.title}, возврат ${booking.totalRub} ₽) → в очередь`,
+    );
+
+    booking.status = 'CANCELLING';
+    return toBookingDto(booking, movie);
+  }
+
   async stats(): Promise<Record<BookingStatus, number>> {
     const rows = await this.bookings
       .createQueryBuilder('b')
@@ -151,6 +202,8 @@ export class BookingsService {
       PENDING: 0,
       CONFIRMED: 0,
       FAILED: 0,
+      CANCELLING: 0,
+      CANCELLED: 0,
     };
     for (const row of rows) {
       if (row.status in stats) stats[row.status] = Number(row.count);
@@ -187,6 +240,29 @@ export class BookingsService {
     }
     this.logger.log(
       `Бронь ${event.bookingId} → ${event.status} (${event.processedBy})`,
+    );
+  }
+
+  /** Callback события booking.refunded от Go-воркера */
+  async handleRefunded(event: BookingRefundedEvent): Promise<void> {
+    const booking = await this.bookings.findOneByOrFail({
+      id: event.bookingId,
+    });
+    if (booking.status !== 'CANCELLING') {
+      // ределивери или событие по уже закрытой саге — ничего не делаем
+      this.logger.warn(
+        `booking.refunded по бронь ${event.bookingId} в статусе ${booking.status} — пропуск`,
+      );
+      return;
+    }
+    const updated = applyRefunded(booking, event);
+    await this.bookings.save(updated);
+    if (updated.status === 'CANCELLED') {
+      // возврат прошёл — места снова в продаже
+      await this.occupancy.delete({ bookingId: booking.id });
+    }
+    this.logger.log(
+      `Возврат ${event.bookingId} → ${event.status} (${event.processedBy})`,
     );
   }
 }

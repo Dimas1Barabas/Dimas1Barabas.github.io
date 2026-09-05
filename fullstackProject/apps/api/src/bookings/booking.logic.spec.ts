@@ -1,6 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { Booking } from './booking.entity';
-import { applyProcessed, computeTotal, normalizeSeats } from './booking.logic';
+import {
+  applyProcessed,
+  applyRefunded,
+  computeTotal,
+  normalizeSeats,
+} from './booking.logic';
 
 describe('computeTotal', () => {
   it.each([
@@ -72,5 +77,46 @@ describe('applyProcessed', () => {
     expect(result.customerName).toBe('Аноним');
     expect(result.seats).toEqual(['5-7', '5-8']);
     expect(result.totalRub).toBe(900);
+  });
+});
+
+describe('applyRefunded', () => {
+  const base = {
+    bookingId: 'b-1',
+    message: 'Возврат выполнен',
+    processedBy: 'go-worker-1',
+    processedAt: '2026-09-03T12:05:00.000Z',
+  };
+
+  function cancelling(): Booking {
+    return {
+      status: 'CANCELLING',
+      message: null,
+      processedBy: null,
+      processedAt: null,
+    } as Booking;
+  }
+
+  it('успех закрывает сагу: CANCELLED + метаданные возврата', () => {
+    const result = applyRefunded(cancelling(), {
+      ...base,
+      status: 'CANCELLED',
+    });
+
+    expect(result.status).toBe('CANCELLED');
+    expect(result.message).toBe('Возврат выполнен');
+    expect(result.processedBy).toBe('go-worker-1');
+    expect(result.processedAt).toEqual(new Date('2026-09-03T12:05:00.000Z'));
+  });
+
+  it('отказ откатывает сагу назад в CONFIRMED', () => {
+    const result = applyRefunded(cancelling(), {
+      ...base,
+      status: 'REFUND_FAILED',
+      message: 'Банк отклонил возврат',
+    });
+
+    expect(result.status).toBe('CONFIRMED');
+    expect(result.message).toBe('Банк отклонил возврат');
   });
 });

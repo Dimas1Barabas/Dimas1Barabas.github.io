@@ -1,6 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { Booking } from './booking.entity';
-import { BookingProcessedEvent } from './booking-events';
+import {
+  BookingProcessedEvent,
+  BookingRefundedEvent,
+} from './booking-events';
 import { compareSeats, isValidSeat } from './hall';
 
 /** Стоимость брони: цена сеанса × число мест */
@@ -29,6 +32,22 @@ export function applyProcessed(
   event: BookingProcessedEvent,
 ): Booking {
   booking.status = event.status;
+  booking.message = event.message;
+  booking.processedBy = event.processedBy;
+  booking.processedAt = new Date(event.processedAt);
+  return booking;
+}
+
+/**
+ * Применяет вердикт возврата к бронь в статусе CANCELLING.
+ * Успех закрывает сагу (CANCELLED, места освободит сервис),
+ * отказ откатывает её назад в CONFIRMED — деньги остались у кино.
+ */
+export function applyRefunded(
+  booking: Booking,
+  event: BookingRefundedEvent,
+): Booking {
+  booking.status = event.status === 'CANCELLED' ? 'CANCELLED' : 'CONFIRMED';
   booking.message = event.message;
   booking.processedBy = event.processedBy;
   booking.processedAt = new Date(event.processedAt);

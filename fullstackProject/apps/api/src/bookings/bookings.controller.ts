@@ -1,4 +1,12 @@
-import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 
@@ -10,6 +18,13 @@ export class BookingsController {
   @HttpCode(201)
   create(@Body() dto: CreateBookingDto) {
     return this.bookings.create(dto);
+  }
+
+  /** запуск компенсирующей саги: возврат платежа через Go-воркера */
+  @Post(':id/cancel')
+  @HttpCode(200)
+  cancel(@Param('id') id: string) {
+    return this.bookings.cancel(id);
   }
 
   @Get()

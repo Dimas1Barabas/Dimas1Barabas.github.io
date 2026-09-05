@@ -9,7 +9,12 @@ import {
 } from 'typeorm';
 import { Movie } from '../movies/movie.entity';
 
-export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'FAILED';
+export type BookingStatus =
+  | 'PENDING'
+  | 'CONFIRMED'
+  | 'FAILED'
+  | 'CANCELLING'
+  | 'CANCELLED';
 
 @Entity('bookings')
 export class Booking {
@@ -36,7 +41,7 @@ export class Booking {
   @Column({ length: 16, default: 'PENDING' })
   status: BookingStatus;
 
-  /** сообщение от Go-воркера (детали оплаты) */
+  /** сообщение от Go-воркера (детали оплаты или возврата) */
   @Column({ type: 'text', nullable: true })
   message: string | null;
 

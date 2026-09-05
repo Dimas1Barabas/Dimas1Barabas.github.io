@@ -1,6 +1,9 @@
 import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 import { Injectable } from '@nestjs/common';
-import { BookingProcessedEvent } from './booking-events';
+import {
+  BookingProcessedEvent,
+  BookingRefundedEvent,
+} from './booking-events';
 import { BookingsService } from './bookings.service';
 
 /** Слушает результаты обработки от Go-воркера и обновляет брони в Postgres */
@@ -16,5 +19,15 @@ export class BookingsConsumer {
   })
   async onProcessed(event: BookingProcessedEvent): Promise<void> {
     await this.bookings.handleProcessed(event);
+  }
+
+  @RabbitSubscribe({
+    exchange: 'cinema',
+    routingKey: 'booking.refunded',
+    queue: 'api.booking.refunded',
+    queueOptions: { durable: true },
+  })
+  async onRefunded(event: BookingRefundedEvent): Promise<void> {
+    await this.bookings.handleRefunded(event);
   }
 }
