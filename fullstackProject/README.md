@@ -91,7 +91,9 @@ cd apps/api && npm run test:e2e
 
 Письменная тест-документация «как у QA» — в [docs/qa/](docs/qa/):
 [тест-план](docs/qa/test-plan.md), [чек-листы](docs/qa/checklists.md),
-[тест-кейсы](docs/qa/test-cases.md), [матрица трассировки](docs/qa/traceability.md)
+[тест-кейсы](docs/qa/test-cases.md) (+ выгрузки [txt](docs/qa/test-cases.txt)
+и [csv](docs/qa/test-cases.csv) в формате импорта TMS),
+[матрица трассировки](docs/qa/traceability.md)
 и [шаблон баг-репорта](docs/qa/bug-report-template.md).
 
 ## Как устроено
