@@ -1,18 +1,37 @@
 import { defineStore } from 'pinia';
-import { api } from '../api/client';
+import { ApiError, api } from '../api/client';
 import { demoEngine } from '../api/demoEngine';
 import type { Booking, BookingStats, CreateBookingPayload } from '../api/types';
 import { useAppStore } from './app';
 
 const POLL_MS = 3000;
 
+/** сообщение из тела 409/400-ответа API об отмене */
+function cancelErrorMessage(err: ApiError): string {
+  try {
+    const body = JSON.parse(err.body) as { message?: string };
+    if (body.message) return String(body.message);
+  } catch {
+    // тело не JSON — покажем общий текст
+  }
+  return 'Не удалось отменить бронь';
+}
+
 export const useBookingsStore = defineStore('bookings', {
   state: () => ({
     bookings: [] as Booking[],
-    stats: { PENDING: 0, CONFIRMED: 0, FAILED: 0 } as BookingStats,
+    stats: {
+      PENDING: 0,
+      CONFIRMED: 0,
+      FAILED: 0,
+      CANCELLING: 0,
+      CANCELLED: 0,
+    } as BookingStats,
     lastUpdated: null as number | null,
     error: null as string | null,
     creating: false,
+    /** id броней, по которым летит запрос отмены (кнопка «Отменить») */
+    cancelling: [] as string[],
     pollTimer: null as ReturnType<typeof setInterval> | null,
     unsubscribe: null as (() => void) | null,
   }),
@@ -52,6 +71,31 @@ export const useBookingsStore = defineStore('bookings', {
       } finally {
         this.creating = false;
       }
+    },
+
+    /**
+     * Запуск саги отмены: статус → CANCELLING, воркер делает возврат.
+     * 409 «не CONFIRMED» (двойной клик, гонка) показываем как ошибку списка.
+     */
+    async cancel(id: string): Promise<void> {
+      const app = useAppStore();
+      this.cancelling.push(id);
+      try {
+        if (app.mode === 'demo') {
+          demoEngine.cancel(id);
+        } else {
+          await api.cancelBooking(id);
+        }
+        this.error = null;
+      } catch (err) {
+        this.error =
+          err instanceof ApiError
+            ? cancelErrorMessage(err)
+            : 'Не удалось отменить бронь';
+      } finally {
+        this.cancelling = this.cancelling.filter((x) => x !== id);
+      }
+      await this.refresh();
     },
 
     /** Живой опрос списка; в демо-режиме движок обновляет мгновенно */

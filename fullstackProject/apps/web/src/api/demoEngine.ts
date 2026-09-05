@@ -24,12 +24,18 @@ import {
  *  - созданная бронь держит выбранные места; конфликт мест — 409, как
  *    уникальный констрейнт (movie_id, seat) в API;
  *  - через 1,2–2,8 с «воркер» (те же тайминги и вероятность успеха, что у
- *    Go ticket-worker) выносит вердикт; при FAILED места освобождаются.
+ *    Go ticket-worker) выносит вердикт; при FAILED места освобождаются;
+ *  - сага отмены: CONFIRMED → CANCELLING → возврат 0,8–1,6 с с той же
+ *    вероятностью успеха, что у воркера; места освобождаются при успехе.
  */
 
 const SUCCESS_RATE = 0.9;
 const MIN_MS = 1200;
 const MAX_MS = 2800;
+/** сага отмены — те же тайминги/вероятность, что у возврата в Go-воркере */
+const REFUND_SUCCESS_RATE = 0.9;
+const REFUND_MIN_MS = 800;
+const REFUND_MAX_MS = 1600;
 
 function inDays(days: number, hour: number): string {
   const d = new Date();
@@ -189,7 +195,13 @@ class DemoEngine {
   }
 
   stats(): BookingStats {
-    const stats: BookingStats = { PENDING: 0, CONFIRMED: 0, FAILED: 0 };
+    const stats: BookingStats = {
+      PENDING: 0,
+      CONFIRMED: 0,
+      FAILED: 0,
+      CANCELLING: 0,
+      CANCELLED: 0,
+    };
     for (const b of this.bookings) stats[b.status] += 1;
     return stats;
   }
@@ -251,6 +263,46 @@ class DemoEngine {
       if (!ok) {
         // оплата не прошла — места возвращаются в продажу (как в API)
         const occupiedSet = this.occupiedFor(movie.id);
+        booking.seats.forEach((s) => occupiedSet.delete(s));
+      }
+      this.notify();
+    }, delay);
+
+    return booking;
+  }
+
+  /**
+   * Сага отмены: CONFIRMED → CANCELLING, затем «возврат платежа» —
+   * те же тайминги и вероятность отказа, что у Go-воркера.
+   * Успех освобождает места, отказ откатывает бронь в CONFIRMED.
+   */
+  cancel(id: string): Booking {
+    const booking = this.bookings.find((b) => b.id === id);
+    if (!booking) throw new Error('Бронь не найдена');
+    if (booking.status !== 'CONFIRMED') {
+      // как условный UPDATE … WHERE status='CONFIRMED' в API
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Отменить можно только подтверждённую бронь (сейчас: ${booking.status})`,
+        status: booking.status,
+      }));
+    }
+    booking.status = 'CANCELLING';
+    this.notify();
+
+    const delay = REFUND_MIN_MS + Math.random() * (REFUND_MAX_MS - REFUND_MIN_MS);
+    setTimeout(() => {
+      const ok = Math.random() < REFUND_SUCCESS_RATE;
+      booking.status = ok ? 'CANCELLED' : 'CONFIRMED';
+      booking.message = ok
+        ? `Возврат ${booking.totalRub} ₽ зачислен. Места ${booking.seats.join(', ')} снова в продаже.`
+        : `Банк отклонил возврат (код ${10 + Math.floor(Math.random() * 90)}). Бронь остаётся подтверждённой, места держатся.`;
+      booking.processedBy = 'go-worker (демо)';
+      booking.processedAt = new Date().toISOString();
+      if (ok) {
+        // возврат прошёл — места снова в продаже (как booking.refunded в API)
+        const occupiedSet = this.occupiedFor(booking.movieId);
         booking.seats.forEach((s) => occupiedSet.delete(s));
       }
       this.notify();

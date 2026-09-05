@@ -19,6 +19,10 @@ onUnmounted(() => {
 });
 
 const updatedAgo = computed(() => timeAgo(store.lastUpdated));
+
+function isCancelling(id: string): boolean {
+  return store.cancelling.includes(id);
+}
 </script>
 
 <template>
@@ -45,6 +49,14 @@ const updatedAgo = computed(() => timeAgo(store.lastUpdated));
       <div class="stat stat--failed">
         <span class="stat__num">{{ store.stats.FAILED }}</span>
         <span class="stat__label">отказов</span>
+      </div>
+      <div class="stat stat--cancelling">
+        <span class="stat__num">{{ store.stats.CANCELLING }}</span>
+        <span class="stat__label">возвраты</span>
+      </div>
+      <div class="stat stat--cancelled">
+        <span class="stat__num">{{ store.stats.CANCELLED }}</span>
+        <span class="stat__label">отменено</span>
       </div>
     </div>
 
@@ -84,7 +96,17 @@ const updatedAgo = computed(() => timeAgo(store.lastUpdated));
             </p>
           </div>
 
-          <StatusBadge :status="booking.status" />
+          <div class="booking-row__side">
+            <button
+              v-if="booking.status === 'CONFIRMED'"
+              class="btn btn--danger btn--sm"
+              :disabled="isCancelling(booking.id)"
+              @click="store.cancel(booking.id)"
+            >
+              {{ isCancelling(booking.id) ? '…' : 'Отменить' }}
+            </button>
+            <StatusBadge :status="booking.status" />
+          </div>
         </article>
       </TransitionGroup>
     </div>

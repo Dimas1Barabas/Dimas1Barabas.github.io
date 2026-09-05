@@ -7,6 +7,8 @@ const labels: Record<BookingStatus, string> = {
   PENDING: '⏳ в обработке',
   CONFIRMED: '✅ подтверждена',
   FAILED: '✖ отказ',
+  CANCELLING: '↩️ идёт возврат',
+  CANCELLED: '🚫 отменена',
 };
 </script>
 

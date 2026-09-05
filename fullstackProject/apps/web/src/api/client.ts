@@ -56,4 +56,9 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
+  /** сага отмены: бронь уходит в CANCELLING, воркер возвращает платёж */
+  cancelBooking: (id: string) =>
+    request<Booking>(`/bookings/${id}/cancel`, {
+      method: 'POST',
+    }),
 };

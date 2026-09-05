@@ -10,6 +10,7 @@
   --green: #3fb950;
   --amber: #d29922;
   --red: #f85149;
+  --violet: #a371f7;
   --radius: 12px;
 }
 
@@ -271,6 +272,24 @@ main.container {
 
 .btn--ghost:hover {
   background: var(--bg-soft);
+  filter: none;
+}
+
+.btn--sm {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+/* отмена брони в списке: спокойная, но с красным подтекстом */
+.btn--danger {
+  background: transparent;
+  color: var(--red);
+  border: 1px solid rgba(248, 81, 73, 0.45);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: rgba(248, 81, 73, 0.08);
   filter: none;
 }
 
@@ -651,7 +670,7 @@ main.container {
 
 .stat-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -686,6 +705,14 @@ main.container {
 
 .stat--failed .stat__num {
   color: var(--red);
+}
+
+.stat--cancelling .stat__num {
+  color: var(--violet);
+}
+
+.stat--cancelled .stat__num {
+  color: var(--muted);
 }
 
 /* ---------- список броней ---------- */
@@ -750,6 +777,13 @@ main.container {
   opacity: 0.75;
 }
 
+.booking-row__side {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .list-enter-active {
   transition:
     opacity 0.25s ease,
@@ -798,6 +832,29 @@ main.container {
   color: var(--red);
   border-color: rgba(248, 81, 73, 0.45);
   background: rgba(248, 81, 73, 0.08);
+}
+
+.status-badge--cancelling {
+  color: var(--violet);
+  border-color: rgba(163, 113, 247, 0.45);
+  background: rgba(163, 113, 247, 0.08);
+  animation: pulse-violet 1.6s ease-in-out infinite;
+}
+
+.status-badge--cancelled {
+  color: var(--muted);
+  border-color: var(--border);
+  background: var(--bg-softer);
+}
+
+@keyframes pulse-violet {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(163, 113, 247, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(163, 113, 247, 0.08);
+  }
 }
 
 @keyframes pulse {

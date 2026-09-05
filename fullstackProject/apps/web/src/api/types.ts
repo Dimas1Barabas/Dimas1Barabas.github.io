@@ -11,7 +11,12 @@ export interface Movie {
   sessionAt: string;
 }
 
-export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'FAILED';
+export type BookingStatus =
+  | 'PENDING'
+  | 'CONFIRMED'
+  | 'FAILED'
+  | 'CANCELLING'
+  | 'CANCELLED';
 
 /** карта занятости зала сеанса — GET /api/movies/:id/seats */
 export interface SeatMap {
@@ -43,6 +48,8 @@ export interface BookingStats {
   PENDING: number;
   CONFIRMED: number;
   FAILED: number;
+  CANCELLING: number;
+  CANCELLED: number;
 }
 
 export interface HealthResponse {
