@@ -89,6 +89,11 @@ cd apps/api && npm run test:e2e
 База стенда для e2e переопределяется через `E2E_BASE_URL` (по умолчанию
 `http://localhost:13000/api`).
 
+Письменная тест-документация «как у QA» — в [docs/qa/](docs/qa/):
+[тест-план](docs/qa/test-plan.md), [чек-листы](docs/qa/checklists.md),
+[тест-кейсы](docs/qa/test-cases.md), [матрица трассировки](docs/qa/traceability.md)
+и [шаблон баг-репорта](docs/qa/bug-report-template.md).
+
 ## Как устроено
 
 ### Поток бронирования
