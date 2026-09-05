@@ -17,6 +17,8 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Booking } from '../src/bookings/booking.entity';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { randomUUID } from 'node:crypto';
+import type { AddressInfo } from 'node:net';
+import { sseFrames, waitForSseEvent } from './sse';
 
 /**
  * Интеграционный тест: реальный HTTP-стек Nest (роутинг, ValidationPipe,
@@ -621,6 +623,56 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       const map = await request(app.getHttpServer())
         .get(`/api/movies/${movie.id}/seats`);
       expect(map.body.occupied).not.toContain('2-9');
+    });
+  });
+
+  describe('SSE: GET /api/bookings/stream', () => {
+    /**
+     * SSE — вечный ответ, supertest его не прочитает: поднимаем реальный
+     * http-сервер на случайном порту и читаем фреймы из fetch-стрима.
+     */
+    it('событие booking прилетает при создании брони', async () => {
+      await app.listen(0);
+      const address = app.getHttpServer().address() as AddressInfo;
+      const base = `http://127.0.0.1:${address.port}`;
+
+      const controller = new AbortController();
+      const res = await fetch(`${base}/api/bookings/stream`, {
+        signal: controller.signal,
+      });
+      expect(res.ok).toBe(true);
+      expect(res.headers.get('content-type')).toContain('text/event-stream');
+
+      const frames = sseFrames(res.body!);
+      const movies = (
+        (await (await fetch(`${base}/api/movies`)).json()) as {
+          data: { id: string }[];
+        }
+      ).data;
+      const created = (
+        await (
+          await fetch(`${base}/api/bookings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              movieId: movies[1].id,
+              customerName: 'SSE-клиент',
+              seats: ['1-2'],
+            }),
+          })
+        ).json()
+      ) as { id: string; status: string };
+
+      const payload = await waitForSseEvent<{
+        booking: { id: string; status: string };
+        stats: Record<string, number>;
+      }>(frames, 'booking', (p) => p.booking.id === created.id);
+
+      expect(payload.booking.status).toBe('PENDING');
+      expect(payload.booking.id).toBe(created.id);
+      expect(payload.stats).toHaveProperty('PENDING');
+
+      controller.abort();
     });
   });
 

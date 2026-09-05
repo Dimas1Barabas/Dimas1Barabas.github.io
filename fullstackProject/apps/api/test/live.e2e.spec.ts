@@ -7,6 +7,8 @@
  * База стенда задаётся через E2E_BASE_URL (по умолчанию http://localhost:13000/api).
  */
 
+import { sseFrames, waitForSseEvent } from './sse';
+
 const BASE = process.env.E2E_BASE_URL ?? 'http://localhost:13000/api';
 
 let available = false;
@@ -181,7 +183,55 @@ describe('CineBooking e2e: живой docker-стенд', () => {
     const final = await waitForStatus(bookingId, 'CANCELLING');
     expect(['CANCELLED', 'CONFIRMED']).toContain(final.status); // CONFIRMED = банк не вернул
   });
+
+  it('SSE: вердикт воркера приходит в стрим без опроса', async () => {
+    if (!available) return;
+    const movies = await api<{ data: { id: string }[] }>('/movies');
+
+    const controller = new AbortController();
+    const res = await fetch(`${BASE}/bookings/stream`, {
+      signal: controller.signal,
+    });
+    expect(res.ok).toBe(true);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+
+    const frames = sseFrames(res.body!);
+    const created = await api<{ id: string }>('/bookings', {
+      method: 'POST',
+      body: JSON.stringify({
+        movieId: movies.data[0].id,
+        customerName: 'E2E SSE',
+        seats: ['5-5'],
+      }),
+    });
+
+    // создание → PENDING в стриме (SSE-шина в API)
+    const pending = await waitForSseEvent<E2EStreamPayload>(
+      frames,
+      'booking',
+      (p) => p.booking.id === created.id && p.booking.status === 'PENDING',
+    );
+    expect(pending.stats).toHaveProperty('PENDING');
+
+    // вердикт Go-воркера → ещё одно событие по той же брони, без опроса
+    const verdict = await waitForSseEvent<E2EStreamPayload>(
+      frames,
+      'booking',
+      (p) => p.booking.id === created.id && p.booking.status !== 'PENDING',
+      20_000,
+    );
+    expect(['CONFIRMED', 'FAILED']).toContain(verdict.booking.status);
+    expect(verdict.booking.processedBy).toBe('go-worker-1');
+    expect(verdict.stats.PENDING).toBeLessThan(pending.stats.PENDING + 1);
+
+    controller.abort();
+  });
 });
+
+interface E2EStreamPayload {
+  booking: E2EBooking;
+  stats: Record<string, number>;
+}
 
 interface E2EBooking {
   id: string;
