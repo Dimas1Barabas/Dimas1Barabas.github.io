@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue';
 import type { Booking, Movie } from '../api/types';
 import { ApiError } from '../api/client';
 import { formatPrice, formatSession, formatSeats } from '../utils/format';
+import { useAppStore } from '../stores/app';
+import { useAuthStore } from '../stores/auth';
 import { useBookingsStore } from '../stores/bookings';
 import { useMoviesStore } from '../stores/movies';
 import SeatPicker from './SeatPicker.vue';
@@ -10,6 +12,8 @@ import SeatPicker from './SeatPicker.vue';
 const props = defineProps<{ movie: Movie | null }>();
 const emit = defineEmits<{ close: []; created: [booking: Booking] }>();
 
+const appStore = useAppStore();
+const authStore = useAuthStore();
 const bookingsStore = useBookingsStore();
 const moviesStore = useMoviesStore();
 
@@ -17,6 +21,13 @@ const customerName = ref('');
 const selected = ref<string[]>([]);
 const submitting = ref(false);
 const error = ref<string | null>(null);
+
+/** в live-режиме бронь требует JWT: имя и владелец придут из токена */
+const needLogin = computed(
+  () => appStore.mode === 'live' && !authStore.isAuthed,
+);
+/** имя спрашиваем только в демо: в live его знает токен */
+const askName = computed(() => appStore.mode === 'demo');
 
 const seatMap = computed(() => moviesStore.seatMap);
 const total = computed(() =>
@@ -40,7 +51,11 @@ function seatsTakenFrom(err: unknown): string[] {
 
 async function submit(): Promise<void> {
   if (!props.movie || submitting.value) return;
-  if (customerName.value.trim().length < 2) {
+  if (needLogin.value) {
+    error.value = 'Войдите, чтобы забронировать — бронь оформляется на ваш профиль';
+    return;
+  }
+  if (askName.value && customerName.value.trim().length < 2) {
     error.value = 'Введите имя (минимум 2 символа)';
     return;
   }
@@ -53,7 +68,8 @@ async function submit(): Promise<void> {
   try {
     const booking = await bookingsStore.create({
       movieId: props.movie.id,
-      customerName: customerName.value,
+      // в live имя возьмёт из JWT; в демо — как раньше, из поля
+      ...(askName.value ? { customerName: customerName.value } : {}),
       seats: selected.value,
     });
     emit('created', booking);
@@ -122,7 +138,16 @@ watch(
           </header>
 
           <div class="modal__body">
-            <label class="field">
+            <p v-if="needLogin" class="modal__login-hint">
+              Бронирование доступно после входа: место закрепится за вашим
+              аккаунтом, а имя подставится из профиля.
+              <RouterLink to="/login">Войти или зарегистрироваться</RouterLink>
+            </p>
+            <p v-else-if="!askName" class="modal__login-hint">
+              Бронь на имя <strong>{{ authStore.user?.name }}</strong> —
+              из вашего профиля.
+            </p>
+            <label v-else class="field">
               <span class="field__label">Ваше имя</span>
               <input
                 v-model="customerName"
@@ -193,3 +218,15 @@ watch(
     </Transition>
   </Teleport>
 </template>
+
+<style scoped>
+.modal__login-hint {
+  margin: 0 0 12px;
+  color: var(--text-muted, #9aa4b2);
+  font-size: 0.92rem;
+}
+
+.modal__login-hint a {
+  color: inherit;
+}
+</style>

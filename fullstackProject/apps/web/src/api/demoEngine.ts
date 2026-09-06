@@ -238,7 +238,7 @@ class DemoEngine {
       movieTitle: movie.title,
       movieHue: movie.hue,
       movieGenreIcon: movie.genreIcon,
-      customerName: payload.customerName.trim(),
+      customerName: (payload.customerName ?? 'Гость').trim(),
       seats,
       totalRub: movie.priceRub * seats.length,
       status: 'PENDING',

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { api } from '../api/client';
 import { demoEngine } from '../api/demoEngine';
-import type { Movie, SeatMap } from '../api/types';
+import type { CreateMoviePayload, Movie, SeatMap } from '../api/types';
 import { useAppStore } from './app';
 
 export const useMoviesStore = defineStore('movies', {
@@ -50,6 +50,13 @@ export const useMoviesStore = defineStore('movies', {
       } finally {
         this.seatsLoading = false;
       }
+    },
+
+    /** новый сеанс (админ): после создания перезагружаем каталог */
+    async create(payload: CreateMoviePayload): Promise<Movie> {
+      const movie = await api.createMovie(payload);
+      await this.load();
+      return movie;
     },
   },
 });

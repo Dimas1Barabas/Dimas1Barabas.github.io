@@ -67,6 +67,43 @@ export interface HealthResponse {
 
 export interface CreateBookingPayload {
   movieId: string;
-  customerName: string;
+  /** в live-режиме не передаём — имя берёт из JWT на бэкенде */
+  customerName?: string;
   seats: string[];
+}
+
+export type UserRole = 'user' | 'admin';
+
+/** UserDto из POST /auth/register */
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  createdAt: string;
+}
+
+/** ответ POST /auth/login */
+export interface LoginResult {
+  accessToken: string;
+  user: User;
+}
+
+export interface RegisterPayload {
+  email: string;
+  password: string;
+  name: string;
+}
+
+/** новый сеанс в афишу — POST /api/movies (только админ) */
+export interface CreateMoviePayload {
+  title: string;
+  description: string;
+  genre: string;
+  genreIcon: string;
+  durationMin: number;
+  priceRub: number;
+  hue: number;
+  /** ISO-дата сеанса */
+  sessionAt: string;
 }

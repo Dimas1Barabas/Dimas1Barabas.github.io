@@ -19,6 +19,16 @@ const router = createRouter({
       name: 'architecture',
       component: () => import('../views/ArchitectureView.vue'),
     },
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('../views/AuthView.vue'),
+    },
+    {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('../views/AdminView.vue'),
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 });
