@@ -47,6 +47,8 @@ services:
       DATABASE_URL: postgres://cine:cine@postgres:5432/cine
       REDIS_URL: redis://redis:6379
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      # секрет подписи JWT; для продакшена задавать свой через env
+      JWT_SECRET: ${JWT_SECRET:-dev-cine-secret}
     ports:
       - '13000:3000'
     depends_on:

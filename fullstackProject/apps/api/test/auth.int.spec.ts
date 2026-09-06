@@ -1,9 +1,11 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { JwtModule, JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { AuthController } from '../src/auth/auth.controller';
+import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { User } from '../src/users/user.entity';
 
@@ -32,17 +34,24 @@ class FakeUserRepo {
   }
 }
 
-describe('POST /api/auth/register (integration)', () => {
+const TEST_SECRET = 'integration-test-secret';
+
+describe('POST /api/auth/* (integration)', () => {
   let app: INestApplication;
   let repo: FakeUserRepo;
+  let jwt: JwtService;
 
   beforeAll(async () => {
     repo = new FakeUserRepo();
 
     const moduleRef = await Test.createTestingModule({
+      imports: [
+        JwtModule.register({ secret: TEST_SECRET, signOptions: { expiresIn: '1h' } }),
+      ],
       controllers: [AuthController],
       providers: [
         UsersService,
+        AuthService,
         { provide: getRepositoryToken(User), useValue: repo },
       ],
     }).compile();
@@ -53,6 +62,7 @@ describe('POST /api/auth/register (integration)', () => {
       new ValidationPipe({ whitelist: true, transform: true }),
     );
     await app.init();
+    jwt = moduleRef.get(JwtService);
   });
 
   afterAll(async () => {
@@ -101,5 +111,48 @@ describe('POST /api/auth/register (integration)', () => {
       .send({ email: 'не-почта', password: 'secret123', name: 'Игрек' });
 
     expect(res.status).toBe(400);
+  });
+
+  describe('POST /api/auth/login', () => {
+    it('200: {accessToken, user}; в токене — клеймы пользователя', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'alice@example.com', password: 'secret123' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.user).toMatchObject({
+        email: 'alice@example.com',
+        role: 'user',
+      });
+      expect(res.body).not.toHaveProperty('passwordHash');
+
+      const payload = jwt.decode<{
+        sub: string;
+        email: string;
+        name: string;
+        role: string;
+      }>(res.body.accessToken);
+      expect(payload.sub).toBe(repo.rows[0].id);
+      expect(payload.email).toBe('alice@example.com');
+      expect(payload.name).toBe('Алиса');
+      expect(payload.role).toBe('user');
+    });
+
+    it('401: неверный пароль', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'alice@example.com', password: 'wrong-pass' });
+
+      expect(res.status).toBe(401);
+    });
+
+    it('401: неизвестный email — тот же ответ, что при неверном пароле', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'ghost@example.com', password: 'whatever' });
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Неверный email или пароль');
+    });
   });
 });
