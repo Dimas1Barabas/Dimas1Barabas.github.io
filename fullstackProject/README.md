@@ -43,7 +43,8 @@ docker compose up --build
 Host-порты 13000/15432/18080 выбраны, чтобы не конфликтовать
 с типичными локальными сервисами (3000/5432/8080).
 
-При первом старте API сеет 6 фильмов в Postgres (если таблица пуста).
+При первом старте API применяет SQL-миграции (TypeORM, `apps/api/src/migrations`)
+и сеет 6 фильмов в Postgres (если таблица пуста).
 
 ## Разработка без docker (только инфраструктура в docker)
 
@@ -54,6 +55,7 @@ docker compose up -d postgres redis rabbitmq
 cd apps/api
 npm install
 PORT=13000 npm run start:dev   # http://localhost:13000/api
+# схема применяется миграциями автоматически при старте
 
 # Web (в отдельном терминале)
 cd apps/web
@@ -64,6 +66,28 @@ npm run dev              # http://localhost:5173 (прокси /api → :13000)
 cd services/ticket-worker
 go run .                 # слушает RabbitMQ, /stats на :8081
 ```
+
+### Миграции
+
+Схему БД создают и меняют только миграции (`synchronize` убран) —
+журнал в таблице `migrations`. Приложение применяет их автоматически
+при старте (`migrationsRun: true`), руками — из `apps/api`:
+
+```bash
+npm run migration:show      # что применено / в ожидании
+npm run migration:run       # применить ожидающие
+npm run migration:revert    # откатить последнюю
+
+# новая миграция: diff «сущности ↔ БД». Генерить нужно против ПУСТОЙ БД,
+# иначе diff с уже собранной synchronize-схемой будет пуст:
+docker compose exec postgres createdb -U cine cine_empty
+DATABASE_URL=postgres://cine:cine@localhost:15432/cine_empty \
+  npm run migration:generate -- src/migrations/AddSomething
+docker compose exec postgres dropdb -U cine cine_empty
+```
+
+Файлы миграций лежат в `apps/api/src/migrations` и попадают в docker-образ
+вместе с `dist` без правок Dockerfile.
 
 ## Тесты
 
@@ -175,13 +199,15 @@ rm -rf ../../CineBooking && cp -r dist ../../CineBooking
 ## Переменные окружения
 
 См. [.env.example](.env.example). В docker compose всё уже настроено.
+Дефолт `DATABASE_URL` в коде — `postgres://cine:cine@localhost:15432/cine`
+(порт compose-стенда).
 
 ## Заметки
 
-- `synchronize: true` у TypeORM оставлен для простоты демо; для продакшена —
-  миграции (`TYPEORM_SYNCHRONIZE=false`). После перехода на конкретные места
-  (колонка `seats` стала `jsonb`) старый docker-том с базой нужно сбросить:
-  `docker compose down -v && docker compose up --build`.
+- Схема БД управляется SQL-миграциями TypeORM (`apps/api/src/migrations`);
+  `synchronize` удалён. Старые docker-томы, где схему собрал `synchronize`,
+  нужно один раз сбросить: `docker compose down -v && docker compose up --build`
+  (миграции пересоздадут схему, фильмы послеются заново).
 - Обмен `cinema` объявляют и API, и воркер одинаковыми параметрами —
   кто стартует первым, тот и создаёт.
 - SSE через nginx требует `proxy_buffering off` (уже в `apps/web/nginx.conf`),
