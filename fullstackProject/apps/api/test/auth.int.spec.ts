@@ -1,4 +1,5 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -52,6 +53,7 @@ describe('POST /api/auth/* (integration)', () => {
       providers: [
         UsersService,
         AuthService,
+        { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },
         { provide: getRepositoryToken(User), useValue: repo },
       ],
     }).compile();
@@ -81,7 +83,9 @@ describe('POST /api/auth/* (integration)', () => {
       role: 'user',
     });
     expect(res.body).not.toHaveProperty('passwordHash');
-    expect(res.body.id).toBe(repo.rows[0].id);
+    // админ сеется в onModuleInit — ищем Алису по email, а не по индексу
+    const alice = repo.rows.find((r) => r.email === 'alice@example.com');
+    expect(res.body.id).toBe(alice?.id);
 
     // в «БД» лежит bcrypt-хэш, а не открытый пароль
     expect(repo.rows[0].passwordHash).not.toBe('secret123');
@@ -132,7 +136,8 @@ describe('POST /api/auth/* (integration)', () => {
         name: string;
         role: string;
       }>(res.body.accessToken);
-      expect(payload.sub).toBe(repo.rows[0].id);
+      const alice = repo.rows.find((r) => r.email === 'alice@example.com');
+      expect(payload.sub).toBe(alice?.id);
       expect(payload.email).toBe('alice@example.com');
       expect(payload.name).toBe('Алиса');
       expect(payload.role).toBe('user');

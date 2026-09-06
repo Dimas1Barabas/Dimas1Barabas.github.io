@@ -50,6 +50,24 @@ export class MoviesService implements OnModuleInit {
     return value;
   }
 
+  /** новый сеанс в афишу (админ); список фильмов покидает кэш сразу */
+  async create(input: {
+    title: string;
+    description: string;
+    genre: string;
+    genreIcon: string;
+    durationMin: number;
+    priceRub: number;
+    hue: number;
+    sessionAt: string;
+  }): Promise<MovieDto> {
+    const movie = await this.movies.save(
+      this.movies.create({ ...input, sessionAt: new Date(input.sessionAt) }),
+    );
+    await this.invalidate();
+    return toMovieDto(movie);
+  }
+
   /** Сброс кэша (например, после пересева) */
   async invalidate(): Promise<void> {
     await this.redis.del(MOVIES_KEY);

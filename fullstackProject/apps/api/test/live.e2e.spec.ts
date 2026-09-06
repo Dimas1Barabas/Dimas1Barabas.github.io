@@ -75,6 +75,42 @@ describe('CineBooking e2e: живой docker-стенд', () => {
     expect(res.status).toBe(401);
   });
 
+  it('admin: создаёт сеанс, он появляется в афише', async () => {
+    if (!available) return;
+    // админ сеется при старте API: admin@cine.local / admin-secret-1
+    const login = await api<{ accessToken: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: 'admin@cine.local',
+        password: 'admin-secret-1',
+      }),
+    });
+
+    const before = await api<{ data: unknown[] }>('/movies');
+    const res = await fetch(`${BASE}/movies`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${login.accessToken}`,
+      },
+      body: JSON.stringify({
+        title: 'E2E Сеанс',
+        description: 'Создан e2e-тестом и виден в каталоге',
+        genre: 'e2e',
+        genreIcon: '🧪',
+        durationMin: 80,
+        priceRub: 300,
+        hue: 45,
+        sessionAt: '2026-12-31T21:00:00Z',
+      }),
+    });
+    expect(res.status).toBe(201);
+
+    // кэш каталога сброшен — новый сеанс виден сразу
+    const after = await api<{ data: unknown[] }>('/movies');
+    expect(after.data.length).toBe(before.data.length + 1);
+  });
+
   it('health: postgres, redis и rabbitmq живы', async () => {
     if (!available) return;
     const health = await api<{ status: string; checks: Record<string, string> }>('/health');

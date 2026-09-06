@@ -6,6 +6,7 @@ import { JwtModule, JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
+import { RolesGuard } from '../src/auth/roles.guard';
 import request from 'supertest';
 import { DataSource, FindOperator } from 'typeorm';
 import { BookingsController } from '../src/bookings/bookings.controller';
@@ -203,9 +204,10 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
   let redisStore: Map<string, string>;
   let rabbitPublish: jest.Mock;
   let bookingsService: BookingsService;
-  /** Authorization для двух тестовых пользователей (владелец / чужак) */
+  /** Authorization: владелец брони, чужак и администратор */
   let bearer: string;
   let bearerB: string;
+  let bearerAdmin: string;
 
   beforeAll(async () => {
     moviesRepo = new FakeMovieRepo();
@@ -263,8 +265,10 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         // поэтому AUTH_SECRET объявлен равным 'dev-cine-secret'
         { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },
         JwtStrategy,
-        // как в AppModule: все эндпоинты за JWT, витрина — @Public()
+        // как в AppModule: все эндпоинты за JWT, витрина — @Public(),
+        // следом RolesGuard сверяет @Roles(...) с ролью из токена
         { provide: APP_GUARD, useClass: JwtAuthGuard },
+        { provide: APP_GUARD, useClass: RolesGuard },
       ],
     }).compile();
 
@@ -277,12 +281,13 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
 
     bookingsService = moduleRef.get(BookingsService);
 
-    // два пользователя: владелец брони и «чужак» для проверки 403
+    // три токена: владелец брони, «чужак» и администратор
     const jwt = moduleRef.get(JwtService);
-    const sign = (sub: string, name: string) =>
-      jwt.signAsync({ sub, email: `${sub}@test.local`, name, role: 'user' });
-    bearer = `Bearer ${await sign('user-a', 'Анна Тест')}`;
-    bearerB = `Bearer ${await sign('user-b', 'Борис Чужой')}`;
+    const sign = (sub: string, name: string, role: 'user' | 'admin') =>
+      jwt.signAsync({ sub, email: `${sub}@test.local`, name, role });
+    bearer = `Bearer ${await sign('user-a', 'Анна Тест', 'user')}`;
+    bearerB = `Bearer ${await sign('user-b', 'Борис Чужой', 'user')}`;
+    bearerAdmin = `Bearer ${await sign('admin-1', 'Админ Тестов', 'admin')}`;
   });
 
   afterAll(async () => {
@@ -440,6 +445,62 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       expect(
         (await request(app.getHttpServer()).get('/api/health')).status,
       ).toBe(200);
+    });
+  });
+
+  describe('админ: POST /api/movies (@Roles admin)', () => {
+    const newMovie = {
+      title: 'Тестовый сеанс',
+      description: 'Фильм, созданный интеграционным тестом',
+      genre: 'тест',
+      genreIcon: '🧪',
+      durationMin: 90,
+      priceRub: 350,
+      hue: 120,
+      sessionAt: '2026-12-31T23:00:00Z',
+    };
+
+    it('401 без токена', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/movies')
+        .send(newMovie);
+      expect(res.status).toBe(401);
+    });
+
+    it('403 с токеном обычного пользователя', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/movies')
+        .set('Authorization', bearer)
+        .send(newMovie);
+      expect(res.status).toBe(403);
+    });
+
+    it('201 с админским токеном; каталог обновился и кэш сброшен', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/movies')
+        .set('Authorization', bearerAdmin)
+        .send(newMovie);
+
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({ title: 'Тестовый сеанс', priceRub: 350 });
+      expect(res.body.id).toBeTruthy();
+
+      // до создания кэш прогрет одним из предыдущих GET /api/movies;
+      // create его сбросил — список читается из «БД» и содержит новинку
+      const list = await request(app.getHttpServer()).get('/api/movies');
+      expect(list.body.source).toBe('db');
+      expect(
+        list.body.data.some((m: { title: string }) => m.title === 'Тестовый сеанс'),
+      ).toBe(true);
+    });
+
+    it('400 с кривыми данными (hue вне 0–360)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/movies')
+        .set('Authorization', bearerAdmin)
+        .send({ ...newMovie, hue: 999 });
+
+      expect(res.status).toBe(400);
     });
   });
 

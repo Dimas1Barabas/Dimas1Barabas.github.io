@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { RolesGuard } from './auth/roles.guard';
 import { BookingsModule } from './bookings/bookings.module';
 import { dataSourceOptions } from './data-source';
 import { HealthController } from './health/health.controller';
@@ -43,6 +44,8 @@ import { UsersModule } from './users/users.module';
   providers: [
     // все эндпоинты по умолчанию требуют JWT; витрина помечена @Public()
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // следом за JWT: сверка роли с @Roles(...) на админских эндпоинтах
+    { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
 export class AppModule {}

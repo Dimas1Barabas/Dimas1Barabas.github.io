@@ -1,10 +1,16 @@
 import { ConflictException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { Repository } from 'typeorm';
 import { User } from './user.entity';
 import { UsersService } from './users.service';
+
+/** ConfigService-фейк: отдаёт дефолты (admin@cine.local / admin-secret-1) */
+const configFake = {
+  get: (_key: string, def?: string) => def,
+} as unknown as ConfigService;
 
 /** Map-фейк репозитория: уникальность email эмулируем руками */
 class FakeUserRepo {
@@ -38,7 +44,7 @@ describe('UsersService', () => {
 
   beforeEach(() => {
     repo = new FakeUserRepo();
-    service = new UsersService(repo as unknown as Repository<User>);
+    service = new UsersService(repo as unknown as Repository<User>, configFake);
   });
 
   describe('register', () => {
@@ -114,6 +120,28 @@ describe('UsersService', () => {
 
     it('несуществующий → null', async () => {
       expect(await service.findByEmail('no@body.dev')).toBeNull();
+    });
+  });
+
+  describe('onModuleInit: посев админа', () => {
+    it('создаёт администратора на пустой таблице', async () => {
+      await service.onModuleInit();
+
+      expect(repo.rows).toHaveLength(1);
+      expect(repo.rows[0]).toMatchObject({
+        email: 'admin@cine.local',
+        role: 'admin',
+      });
+      expect(
+        await bcrypt.compare('admin-secret-1', repo.rows[0].passwordHash),
+      ).toBe(true);
+    });
+
+    it('не дублирует админа при повторном старте', async () => {
+      await service.onModuleInit();
+      await service.onModuleInit();
+
+      expect(repo.rows).toHaveLength(1);
     });
   });
 });

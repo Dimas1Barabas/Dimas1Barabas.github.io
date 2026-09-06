@@ -3,7 +3,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
 import { Repository } from 'typeorm';
@@ -18,12 +20,35 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
   private readonly logger = new Logger(UsersService.name);
 
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
+    private readonly config: ConfigService,
   ) {}
+
+  /**
+   * При первом старте сеем администратора — как фильмы в MoviesService.
+   * Данные по умолчанию демонстрационные; в проде задаются через env.
+   */
+  async onModuleInit(): Promise<void> {
+    const email = this.config
+      .get<string>('ADMIN_EMAIL', 'admin@cine.local')
+      .toLowerCase();
+    if (await this.users.findOneBy({ email })) return;
+
+    const password = this.config.get<string>('ADMIN_PASSWORD', 'admin-secret-1');
+    await this.users.save(
+      this.users.create({
+        email,
+        name: 'Админ',
+        role: 'admin',
+        passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
+      }),
+    );
+    this.logger.log(`Посеял администратора ${email}`);
+  }
 
   async register(input: {
     email: string;
