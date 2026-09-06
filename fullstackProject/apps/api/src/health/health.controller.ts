@@ -1,10 +1,12 @@
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { Controller, Get } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { Public } from '../auth/public.decorator';
 import { RedisService } from '../redis/redis.service';
 
 type CheckStatus = 'up' | 'down';
 
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(

@@ -12,6 +12,8 @@ import { sseFrames, waitForSseEvent } from './sse';
 const BASE = process.env.E2E_BASE_URL ?? 'http://localhost:13000/api';
 
 let available = false;
+/** accessToken e2e-пользователя: брони и отмены теперь авторизованы */
+let token = '';
 
 beforeAll(async () => {
   const res = await fetch(`${BASE}/health`, {
@@ -24,21 +26,55 @@ beforeAll(async () => {
       `\n⚠️  API недоступен на ${BASE} — e2e пропущен.\n` +
         `   Поднять стек: docker compose up --build (из fullstackProject)\n`,
     );
+    return;
   }
+
+  // свой пользователь на прогон: email с таймстампом, чтобы не конфликтовать
+  const email = `e2e-${Date.now()}@test.local`;
+  await api('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ email, password: 'e2e-secret-1', name: 'E2E Бот' }),
+  });
+  const login = await api<{ accessToken: string }>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password: 'e2e-secret-1' }),
+  });
+  token = login.accessToken;
 });
 
 jest.setTimeout(30_000);
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${BASE}${path}`, { headers, ...init });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
   return (await res.json()) as T;
 }
 
 describe('CineBooking e2e: живой docker-стенд', () => {
+  it('auth: регистрация и логин выдали рабочий токен', async () => {
+    if (!available) return;
+    expect(token).toBeTruthy();
+    const parts = token.split('.');
+    expect(parts).toHaveLength(3); // header.payload.signature
+  });
+
+  it('мутации без токена — 401', async () => {
+    if (!available) return;
+    const res = await fetch(`${BASE}/bookings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        movieId: '00000000-0000-0000-0000-000000000000',
+        seats: ['1-1'],
+      }),
+    });
+    expect(res.status).toBe(401);
+  });
+
   it('health: postgres, redis и rabbitmq живы', async () => {
     if (!available) return;
     const health = await api<{ status: string; checks: Record<string, string> }>('/health');
@@ -87,14 +123,20 @@ describe('CineBooking e2e: живой docker-стенд', () => {
 
     const first = await fetch(`${BASE}/bookings`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(body),
     });
     expect(first.status).toBe(201);
 
     const second = await fetch(`${BASE}/bookings`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(body),
     });
     expect(second.status).toBe(409);
@@ -176,6 +218,7 @@ describe('CineBooking e2e: живой docker-стенд', () => {
     // повторная отмена по CANCELLING — 409 (гонку закрыл статус)
     const again = await fetch(`${BASE}/bookings/${bookingId}/cancel`, {
       method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
     });
     expect(again.status).toBe(409);
 

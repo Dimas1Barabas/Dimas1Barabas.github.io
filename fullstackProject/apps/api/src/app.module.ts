@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
+import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { BookingsModule } from './bookings/bookings.module';
 import { dataSourceOptions } from './data-source';
 import { HealthController } from './health/health.controller';
@@ -38,5 +40,9 @@ import { UsersModule } from './users/users.module';
     AuthModule,
   ],
   controllers: [HealthController],
+  providers: [
+    // все эндпоинты по умолчанию требуют JWT; витрина помечена @Public()
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+  ],
 })
 export class AppModule {}

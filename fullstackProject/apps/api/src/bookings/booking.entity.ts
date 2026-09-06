@@ -31,6 +31,10 @@ export class Booking {
   @Column({ name: 'customer_name', length: 60 })
   customerName: string;
 
+  /** владелец брони (из JWT); null — брони, созданные до авторизации */
+  @Column({ name: 'user_id', type: 'uuid', nullable: true })
+  userId: string | null;
+
   /** конкретные места: коды «ряд-место», например ["5-7", "5-8"] */
   @Column({ type: 'jsonb' })
   seats: string[];
@@ -65,6 +69,7 @@ export interface BookingDto {
   movieHue: number;
   movieGenreIcon: string;
   customerName: string;
+  userId: string | null;
   seats: string[];
   totalRub: number;
   status: BookingStatus;
@@ -83,6 +88,7 @@ export function toBookingDto(booking: Booking, movie?: Movie): BookingDto {
     movieHue: m?.hue ?? 220,
     movieGenreIcon: m?.genreIcon ?? '🎟️',
     customerName: booking.customerName,
+    userId: booking.userId ?? null,
     seats: booking.seats,
     totalRub: booking.totalRub,
     status: booking.status,

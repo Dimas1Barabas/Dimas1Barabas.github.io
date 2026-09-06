@@ -1,6 +1,9 @@
 import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
 import { MoviesService } from './movies.service';
 
+/** витрина: каталог доступен без авторизации */
+@Public()
 @Controller('movies')
 export class MoviesController {
   constructor(private readonly movies: MoviesService) {}

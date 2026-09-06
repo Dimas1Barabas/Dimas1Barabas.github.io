@@ -2,6 +2,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsOptional,
   IsString,
   IsUUID,
   Matches,
@@ -13,10 +14,12 @@ export class CreateBookingDto {
   @IsUUID()
   movieId!: string;
 
+  /** не указано — берём имя из JWT авторизованного пользователя */
+  @IsOptional()
   @IsString()
   @MinLength(2, { message: 'Имя слишком короткое' })
   @MaxLength(60)
-  customerName!: string;
+  customerName?: string;
 
   /** коды мест «ряд-место»; принадлежность залу проверяет сервис */
   @IsArray()

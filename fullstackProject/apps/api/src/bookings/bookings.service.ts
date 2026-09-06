@@ -1,8 +1,14 @@
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, In, Repository } from 'typeorm';
+import { AuthUser } from '../auth/auth-user';
 import { Movie } from '../movies/movie.entity';
 import { BookingStream } from './booking-stream';
 import {
@@ -79,12 +85,14 @@ export class BookingsService {
    * Создаёт бронь со статусом PENDING и публикует событие в RabbitMQ —
    * дальше её подхватывает Go-воркер ticket-worker.
    *
+   * Владелец и имя покупателя — из JWT: customerName в теле опционален.
    * Бронь и занятость мест пишутся одной транзакцией; уникальный
    * констрейнт (movie_id, seat) не пускает двух клиентов на одно место:
    * проигравший в гонке получает 409 со списком занятых мест.
    */
-  async create(dto: CreateBookingDto): Promise<BookingDto> {
+  async create(dto: CreateBookingDto, user: AuthUser): Promise<BookingDto> {
     const seats = normalizeSeats(dto.seats);
+    const customerName = (dto.customerName ?? user.name).trim();
 
     let booking: Booking;
     let movie: Movie;
@@ -95,7 +103,8 @@ export class BookingsService {
           id: randomUUID(), // нужен до сохранения — на него ссылаются места
           movieId: found.id,
           movie: found,
-          customerName: dto.customerName.trim(),
+          customerName,
+          userId: user.id,
           seats,
           totalRub: computeTotal(found.priceRub, seats),
           status: 'PENDING',
@@ -169,8 +178,12 @@ export class BookingsService {
    * по «Отменить» разрешается на стороне БД, проигравший получает 409.
    * Места держатся занятыми до вердикта воркера (booking.refunded).
    */
-  async cancel(id: string): Promise<BookingDto> {
+  async cancel(id: string, user: AuthUser): Promise<BookingDto> {
     const booking = await this.bookings.findOneByOrFail({ id });
+    // чужую бронь отменять нельзя (null — досимвольные брони без владельца)
+    if (booking.userId && booking.userId !== user.id) {
+      throw new ForbiddenException('Это не ваша бронь');
+    }
     const movie = await this.movies.findOneByOrFail({ id: booking.movieId });
 
     const switched = await this.bookings.update(

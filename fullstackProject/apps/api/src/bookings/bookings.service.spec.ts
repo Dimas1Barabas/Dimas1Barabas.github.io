@@ -1,8 +1,9 @@
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { AuthUser } from '../auth/auth-user';
 import { Movie } from '../movies/movie.entity';
 import { Booking } from './booking.entity';
 import { BookingStream } from './booking-stream';
@@ -23,12 +24,21 @@ const movieFixture: Movie = {
   createdAt: new Date('2026-09-01T00:00:00Z'),
 };
 
+/** владелец брони из JWT (совпадает с userId фикстуры) */
+const authUser: AuthUser = {
+  id: 'user-1',
+  email: 'dmitry@example.com',
+  name: 'Дмитрий',
+  role: 'user',
+};
+
 function bookingFixture(): Booking {
   return {
     id: 'booking-1',
     movieId: movieFixture.id,
     movie: movieFixture,
     customerName: 'Дмитрий',
+    userId: 'user-1',
     seats: ['5-7', '5-8', '5-9'],
     totalRub: 1200,
     status: 'PENDING',
@@ -116,7 +126,7 @@ describe('BookingsService (unit)', () => {
         seats: ['5-7', '5-8', '5-9'],
       };
 
-      const result = await service.create(dto);
+      const result = await service.create(dto, authUser);
 
       expect(result.status).toBe('PENDING');
       expect(result.totalRub).toBe(1200); // 400 × 3
@@ -124,12 +134,25 @@ describe('BookingsService (unit)', () => {
       expect(result.seats).toEqual(['5-7', '5-8', '5-9']);
     });
 
+    it('имя покупателя берёт из JWT, если customerName не передан', async () => {
+      const result = await service.create(
+        { movieId: 'movie-1', seats: ['1-1'] },
+        authUser,
+      );
+
+      expect(result.customerName).toBe('Дмитрий');
+      expect(result.userId).toBe('user-1');
+    });
+
     it('занимает места строками занятости в той же транзакции', async () => {
-      await service.create({
-        movieId: 'movie-1',
-        customerName: 'Дмитрий',
-        seats: ['5-7'],
-      });
+      await service.create(
+        {
+          movieId: 'movie-1',
+          customerName: 'Дмитрий',
+          seats: ['5-7'],
+        },
+        authUser,
+      );
 
       expect(emInsert).toHaveBeenCalledWith(
         SeatOccupancy,
@@ -140,11 +163,14 @@ describe('BookingsService (unit)', () => {
     });
 
     it('публикует booking.created в обмен cinema', async () => {
-      await service.create({
-        movieId: 'movie-1',
-        customerName: 'Дмитрий',
-        seats: ['5-7', '5-8', '5-9'],
-      });
+      await service.create(
+        {
+          movieId: 'movie-1',
+          customerName: 'Дмитрий',
+          seats: ['5-7', '5-8', '5-9'],
+        },
+        authUser,
+      );
 
       expect(rabbit.publish).toHaveBeenCalledTimes(1);
       const [exchange, routingKey, event] = rabbit.publish.mock.calls[0];
@@ -158,11 +184,14 @@ describe('BookingsService (unit)', () => {
     });
 
     it('обрезает пробелы вокруг имени', async () => {
-      const result = await service.create({
-        movieId: 'movie-1',
-        customerName: '  Дмитрий  ',
-        seats: ['1-1'],
-      });
+      const result = await service.create(
+        {
+          movieId: 'movie-1',
+          customerName: '  Дмитрий  ',
+          seats: ['1-1'],
+        },
+        authUser,
+      );
       expect(result.customerName).toBe('Дмитрий');
     });
 
@@ -174,11 +203,14 @@ describe('BookingsService (unit)', () => {
         { seat: '5-8', movieId: 'movie-1' },
       ]);
 
-      const promise = service.create({
-        movieId: 'movie-1',
-        customerName: 'Дмитрий',
-        seats: ['5-8', '5-7', '6-1'],
-      });
+      const promise = service.create(
+        {
+          movieId: 'movie-1',
+          customerName: 'Дмитрий',
+          seats: ['5-8', '5-7', '6-1'],
+        },
+        authUser,
+      );
 
       await expect(promise).rejects.toBeInstanceOf(ConflictException);
       const err = (await promise.catch((e: unknown) => e)) as ConflictException;
@@ -217,7 +249,7 @@ describe('BookingsService (unit)', () => {
     });
 
     it('переводит CONFIRMED-бронь в CANCELLING', async () => {
-      const result = await service.cancel('booking-1');
+      const result = await service.cancel('booking-1', authUser);
 
       expect(result.status).toBe('CANCELLING');
       expect(bookingsRepo.update).toHaveBeenCalledWith(
@@ -227,7 +259,7 @@ describe('BookingsService (unit)', () => {
     });
 
     it('публикует booking.cancelled с суммой возврата', async () => {
-      await service.cancel('booking-1');
+      await service.cancel('booking-1', authUser);
 
       expect(rabbit.publish).toHaveBeenCalledWith(
         'cinema',
@@ -241,6 +273,19 @@ describe('BookingsService (unit)', () => {
       );
     });
 
+    it('403: чужую бронь отменить нельзя', async () => {
+      const promise = service.cancel('booking-1', {
+        ...authUser,
+        id: 'user-2',
+        name: 'Гость',
+      });
+
+      await expect(promise).rejects.toBeInstanceOf(ForbiddenException);
+      // сага не запускается — события и UPDATE не было
+      expect(rabbit.publish).not.toHaveBeenCalled();
+      expect(bookingsRepo.update).not.toHaveBeenCalled();
+    });
+
     it('409 с текущим статусом, если UPDATE не затронул строку', async () => {
       bookingsRepo.update.mockResolvedValue({ affected: 0 });
       bookingsRepo.findOneByOrFail.mockResolvedValue({
@@ -248,7 +293,7 @@ describe('BookingsService (unit)', () => {
         status: 'PENDING',
       });
 
-      const promise = service.cancel('booking-1');
+      const promise = service.cancel('booking-1', authUser);
 
       await expect(promise).rejects.toBeInstanceOf(ConflictException);
       const err = (await promise.catch((e: unknown) => e)) as ConflictException;
@@ -381,11 +426,14 @@ describe('BookingsService (unit)', () => {
 
   describe('SSE: уведомление подключённых клиентов', () => {
     it('create → событие с новой бронью и статистикой', async () => {
-      await service.create({
-        movieId: 'movie-1',
-        customerName: 'Дмитрий',
-        seats: ['1-1'],
-      });
+      await service.create(
+        {
+          movieId: 'movie-1',
+          customerName: 'Дмитрий',
+          seats: ['1-1'],
+        },
+        authUser,
+      );
 
       expect(stream.emit).toHaveBeenCalledTimes(1);
       const payload = stream.emit.mock.calls[0][0];
