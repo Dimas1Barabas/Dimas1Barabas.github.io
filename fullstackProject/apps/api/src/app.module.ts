@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from './auth/auth.module';
 import { BookingsModule } from './bookings/bookings.module';
 import { dataSourceOptions } from './data-source';
 import { HealthController } from './health/health.controller';
 import { MoviesModule } from './movies/movies.module';
 import { rabbitMqModule } from './rabbit/rabbitmq.config';
 import { RedisModule } from './redis/redis.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -30,6 +32,10 @@ import { RedisModule } from './redis/redis.module';
     RedisModule,
     MoviesModule,
     BookingsModule,
+
+    // пользователи и авторизация: регистрация сейчас, логин+JWT дальше
+    UsersModule,
+    AuthModule,
   ],
   controllers: [HealthController],
 })

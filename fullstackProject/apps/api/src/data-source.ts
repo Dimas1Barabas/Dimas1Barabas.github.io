@@ -5,6 +5,7 @@ import { DataSource, DataSourceOptions } from 'typeorm';
 import { Booking } from './bookings/booking.entity';
 import { SeatOccupancy } from './bookings/seat-occupancy.entity';
 import { Movie } from './movies/movie.entity';
+import { User } from './users/user.entity';
 
 // quiet: dotenv@17 по умолчанию печатает подсказку в stdout при каждом старте
 loadEnv({ quiet: true });
@@ -25,8 +26,8 @@ const isRunningFromTs = __filename.endsWith('.ts');
 export const dataSourceOptions: DataSourceOptions = {
   type: 'postgres',
   url: databaseUrl,
-  // сущностей три — явный список надёжнее glob'а
-  entities: [Movie, Booking, SeatOccupancy],
+  // сущности перечислены явно — надёжнее glob'а; не забывать добавлять новые
+  entities: [Movie, Booking, SeatOccupancy, User],
   migrations: [
     isRunningFromTs ? 'src/migrations/*.ts' : 'dist/migrations/*.js',
   ],
