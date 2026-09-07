@@ -240,6 +240,26 @@ describe('BookingsService (unit)', () => {
     });
   });
 
+  describe('my', () => {
+    it('отбирает брони по владельцу из JWT и маппит в DTO', async () => {
+      bookingsRepo.find.mockResolvedValue([bookingFixture()]);
+
+      const result = await service.my(authUser);
+
+      expect(bookingsRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: 'user-1' } }),
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ id: 'booking-1', userId: 'user-1' });
+    });
+
+    it('у пользователя без броней — пустой список', async () => {
+      bookingsRepo.find.mockResolvedValue([]);
+
+      await expect(service.my(authUser)).resolves.toEqual([]);
+    });
+  });
+
   describe('cancel', () => {
     beforeEach(() => {
       bookingsRepo.findOneByOrFail.mockResolvedValue({

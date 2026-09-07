@@ -84,8 +84,11 @@ class FakeBookingRepo {
     return booking;
   }
 
-  async find(): Promise<Booking[]> {
-    return [...this.rows];
+  async find(opts?: { where?: { userId?: string } }): Promise<Booking[]> {
+    let rows = [...this.rows];
+    const userId = opts?.where?.userId;
+    if (userId) rows = rows.filter((r) => r.userId === userId);
+    return rows;
   }
 
   async findOneByOrFail(where: { id: string }): Promise<Booking> {
@@ -445,6 +448,49 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       expect(
         (await request(app.getHttpServer()).get('/api/health')).status,
       ).toBe(200);
+    });
+  });
+
+  describe('личный кабинет: GET /api/bookings/my', () => {
+    it('401 без токена', async () => {
+      const res = await request(app.getHttpServer()).get('/api/bookings/my');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('показывает только брони владельца из токена', async () => {
+      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+      const foreign = (
+        await request(app.getHttpServer())
+          .post('/api/bookings')
+          .set('Authorization', bearerB)
+          .send({ movieId: movies[5].id, seats: ['3-1'] })
+      ).body;
+      expect(foreign.userId).toBe('user-b');
+
+      const mine = await request(app.getHttpServer())
+        .get('/api/bookings/my')
+        .set('Authorization', bearer);
+      const theirs = await request(app.getHttpServer())
+        .get('/api/bookings/my')
+        .set('Authorization', bearerB);
+
+      expect(mine.status).toBe(200);
+      expect(mine.body).toHaveLength(
+        bookingsRepo.rows.filter((r) => r.userId === 'user-a').length,
+      );
+      expect(mine.body.every((b: { userId: string }) => b.userId === 'user-a')).toBe(true);
+      expect(theirs.body).toHaveLength(1);
+      expect(theirs.body[0]).toMatchObject({ id: foreign.id, userId: 'user-b' });
+    });
+
+    it('пусто у пользователя без броней', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/bookings/my')
+        .set('Authorization', bearerAdmin);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
     });
   });
 

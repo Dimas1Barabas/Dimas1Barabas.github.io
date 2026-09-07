@@ -172,6 +172,17 @@ export class BookingsService {
     return rows.map((row) => toBookingDto(row));
   }
 
+  /** личный кабинет: брони владельца из JWT, свежие сверху */
+  async my(user: AuthUser, limit = 100): Promise<BookingDto[]> {
+    const rows = await this.bookings.find({
+      where: { userId: user.id },
+      order: { createdAt: 'DESC' },
+      take: limit,
+      relations: { movie: true },
+    });
+    return rows.map((row) => toBookingDto(row));
+  }
+
   /**
    * Компенсирующая сага: просим Go-воркер вернуть платёж.
    * Бронь уходит в CANCELLING условным UPDATE из CONFIRMED — двойной клик

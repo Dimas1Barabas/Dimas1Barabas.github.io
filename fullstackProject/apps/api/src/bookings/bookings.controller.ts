@@ -60,6 +60,12 @@ export class BookingsController {
     );
   }
 
+  /** личный кабинет: свои брони по JWT (не публично — владелец из токена) */
+  @Get('my')
+  my(@Req() req: { user: AuthUser }) {
+    return this.bookings.my(req.user);
+  }
+
   /** демо-табло: последние брони и статистика открыты всем */
   @Public()
   @Get()
