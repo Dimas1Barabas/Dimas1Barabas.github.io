@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ApiError, api, apiUrl } from '../api/client';
+import { ApiError, api, apiUrl, storedUser } from '../api/client';
 import { demoEngine } from '../api/demoEngine';
 import type {
   Booking,
@@ -23,6 +23,9 @@ function cancelErrorMessage(err: ApiError): string {
 export const useBookingsStore = defineStore('bookings', {
   state: () => ({
     bookings: [] as Booking[],
+    /** личный кабинет: брони вошедшего пользователя (GET /bookings/my) */
+    mine: [] as Booking[],
+    mineError: null as string | null,
     stats: {
       PENDING: 0,
       CONFIRMED: 0,
@@ -145,9 +148,30 @@ export const useBookingsStore = defineStore('bookings', {
       } else {
         this.bookings.splice(idx, 1, payload.booking);
       }
+      // личный кабинет: своя бронь обновляется так же мгновенно;
+      // владельца берём из localStorage, чтобы не тянуть auth-стор (цикл)
+      const meId = storedUser()?.id;
+      if (meId && payload.booking.userId === meId) {
+        const mineIdx = this.mine.findIndex((b) => b.id === payload.booking.id);
+        if (mineIdx === -1) {
+          this.mine.unshift(payload.booking);
+        } else {
+          this.mine.splice(mineIdx, 1, payload.booking);
+        }
+      }
       this.stats = payload.stats;
       this.lastUpdated = Date.now();
       this.error = null;
+    },
+
+    /** личный кабинет: загрузить свои брони (только live + вошедший) */
+    async refreshMine(): Promise<void> {
+      try {
+        this.mine = await api.myBookings();
+        this.mineError = null;
+      } catch (err) {
+        this.mineError = err instanceof Error ? err.message : 'Ошибка загрузки';
+      }
     },
   },
 });

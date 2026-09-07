@@ -96,6 +96,8 @@ export const api = {
     request<{ source: 'cache' | 'db'; data: Movie[] }>('/movies'),
   bookings: () => request<Booking[]>('/bookings'),
   stats: () => request<BookingStats>('/bookings/stats'),
+  /** личный кабинет: свои брони по Bearer-токену */
+  myBookings: () => request<Booking[]>('/bookings/my'),
   /** карта занятости зала сеанса (без кэша — всегда свежая) */
   seatMap: (movieId: string) => request<SeatMap>(`/movies/${movieId}/seats`),
   createBooking: (payload: CreateBookingPayload) =>

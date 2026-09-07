@@ -34,6 +34,8 @@ export interface Booking {
   movieHue: number;
   movieGenreIcon: string;
   customerName: string;
+  /** владелец брони (null — досимвольные брони без владельца) */
+  userId: string | null;
   /** коды мест «ряд-место», например ["5-7", "5-8"] */
   seats: string[];
   totalRub: number;

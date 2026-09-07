@@ -17,6 +17,9 @@ const authStore = useAuthStore();
       <nav class="nav">
         <RouterLink to="/">Сеансы</RouterLink>
         <RouterLink to="/bookings">Бронирования</RouterLink>
+        <RouterLink v-if="appStore.mode === 'live' && authStore.isAuthed" to="/my">
+          Мои билеты
+        </RouterLink>
         <RouterLink to="/architecture">Архитектура</RouterLink>
         <RouterLink v-if="authStore.isAdmin" to="/admin">Новый сеанс</RouterLink>
       </nav>
@@ -39,7 +42,7 @@ const authStore = useAuthStore();
       <!-- сессия: только при живом API (в демо авторизации нет) -->
       <div v-if="appStore.mode === 'live'" class="header-auth">
         <template v-if="authStore.isAuthed">
-          <RouterLink to="/admin" class="user-chip" :title="authStore.user?.email">
+          <RouterLink to="/my" class="user-chip" :title="authStore.user?.email">
             <span class="user-chip__name">{{ authStore.user?.name }}</span>
             <span v-if="authStore.isAdmin" class="user-chip__role">admin</span>
           </RouterLink>

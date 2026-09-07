@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { api, saveAuth } from '../api/client';
 import { demoEngine } from '../api/demoEngine';
 import { useAppStore } from './app';
 import { useBookingsStore } from './bookings';
@@ -213,5 +214,84 @@ describe('stores: демо-режим целиком (movies + bookings)', () =>
     expect(bookings.bookings[0].status).toBe('CANCELLED');
     expect(bookings.stats.CANCELLED).toBeGreaterThanOrEqual(1);
     expect(bookings.error).toBeNull();
+  });
+});
+
+describe('stores: личный кабинет (bookings.mine)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    localStorage.clear();
+    FakeEventSource.instances = [];
+    vi.stubGlobal('EventSource', FakeEventSource);
+    useAppStore().mode = 'live';
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('refreshMine кладёт свои брони и чистит ошибку', async () => {
+    const mySpy = vi
+      .spyOn(api, 'myBookings')
+      .mockResolvedValue([{ id: 'b-my-1', userId: 'user-1' } as Booking]);
+
+    const bookings = useBookingsStore();
+    await bookings.refreshMine();
+
+    expect(mySpy).toHaveBeenCalledOnce();
+    expect(bookings.mine).toHaveLength(1);
+    expect(bookings.mineError).toBeNull();
+  });
+
+  it('refreshMine: ошибка API → mineError, список не трогаем', async () => {
+    vi.spyOn(api, 'myBookings').mockRejectedValue(new Error('HTTP 401'));
+
+    const bookings = useBookingsStore();
+    bookings.mine = [{ id: 'b-old' } as Booking];
+    await bookings.refreshMine();
+
+    expect(bookings.mineError).toBe('HTTP 401');
+    expect(bookings.mine).toHaveLength(1); // старые данные остаются
+  });
+
+  it('SSE upsert-ит в mine только бронь вошедшего пользователя', () => {
+    saveAuth('token-1', {
+      id: 'user-1',
+      email: 'anna@test.local',
+      name: 'Анна',
+      role: 'user',
+      createdAt: new Date().toISOString(),
+    });
+    const stats: BookingStats = {
+      PENDING: 1,
+      CONFIRMED: 0,
+      FAILED: 0,
+      CANCELLING: 0,
+      CANCELLED: 0,
+    };
+
+    const bookings = useBookingsStore();
+    bookings.startListening();
+    const es = FakeEventSource.instances.at(-1)!;
+
+    // своя новая бронь, чужая бронь, затем изменение своей
+    es.dispatch('booking', {
+      booking: { id: 'mine-1', userId: 'user-1', status: 'PENDING' } as Booking,
+      stats,
+    });
+    es.dispatch('booking', {
+      booking: { id: 'other-1', userId: 'user-2', status: 'PENDING' } as Booking,
+      stats,
+    });
+    es.dispatch('booking', {
+      booking: { id: 'mine-1', userId: 'user-1', status: 'CANCELLED' } as Booking,
+      stats,
+    });
+
+    expect(bookings.mine).toHaveLength(1); // чужая не попала, своя не задублилась
+    expect(bookings.mine[0]).toMatchObject({ id: 'mine-1', status: 'CANCELLED' });
+
+    bookings.stopListening();
   });
 });
