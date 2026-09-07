@@ -42,6 +42,8 @@ type Config struct {
 	RefundMinLatency  time.Duration // имитация «возврата»
 	RefundMaxLatency  time.Duration
 	RefundSuccessRate float64 // доля успешных возвратов
+	MaxAttempts       int     // попыток обработки, дальше — parking
+	RetryTTLMs        int     // сколько retry-очередь держит сообщение
 }
 
 func loadConfig() Config {
@@ -64,6 +66,8 @@ func loadConfig() Config {
 		RefundMaxLatency: time.Duration(envInt("REFUND_MAX_MS", 1600)) *
 			time.Millisecond,
 		RefundSuccessRate: envFloat("REFUND_SUCCESS_RATE", 0.9),
+		MaxAttempts:       envInt("RETRY_MAX_ATTEMPTS", 3),
+		RetryTTLMs:        envInt("RETRY_TTL_MS", 5000),
 	}
 }
 
@@ -248,6 +252,69 @@ func refund(cfg Config, ev BookingCancelled) BookingRefunded {
 	}
 }
 
+// ---------- retry и parking: упавшее сообщение не теряется ----------
+
+// retryHeader — счётчик попыток; растёт с каждым уходом в retry-очередь.
+const retryHeader = "x-retry-count"
+
+// attempts читает счётчик попыток из заголовков доставки (0 — оригинал).
+// AMQP-типы целого зависят от брокера, поэтому принимаем всё int-семейство.
+func attempts(d amqp.Delivery) int {
+	switch v := d.Headers[retryHeader].(type) {
+	case int:
+		return v
+	case int16:
+		return int(v)
+	case int32:
+		return int(v)
+	case int64:
+		return int(v)
+	default:
+		return 0
+	}
+}
+
+// routeFor решает судьбу упавшего сообщения: транзиентная ошибка ретраится,
+// пока попыток меньше max; «ядовитое» (poison) едет в parking сразу —
+// ретраи его не исправят.
+func routeFor(attempt, max int, poison bool) string {
+	if poison || attempt >= max {
+		return "parking"
+	}
+	return "retry"
+}
+
+// retryOrFail публикует копию упавшего сообщения в `<rk>.retry` или
+// `<rk>.parking` и подтверждает исходное. Паузу между попытками делает
+// брокер: retry-очередь держит копию TTL и по dead-letter возвращает её
+// в рабочую очередь.
+func retryOrFail(cfg Config, ch *amqp.Channel, d amqp.Delivery, poison bool, errText string) {
+	attempt := attempts(d) + 1
+	target := routeFor(attempt, cfg.MaxAttempts, poison)
+
+	headers := amqp.Table{}
+	for k, v := range d.Headers {
+		headers[k] = v
+	}
+	headers[retryHeader] = attempt
+	headers["x-last-error"] = errText
+
+	if err := ch.Publish(cfg.Exchange, d.RoutingKey+"."+target, false, false,
+		amqp.Publishing{
+			ContentType:  d.ContentType,
+			DeliveryMode: amqp.Persistent,
+			Timestamp:    time.Now(),
+			Body:         d.Body,
+			Headers:      headers,
+		}); err != nil {
+		// канал, скорее всего, мёртв: не ack'аем — брокер вернёт сообщение
+		log.Printf("↻ ! %s: %v", d.RoutingKey, err)
+		return
+	}
+	_ = d.Ack(false)
+	log.Printf("↻ %s: попытка %d → %s (%s)", d.RoutingKey, attempt, target, errText)
+}
+
 // ---------- консьюмер RabbitMQ ----------
 
 func runConsumer(ctx context.Context, cfg Config, stats *Stats) error {
@@ -279,6 +346,14 @@ func runConsumer(ctx context.Context, cfg Config, stats *Stats) error {
 	}
 	if err := ch.QueueBind(cfg.CancelQueue, "booking.cancelled", cfg.Exchange, false, nil); err != nil {
 		return fmt.Errorf("бинд %s: %w", cfg.CancelQueue, err)
+	}
+	// Топология надёжности: retry-очереди (TTL + возврат в рабочую) и
+	// parking — зеркально той, что объявляет NestJS API.
+	if err := declareRetryTopology(ch, cfg.Exchange, cfg.InQueue, "booking.created", cfg.RetryTTLMs); err != nil {
+		return err
+	}
+	if err := declareRetryTopology(ch, cfg.Exchange, cfg.CancelQueue, "booking.cancelled", cfg.RetryTTLMs); err != nil {
+		return err
 	}
 	// Берём по одному сообщению за раз — «честная» обработка без перегрузки.
 	if err := ch.Qos(1, 0, false); err != nil {
@@ -315,6 +390,30 @@ func runConsumer(ctx context.Context, cfg Config, stats *Stats) error {
 	}
 }
 
+// declareRetryTopology объявляет `<queue>.retry` (держит упавшее сообщение
+// ttlMs и по dead-letter возвращает его в рабочую очередь) и `<queue>.parking`
+// — «парковку» ядовитых и исчерпавших попытки сообщений.
+func declareRetryTopology(ch *amqp.Channel, exchange, queue, routingKey string, ttlMs int) error {
+	retryArgs := amqp.Table{
+		"x-message-ttl":             ttlMs,
+		"x-dead-letter-exchange":    exchange,
+		"x-dead-letter-routing-key": routingKey,
+	}
+	if _, err := ch.QueueDeclare(queue+".retry", true, false, false, false, retryArgs); err != nil {
+		return fmt.Errorf("очередь %s.retry: %w", queue, err)
+	}
+	if err := ch.QueueBind(queue+".retry", routingKey+".retry", exchange, false, nil); err != nil {
+		return fmt.Errorf("бинд %s.retry: %w", queue, err)
+	}
+	if _, err := ch.QueueDeclare(queue+".parking", true, false, false, false, nil); err != nil {
+		return fmt.Errorf("очередь %s.parking: %w", queue, err)
+	}
+	if err := ch.QueueBind(queue+".parking", routingKey+".parking", exchange, false, nil); err != nil {
+		return fmt.Errorf("бинд %s.parking: %w", queue, err)
+	}
+	return nil
+}
+
 // publishJSON отправляет событие в обмен «cinema» персистентно.
 func publishJSON(ch *amqp.Channel, exchange, rk string, body []byte) error {
 	return ch.Publish(exchange, rk, false, false, amqp.Publishing{
@@ -333,9 +432,10 @@ func handleDelivery(cfg Config, stats *Stats, ch *amqp.Channel, d amqp.Delivery)
 	case "booking.cancelled":
 		handleCancelled(cfg, stats, ch, d)
 	default:
-		log.Printf("неизвестный routing key %q — отбрасываю", d.RoutingKey)
+		log.Printf("неизвестный routing key %q", d.RoutingKey)
 		stats.Errors.Add(1)
-		_ = d.Nack(false, false)
+		// poison: ретраить бессмысленно — сразу в parking
+		retryOrFail(cfg, ch, d, true, "неизвестный routing key "+d.RoutingKey)
 	}
 }
 
@@ -346,7 +446,8 @@ func handleCreated(cfg Config, stats *Stats, ch *amqp.Channel, d amqp.Delivery) 
 	if err := json.Unmarshal(d.Body, &ev); err != nil {
 		log.Printf("битое сообщение: %v", err)
 		stats.Errors.Add(1)
-		_ = d.Nack(false, false) // не возвращаем в очередь
+		// poison: тело не разбирается, ретраи не помогут — в parking
+		retryOrFail(cfg, ch, d, true, fmt.Sprintf("не разбирается JSON: %v", err))
 		return
 	}
 
@@ -357,14 +458,14 @@ func handleCreated(cfg Config, stats *Stats, ch *amqp.Channel, d amqp.Delivery) 
 	body, err := json.Marshal(result)
 	if err != nil {
 		stats.Errors.Add(1)
-		_ = d.Nack(false, true)
+		retryOrFail(cfg, ch, d, false, fmt.Sprintf("не сериализуется вердикт: %v", err))
 		return
 	}
 
 	if err := publishJSON(ch, cfg.Exchange, cfg.OutRK, body); err != nil {
 		log.Printf("→ ! %s: %v", ev.BookingID, err)
 		stats.Errors.Add(1)
-		_ = d.Nack(false, true)
+		retryOrFail(cfg, ch, d, false, fmt.Sprintf("публикация вердикта: %v", err))
 		return
 	}
 
@@ -384,7 +485,7 @@ func handleCancelled(cfg Config, stats *Stats, ch *amqp.Channel, d amqp.Delivery
 	if err := json.Unmarshal(d.Body, &ev); err != nil {
 		log.Printf("битое сообщение: %v", err)
 		stats.Errors.Add(1)
-		_ = d.Nack(false, false)
+		retryOrFail(cfg, ch, d, true, fmt.Sprintf("не разбирается JSON: %v", err))
 		return
 	}
 
@@ -395,14 +496,14 @@ func handleCancelled(cfg Config, stats *Stats, ch *amqp.Channel, d amqp.Delivery
 	body, err := json.Marshal(result)
 	if err != nil {
 		stats.Errors.Add(1)
-		_ = d.Nack(false, true)
+		retryOrFail(cfg, ch, d, false, fmt.Sprintf("не сериализуется вердикт: %v", err))
 		return
 	}
 
 	if err := publishJSON(ch, cfg.Exchange, cfg.RefundRK, body); err != nil {
 		log.Printf("→ ! %s: %v", ev.BookingID, err)
 		stats.Errors.Add(1)
-		_ = d.Nack(false, true)
+		retryOrFail(cfg, ch, d, false, fmt.Sprintf("публикация вердикта: %v", err))
 		return
 	}
 
