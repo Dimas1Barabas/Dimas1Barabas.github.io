@@ -12,6 +12,7 @@
   --red: #f85149;
   --violet: #a371f7;
   --radius: 12px;
+  --font-display: 'Unbounded', 'Segoe UI', -apple-system, sans-serif;
 }
 
 * {
@@ -91,8 +92,9 @@ code {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-family: var(--font-display);
   font-weight: 700;
-  font-size: 18px;
+  font-size: 17px;
   color: var(--text);
   letter-spacing: 0.2px;
 }
@@ -195,8 +197,98 @@ main.container {
 
 .page-title {
   margin: 0 0 4px;
-  font-size: clamp(24px, 4vw, 34px);
-  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+  font-size: clamp(22px, 3.6vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- hero на главной ---------- */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 34px;
+  padding: 44px 26px 40px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--bg-soft);
+}
+
+.hero__glow,
+.hero__glow--2 {
+  position: absolute;
+  width: 380px;
+  height: 380px;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.hero__glow {
+  background: var(--accent);
+  top: -160px;
+  right: -60px;
+  animation: hero-float 9s ease-in-out infinite;
+}
+
+.hero__glow--2 {
+  background: var(--violet);
+  bottom: -200px;
+  left: -120px;
+  animation: hero-float 11s ease-in-out infinite reverse;
+}
+
+@keyframes hero-float {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-24px, 18px) scale(1.08);
+  }
+}
+
+.hero__title {
+  position: relative;
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-size: clamp(26px, 5vw, 44px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  max-width: 21ch;
+  background: linear-gradient(92deg, var(--text) 20%, var(--accent-2) 75%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hero__sub {
+  position: relative;
+  margin: 0 0 18px;
+  max-width: 58ch;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.hero__chips {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.hero__chip {
+  font-size: 13px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  background: rgba(13, 17, 23, 0.45);
+  backdrop-filter: blur(6px);
+  padding: 6px 13px;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 .page-sub {
