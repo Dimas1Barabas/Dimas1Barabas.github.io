@@ -1,0 +1,93 @@
+# CI для фулстек-демо CineBooking (fullstackProject/).
+#
+# Герметичные уровни без внешних зависимостей:
+#   web    — typecheck (vue-tsc) + vitest + production-сборка
+#   api    — jest юнит + интеграционные (фейковые Postgres/RabbitMQ/Redis на Map) + сборка
+#   worker — go test
+#
+# E2E против живого docker-стенда в CI не гоняем: он требует поднятия
+# всего compose-окружения и остаётся локальным (`npm run test:e2e`
+# корректно пропускается, если стенд не поднят).
+#
+# Репо — портфолио на GitHub Pages, где меняется не только fullstackProject,
+# поэтому стоят path-фильтры: гоняемся только по своему каталогу.
+name: cinebooking
+
+on:
+  push:
+    branches: [main]
+    paths: ['fullstackProject/**', '.github/workflows/cinebooking.yml']
+  pull_request:
+    paths: ['fullstackProject/**', '.github/workflows/cinebooking.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: cinebooking-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: web — vitest + typecheck + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: fullstackProject/apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fullstackProject/apps/web/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - run: npm run build
+
+  api:
+    name: api — jest (unit + integration) + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: fullstackProject/apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fullstackProject/apps/api/package-lock.json
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run test:integration
+
+      # dist нужен docker-образу: проверяем, что проект компилируется
+      - run: npm run build
+
+  worker:
+    name: worker — go test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: fullstackProject/services/ticket-worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: fullstackProject/services/ticket-worker/go.mod
+          cache-dependency-path: fullstackProject/services/ticket-worker/go.sum
+
+      - run: go test ./...
