@@ -1,5 +1,7 @@
 # CineBooking — фулстек-демо: бронирование билетов в кино
 
+[![cinebooking CI](https://github.com/Dimas1Barabas/Dimas1Barabas.github.io/actions/workflows/cinebooking.yml/badge.svg)](https://github.com/Dimas1Barabas/Dimas1Barabas.github.io/actions/workflows/cinebooking.yml)
+
 Монорепозиторий с полным циклом асинхронной обработки брони:
 
 ```
@@ -125,6 +127,11 @@ cd services/ticket-worker && go test ./...
 
 База стенда для e2e переопределяется через `E2E_BASE_URL` (по умолчанию
 `http://localhost:13000/api`).
+
+CI (GitHub Actions, workflow в корне репо `.github/workflows/cinebooking.yml`)
+на пуш/PR по `fullstackProject/` гоняет герметичные уровни: web —
+typecheck + vitest + build, api — юнит + интеграционные + build,
+worker — go test. E2e остаётся локальным: ему нужен живой docker-стенд.
 
 Письменная тест-документация «как у QA» — в [docs/qa/](docs/qa/):
 [тест-план](docs/qa/test-plan.md), [чек-листы](docs/qa/checklists.md),
