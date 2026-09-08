@@ -89,6 +89,13 @@ docker compose exec postgres dropdb -U cine cine_empty
 Файлы миграций лежат в `apps/api/src/migrations` и попадают в docker-образ
 вместе с `dist` без правок Dockerfile.
 
+`InitialSchema` написан руками через Table API (`queryRunner.createTable`) —
+это тот же код-путь, что у synchronize, поэтому чистый том разворачивается
+схемой, идентичной прежней synchronize-схеме. UUID-ключи используют
+`gen_random_uuid()` (встроен в PG13+, extension не нужен). Имена индексов
+и FK считаются `DefaultNamingStrategy` — так же, как делал synchronize,
+чтобы будущие `migration:generate` давали чистый diff.
+
 ## Тесты
 
 Три уровня, фронт и бэк:
