@@ -239,6 +239,8 @@ class DemoEngine {
       movieHue: movie.hue,
       movieGenreIcon: movie.genreIcon,
       customerName: (payload.customerName ?? 'Гость').trim(),
+      // демо-режим без токенов — владелец не привязывается (как брони до авторизации в API)
+      userId: null,
       seats,
       totalRub: movie.priceRub * seats.length,
       status: 'PENDING',
