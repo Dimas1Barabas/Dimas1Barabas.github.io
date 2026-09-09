@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import BookingModal from '../components/BookingModal.vue';
 import MovieCard from '../components/MovieCard.vue';
 import type { Booking, Movie } from '../api/types';
@@ -10,6 +10,26 @@ const authStore = useAuthStore();
 const moviesStore = useMoviesStore();
 const selectedMovie = ref<Movie | null>(null);
 const justCreated = ref<Booking | null>(null);
+/** выбранный жанр афиши; null — показываем все сеансы */
+const selectedGenre = ref<string | null>(null);
+
+/** жанры афиши в порядке появления — как идут сеансы в каталоге */
+const genres = computed<string[]>(() => [
+  ...new Set(moviesStore.movies.map((movie) => movie.genre)),
+]);
+
+/** выбранный жанр, если он ещё есть в афише (после перезагрузки мог исчезнуть) */
+const filteredGenre = computed<string | null>(() =>
+  selectedGenre.value && genres.value.includes(selectedGenre.value)
+    ? selectedGenre.value
+    : null,
+);
+
+const filteredMovies = computed<Movie[]>(() =>
+  filteredGenre.value
+    ? moviesStore.movies.filter((movie) => movie.genre === filteredGenre.value)
+    : moviesStore.movies,
+);
 
 onMounted(() => {
   void moviesStore.load();
@@ -60,6 +80,30 @@ function closeToast(): void {
       </span>
     </div>
 
+    <div
+      v-if="!moviesStore.loading && moviesStore.movies.length"
+      class="genre-filter"
+    >
+      <button
+        class="genre-filter__chip"
+        :class="{ 'genre-filter__chip--active': !filteredGenre }"
+        type="button"
+        @click="selectedGenre = null"
+      >
+        Все
+      </button>
+      <button
+        v-for="genre in genres"
+        :key="genre"
+        class="genre-filter__chip"
+        :class="{ 'genre-filter__chip--active': filteredGenre === genre }"
+        type="button"
+        @click="selectedGenre = genre"
+      >
+        {{ genre }}
+      </button>
+    </div>
+
     <!-- скелетоны: заглушки в размер реальной сетки, чтобы не прыгала вёрстка -->
     <div v-if="moviesStore.loading" aria-hidden="true" class="movie-grid">
       <div v-for="i in 6" :key="i" class="skeleton-card">
@@ -86,7 +130,7 @@ function closeToast(): void {
 
     <div v-else class="movie-grid">
       <MovieCard
-        v-for="(movie, index) in moviesStore.movies"
+        v-for="(movie, index) in filteredMovies"
         :key="movie.id"
         :index="index"
         :movie="movie"

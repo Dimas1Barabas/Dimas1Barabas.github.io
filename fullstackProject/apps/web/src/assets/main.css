@@ -387,6 +387,38 @@ main.container {
 
 /* ---------- сетка фильмов ---------- */
 
+.genre-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.genre-filter__chip {
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.genre-filter__chip:hover {
+  color: var(--text);
+}
+
+.genre-filter__chip--active {
+  color: #051018;
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+  border-color: transparent;
+  font-weight: 600;
+}
+
 .movie-grid {
   display: grid;
   gap: 16px;

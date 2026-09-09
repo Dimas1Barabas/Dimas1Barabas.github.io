@@ -1,4 +1,5 @@
 import { mount, RouterLinkStub } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Movie, User } from '../api/types';
@@ -91,5 +92,50 @@ describe('HomeView', () => {
     expect(wrapper.findAll('.movie-card')).toHaveLength(1);
     expect(wrapper.text()).toContain('Рекурсия');
     expect(wrapper.find('.skeleton-card').exists()).toBe(false);
+  });
+
+  it('фильтр по жанру оставляет только его сеансы, «Все» возвращает всё', async () => {
+    const { pinia, moviesStore } = setup();
+    const comedy: Movie = { ...movie, id: 'm-2', title: 'Дежавю', genre: 'комедия' };
+    moviesStore.movies = [movie, comedy];
+
+    const wrapper = mountHome(pinia);
+    const chips = wrapper.findAll('.genre-filter__chip');
+    expect(chips.map((c) => c.text())).toEqual(['Все', 'хоррор', 'комедия']);
+    expect(wrapper.findAll('.movie-card')).toHaveLength(2);
+
+    await chips.find((c) => c.text() === 'хоррор')!.trigger('click');
+    expect(wrapper.findAll('.movie-card')).toHaveLength(1);
+    expect(wrapper.text()).toContain('Рекурсия');
+    expect(wrapper.text()).not.toContain('Дежавю');
+
+    const allChip = wrapper
+      .findAll('.genre-filter__chip')
+      .find((c) => c.text() === 'Все')!;
+    await allChip.trigger('click');
+    expect(wrapper.findAll('.movie-card')).toHaveLength(2);
+  });
+
+  it('выбранный жанр исчез из афиши — фильтр мягко сбрасывается', async () => {
+    const { pinia, moviesStore } = setup();
+    const comedy: Movie = { ...movie, id: 'm-2', title: 'Дежавю', genre: 'комедия' };
+    moviesStore.movies = [movie, comedy];
+
+    const wrapper = mountHome(pinia);
+    const horrorChip = wrapper
+      .findAll('.genre-filter__chip')
+      .find((c) => c.text() === 'хоррор')!;
+    await horrorChip.trigger('click');
+    expect(wrapper.findAll('.movie-card')).toHaveLength(1);
+
+    // перезагрузили афишу — хоррора в ней больше нет
+    moviesStore.movies = [comedy];
+    await nextTick();
+
+    expect(wrapper.findAll('.movie-card')).toHaveLength(1);
+    expect(wrapper.text()).toContain('Дежавю');
+    // активен снова «Все»
+    const activeChip = wrapper.find('.genre-filter__chip--active');
+    expect(activeChip.text()).toBe('Все');
   });
 });
