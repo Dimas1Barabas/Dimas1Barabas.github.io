@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import type { Booking, Movie } from '../api/types';
 import { ApiError } from '../api/client';
 import { formatPrice, formatSession, formatSeats } from '../utils/format';
@@ -21,6 +21,8 @@ const customerName = ref('');
 const selected = ref<string[]>([]);
 const submitting = ref(false);
 const error = ref<string | null>(null);
+/** сам диалог — фокусируем при открытии, чтобы Esc закрывал без клика */
+const modalEl = ref<HTMLElement | null>(null);
 
 /** в live-режиме бронь требует JWT: имя и владелец придут из токена */
 const needLogin = computed(
@@ -35,6 +37,23 @@ const total = computed(() =>
     ? props.movie.priceRub * selected.value.length
     : 0,
 );
+
+/** ёмкость и заполненность зала — для мини-бара занятости */
+const totalSeats = computed(() =>
+  seatMap.value
+    ? seatMap.value.layout.rows * seatMap.value.layout.seatsPerRow
+    : 0,
+);
+const occupancyPct = computed(() =>
+  totalSeats.value
+    ? Math.round(((seatMap.value?.occupied.length ?? 0) / totalSeats.value) * 100)
+    : 0,
+);
+
+/** снимаем место чипом под картой — как клик по сиденью, только нагляднее */
+function dropSeat(code: string): void {
+  selected.value = selected.value.filter((seat) => seat !== code);
+}
 
 /** список конфликтных мест из тела 409-ответа API */
 function seatsTakenFrom(err: unknown): string[] {
@@ -94,11 +113,15 @@ async function submit(): Promise<void> {
 // при каждом открытии — свежая карта зала и пустой выбор
 watch(
   () => props.movie,
-  (movie) => {
+  async (movie) => {
     customerName.value = '';
     selected.value = [];
     error.value = null;
-    if (movie) void moviesStore.loadSeats(movie.id);
+    if (movie) {
+      void moviesStore.loadSeats(movie.id);
+      await nextTick();
+      modalEl.value?.focus({ preventScroll: true });
+    }
   },
   { immediate: true },
 );
@@ -113,7 +136,13 @@ watch(
         @click.self="emit('close')"
         @keydown.esc="emit('close')"
       >
-        <div class="modal" role="dialog" aria-modal="true">
+        <div
+          ref="modalEl"
+          class="modal"
+          role="dialog"
+          aria-modal="true"
+          tabindex="-1"
+        >
           <header
             class="modal__head"
             :style="{
@@ -159,20 +188,49 @@ watch(
             </label>
 
             <div class="field">
-              <span class="field__label">
-                Места (свободно {{ seatMap?.free ?? '…' }}, максимум 8)
-              </span>
+              <span class="field__label">Места (максимум 8)</span>
               <p v-if="moviesStore.seatsLoading" class="hint">
                 Загружаем карту зала…
               </p>
-              <SeatPicker
-                v-else-if="seatMap"
-                v-model="selected"
-                :rows="seatMap.layout.rows"
-                :seats-per-row="seatMap.layout.seatsPerRow"
-                :occupied="seatMap.occupied"
-                :max="8"
-              />
+              <template v-else-if="seatMap">
+                <div
+                  class="occupancy"
+                  :title="`Занято ${seatMap.occupied.length} из ${totalSeats} мест`"
+                >
+                  <div class="occupancy__bar">
+                    <div
+                      class="occupancy__fill"
+                      :class="{
+                        'occupancy__fill--mid': occupancyPct > 50,
+                        'occupancy__fill--high': occupancyPct > 80,
+                      }"
+                      :style="{ width: `${occupancyPct}%` }"
+                    ></div>
+                  </div>
+                  <span class="occupancy__text">
+                    занято {{ seatMap.occupied.length }} из {{ totalSeats }}
+                  </span>
+                </div>
+                <SeatPicker
+                  v-model="selected"
+                  :rows="seatMap.layout.rows"
+                  :seats-per-row="seatMap.layout.seatsPerRow"
+                  :occupied="seatMap.occupied"
+                  :max="8"
+                />
+                <div v-if="selected.length" class="modal__seats">
+                  <button
+                    v-for="seat in selected"
+                    :key="seat"
+                    class="seat-chip"
+                    type="button"
+                    :aria-label="`Снять место ${seat}`"
+                    @click="dropSeat(seat)"
+                  >
+                    {{ seat }} <span aria-hidden="true">✕</span>
+                  </button>
+                </div>
+              </template>
               <p v-else-if="error !== null" class="hint hint--error">
                 Карта зала недоступна
               </p>
@@ -209,7 +267,13 @@ watch(
                 :disabled="submitting || !selected.length"
                 @click="submit"
               >
-                {{ submitting ? 'Отправляем…' : 'Забронировать' }}
+                {{
+                  submitting
+                    ? 'Отправляем…'
+                    : selected.length
+                      ? 'Забронировать'
+                      : 'Выберите места'
+                }}
               </button>
             </div>
           </footer>

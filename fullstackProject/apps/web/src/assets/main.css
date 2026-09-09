@@ -697,6 +697,82 @@ main.container {
   box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
 }
 
+/* диалог получает фокус программно при открытии (Esc без клика) */
+.modal:focus {
+  outline: none;
+}
+
+/* мини-бар занятости зала: цвет растёт с заполненностью */
+.occupancy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.occupancy__bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-softer);
+  overflow: hidden;
+}
+
+.occupancy__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--green);
+  transition:
+    width 0.3s ease,
+    background 0.3s ease;
+}
+
+.occupancy__fill--mid {
+  background: var(--amber);
+}
+
+.occupancy__fill--high {
+  background: var(--red);
+}
+
+.occupancy__text {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* выбранные места чипами — снятие кликом */
+.modal__seats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.seat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(88, 166, 255, 0.45);
+  background: rgba(88, 166, 255, 0.12);
+  color: var(--accent-2);
+  border-radius: 7px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.seat-chip:hover {
+  background: rgba(88, 166, 255, 0.22);
+}
+
+.seat-chip span {
+  opacity: 0.55;
+  font-size: 10px;
+}
+
 /* ---------- карта зала ---------- */
 
 .hall {
@@ -734,6 +810,11 @@ main.container {
   color: var(--muted);
   text-align: center;
   flex: none;
+  transition: color 0.15s ease;
+}
+
+.hall__row:hover .hall__row-label {
+  color: var(--accent-2);
 }
 
 .hall__seat {

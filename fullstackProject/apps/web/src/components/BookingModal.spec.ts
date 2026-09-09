@@ -1,0 +1,85 @@
+import { mount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Movie, SeatMap } from '../api/types';
+import { useAppStore } from '../stores/app';
+import { useMoviesStore } from '../stores/movies';
+import BookingModal from './BookingModal.vue';
+
+const movie: Movie = {
+  id: 'm-1',
+  title: 'Рекурсия',
+  description: 'Фильм о вложенных снах.',
+  genre: 'хоррор',
+  genreIcon: '👻',
+  durationMin: 112,
+  priceRub: 400,
+  hue: 275,
+  sessionAt: '2026-09-10T19:00:00Z',
+};
+
+/** 3 ряда по 4 места, заняты 1-1 и 2-2 */
+const seatMap: SeatMap = {
+  movieId: 'm-1',
+  layout: { rows: 3, seatsPerRow: 4 },
+  occupied: ['1-1', '2-2'],
+  free: 10,
+};
+
+/** демо-режим (спрашиваем имя), карта зала уже в сторе, loadSeats замокан */
+function mountModal() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const appStore = useAppStore();
+  const moviesStore = useMoviesStore();
+  appStore.mode = 'demo';
+  moviesStore.loadSeats = vi.fn();
+  moviesStore.seatMap = seatMap;
+
+  const wrapper = mount(BookingModal, {
+    props: { movie },
+    global: { plugins: [pinia], stubs: { Teleport: true } },
+  });
+  return wrapper;
+}
+
+beforeEach(() => {
+  localStorage.clear();
+});
+
+describe('BookingModal', () => {
+  it('показывает занятость зала по карте мест', () => {
+    const wrapper = mountModal();
+
+    expect(wrapper.text()).toContain('занято 2 из 12');
+    expect(wrapper.find('.occupancy__fill').attributes('style')).toContain(
+      'width: 17%',
+    );
+  });
+
+  it('до выбора мест кнопка подсказывает и выключена', () => {
+    const wrapper = mountModal();
+
+    const submit = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+    expect(submit.text()).toBe('Выберите места');
+    expect(submit.attributes('disabled')).toBeDefined();
+  });
+
+  it('выбранные места — чипами; клик по чипу снимает место', async () => {
+    const wrapper = mountModal();
+
+    const free = wrapper.findAll('button.hall__seat:not([disabled])');
+    await free[0].trigger('click'); // 1-2
+    await free[2].trigger('click'); // 1-4
+    expect(wrapper.findAll('.seat-chip')).toHaveLength(2);
+
+    await wrapper.findAll('.seat-chip')[0].trigger('click'); // снять 1-2
+    const chips = wrapper.findAll('.seat-chip');
+    expect(chips).toHaveLength(1);
+    expect(chips[0].text()).toContain('1-4');
+
+    const submit = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+    expect(submit.text()).toBe('Забронировать');
+    expect(submit.attributes('disabled')).toBeUndefined();
+  });
+});
