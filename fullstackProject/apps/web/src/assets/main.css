@@ -444,6 +444,11 @@ main.container {
 .movie-card__icon {
   font-size: 56px;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+  transition: transform 0.2s ease;
+}
+
+.movie-card:hover .movie-card__icon {
+  transform: scale(1.1);
 }
 
 .movie-card__duration {
@@ -501,6 +506,65 @@ main.container {
 .movie-card__price {
   font-weight: 700;
   font-size: 15px;
+}
+
+/* ---------- скелетоны загрузки афиши ---------- */
+
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.skeleton-card__poster,
+.skeleton-card__line {
+  background:
+    linear-gradient(
+      100deg,
+      var(--bg-softer) 40%,
+      #262e3f 50%,
+      var(--bg-softer) 60%
+    );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-card__poster {
+  height: 200px;
+}
+
+.skeleton-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px;
+}
+
+.skeleton-card__line {
+  height: 12px;
+  border-radius: 6px;
+}
+
+.skeleton-card__line--title {
+  height: 15px;
+  width: 75%;
+}
+
+.skeleton-card__line--short {
+  width: 45%;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 120% 0;
+  }
+
+  to {
+    background-position: -20% 0;
+  }
 }
 
 /* ---------- модальное окно ---------- */

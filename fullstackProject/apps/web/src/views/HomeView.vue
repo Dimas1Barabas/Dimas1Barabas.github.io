@@ -3,8 +3,10 @@ import { onMounted, ref } from 'vue';
 import BookingModal from '../components/BookingModal.vue';
 import MovieCard from '../components/MovieCard.vue';
 import type { Booking, Movie } from '../api/types';
+import { useAuthStore } from '../stores/auth';
 import { useMoviesStore } from '../stores/movies';
 
+const authStore = useAuthStore();
 const moviesStore = useMoviesStore();
 const selectedMovie = ref<Movie | null>(null);
 const justCreated = ref<Booking | null>(null);
@@ -58,10 +60,29 @@ function closeToast(): void {
       </span>
     </div>
 
-    <p v-if="moviesStore.loading" class="hint">Загружаем сеансы…</p>
+    <!-- скелетоны: заглушки в размер реальной сетки, чтобы не прыгала вёрстка -->
+    <div v-if="moviesStore.loading" aria-hidden="true" class="movie-grid">
+      <div v-for="i in 6" :key="i" class="skeleton-card">
+        <div class="skeleton-card__poster"></div>
+        <div class="skeleton-card__body">
+          <div class="skeleton-card__line skeleton-card__line--title"></div>
+          <div class="skeleton-card__line"></div>
+          <div class="skeleton-card__line skeleton-card__line--short"></div>
+        </div>
+      </div>
+    </div>
+
     <p v-else-if="moviesStore.error" class="hint hint--error">
       {{ moviesStore.error }}
     </p>
+
+    <div v-else-if="!moviesStore.movies.length" class="empty">
+      <div class="empty__icon">🎬</div>
+      <p>Сеансов пока нет — загляните позже.</p>
+      <RouterLink v-if="authStore.isAdmin" class="btn btn--sm" to="/admin">
+        Добавить сеанс
+      </RouterLink>
+    </div>
 
     <div v-else class="movie-grid">
       <MovieCard
