@@ -403,6 +403,16 @@ main.container {
   transition:
     transform 0.15s ease,
     border-color 0.15s ease;
+  /* stagger: каскадное появление, задержка капится на 12-й карточке */
+  animation: card-in 0.45s ease both;
+  animation-delay: calc(min(var(--card-i, 0), 12) * 55ms);
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
 }
 
 .movie-card:hover {
@@ -412,14 +422,27 @@ main.container {
 
 .movie-card__poster {
   position: relative;
-  height: 120px;
+  height: 200px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+.movie-card__genre {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
+}
+
 .movie-card__icon {
-  font-size: 44px;
+  font-size: 56px;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
 }
 
@@ -1162,5 +1185,18 @@ main.container {
     width: 100%;
     order: 3;
     margin-right: 0;
+  }
+}
+
+/* ---------- доступность: без анимаций по системной настройке ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

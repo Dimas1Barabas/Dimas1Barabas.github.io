@@ -25,13 +25,27 @@ function closeToast(): void {
 
 <template>
   <section>
-    <div class="page-head">
-      <div>
-        <h1 class="page-title">Сеансы на неделю</h1>
-        <p class="page-sub">
-          Бронирование с асинхронной обработкой: API → RabbitMQ → Go-воркер
-        </p>
+    <div class="hero">
+      <div aria-hidden="true" class="hero__glow"></div>
+      <div aria-hidden="true" class="hero__glow hero__glow--2"></div>
+      <h1 class="hero__title">Кино начинается с одного клика</h1>
+      <p class="hero__sub">
+        CineBooking — учебный фулстек-проект: Vue 3 общается с NestJS API,
+        брони уходят в RabbitMQ и подтверждаются Go-воркером, а афиша
+        кэшируется в Redis.
+      </p>
+      <div class="hero__chips">
+        <span class="hero__chip">🖥️ Vue 3 + Pinia</span>
+        <span class="hero__chip">🧩 NestJS API</span>
+        <span class="hero__chip">🐘 PostgreSQL</span>
+        <span class="hero__chip">⚡ Redis</span>
+        <span class="hero__chip">🐇 RabbitMQ</span>
+        <span class="hero__chip">🐹 Go-воркер</span>
       </div>
+    </div>
+
+    <div class="page-head">
+      <h2 class="page-title">Сеансы на неделю</h2>
       <span
         v-if="!moviesStore.loading && moviesStore.movies.length"
         class="chip"
@@ -51,8 +65,9 @@ function closeToast(): void {
 
     <div v-else class="movie-grid">
       <MovieCard
-        v-for="movie in moviesStore.movies"
+        v-for="(movie, index) in moviesStore.movies"
         :key="movie.id"
+        :index="index"
         :movie="movie"
         @book="selectedMovie = $event"
       />
