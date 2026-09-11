@@ -613,13 +613,20 @@ main.container {
   padding: 20px;
 }
 
+/* колонка с фиксированными шапкой/футером: на низких экранах
+   скроллится только тело, а «Забронировать» всегда под рукой */
 .modal {
   width: 100%;
   max-width: 460px;
+  max-height: calc(100vh - 40px);
+  /* dvh учитывает панелями браузера на мобильных; предыдущая строка — фолбэк */
+  max-height: calc(100dvh - 40px);
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: 16px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .modal__head {
@@ -628,6 +635,7 @@ main.container {
   gap: 12px;
   padding: 16px 18px;
   position: relative;
+  flex: none;
 }
 
 .modal__icon {
@@ -670,6 +678,11 @@ main.container {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* скролл не «утаскивает» страницу под модалкой */
+  overscroll-behavior: contain;
 }
 
 .field__label {
@@ -780,6 +793,8 @@ main.container {
   border: 1px solid var(--border);
   border-radius: 9px;
   padding: 14px 12px 10px;
+  /* на узких экранах места не сжимаются в ноль — зал листается вбок */
+  overflow-x: auto;
 }
 
 .hall__screen {
@@ -819,7 +834,8 @@ main.container {
 
 .hall__seat {
   flex: 1;
-  min-width: 0;
+  /* порог читаемости: ниже места не сжимаются — зал листается вбок */
+  min-width: 22px;
   height: 26px;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -828,6 +844,8 @@ main.container {
   font-size: 11px;
   cursor: pointer;
   padding: 0;
+  /* тап без задержки на касание и без двойного зума */
+  touch-action: manipulation;
 }
 
 .hall__seat:hover:not(:disabled) {
@@ -905,6 +923,7 @@ main.container {
   padding: 14px 18px;
   border-top: 1px solid var(--border);
   background: var(--bg);
+  flex: none;
 }
 
 .modal__total {
@@ -1346,8 +1365,86 @@ main.container {
 /* ---------- адаптив ---------- */
 
 @media (max-width: 640px) {
+  .container {
+    padding: 0 14px;
+  }
+
+  main.container {
+    padding-top: 18px;
+  }
+
+  /* шапка: строка 1 — бренд + режим + сессия, строка 2 — листаемая навигация */
   .header-inner {
     flex-wrap: wrap;
+    gap: 10px 12px;
+    padding-top: 10px;
+    padding-bottom: 8px;
+  }
+
+  .brand {
+    margin-right: auto;
+  }
+
+  .nav {
+    order: 3;
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin-right: 0;
+    padding-bottom: 2px;
+    /* чип-навигация без явного скроллбара, как в нативных приложениях */
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav a {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .hero {
+    padding: 28px 16px 26px;
+    margin-bottom: 24px;
+  }
+
+  .hero__glow,
+  .hero__glow--2 {
+    width: 240px;
+    height: 240px;
+  }
+
+  /* iOS Safari зумит поле при фокусе, если шрифт меньше 16px */
+  .field__input {
+    font-size: 16px;
+  }
+
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .modal {
+    border-radius: 14px;
+  }
+
+  /* длинное «Итого · места…» — своей строкой над кнопками */
+  .modal__foot {
+    flex-wrap: wrap;
+  }
+
+  .modal__total {
+    width: 100%;
+  }
+
+  .modal__actions {
+    margin-left: auto;
+  }
+
+  .toast {
+    bottom: 14px;
   }
 
   .svc-row {

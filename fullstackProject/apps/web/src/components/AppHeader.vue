@@ -94,4 +94,15 @@ const authStore = useAuthStore();
   padding: 6px 12px;
   font-size: 0.85rem;
 }
+
+/* на узком экране имя в чипе уступает место режиму и кнопке входа */
+@media (max-width: 640px) {
+  .user-chip {
+    max-width: 120px;
+  }
+
+  .header-auth {
+    gap: 6px;
+  }
+}
 </style>
