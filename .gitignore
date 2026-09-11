@@ -206,3 +206,6 @@
 /SNP/First/node_modules/@parcel/watcher/src/windows/WindowsBackend.cc
 /SNP/First/node_modules/@parcel/watcher/src/windows/WindowsBackend.hh
 /SNP/First/node_modules/@parcel/watcher/wrapper.js
+
+# демка CineBooking случайно собранная не в ту папку (правильная — CineBooking/ в корне)
+fullstackProject/CineBooking/
