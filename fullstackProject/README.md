@@ -272,7 +272,9 @@ Pages раздаёт только статику, поэтому опублик�
 
 ```bash
 cd apps/web && npm run build
-rm -rf ../../CineBooking && cp -r dist ../../CineBooking
+# демка — в CineBooking/ в КОРНЕ репозитория портфолио (не в fullstackProject!)
+root="$(git rev-parse --show-toplevel)"
+rm -rf "$root/CineBooking" && cp -r dist "$root/CineBooking"
 ```
 
 ## Переменные окружения
