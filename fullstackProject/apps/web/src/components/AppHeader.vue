@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { useAppStore } from '../stores/app';
 import { useAuthStore } from '../stores/auth';
+import { useThemeStore } from '../stores/theme';
 
 const appStore = useAppStore();
 const authStore = useAuthStore();
+const themeStore = useThemeStore();
 </script>
 
 <template>
@@ -54,6 +56,19 @@ const authStore = useAuthStore();
           Войти
         </RouterLink>
       </div>
+
+      <!-- тема работает и в демо: выбор чисто фронтендовый, без бэкенда -->
+      <button
+        class="theme-toggle"
+        type="button"
+        :aria-label="
+          themeStore.isLight ? 'Переключить на тёмную тему' : 'Переключить на светлую тему'
+        "
+        :title="themeStore.isLight ? 'Тёмная тема' : 'Светлая тема'"
+        @click="themeStore.toggle()"
+      >
+        {{ themeStore.isLight ? '🌙' : '☀️' }}
+      </button>
     </div>
   </header>
 </template>
@@ -93,6 +108,27 @@ const authStore = useAuthStore();
 .btn--compact {
   padding: 6px 12px;
   font-size: 0.85rem;
+}
+
+/* тумблер темы: квадратная иконка в общем стиле ghost-кнопок */
+.theme-toggle {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-softer);
 }
 
 /* на узком экране имя в чипе уступает место режиму и кнопке входа */

@@ -11,6 +11,19 @@
       name="description"
       content="CineBooking — фулстек-демо: Vue + NestJS + PostgreSQL + Redis + RabbitMQ + микросервис на Go."
     />
+    <!-- тема до первой отрисовки: иначе сохранённая светлая вспыхнет тёмной (FOUC) -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('cine.theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.dataset.theme = t;
+          }
+        } catch (e) {
+          /* приватный режим — останемся на тёмной по умолчанию */
+        }
+      })();
+    </script>
     <title>CineBooking · бронирование билетов</title>
   </head>
   <body>

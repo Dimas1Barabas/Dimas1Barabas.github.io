@@ -3,10 +3,13 @@ import { onMounted } from 'vue';
 import AppHeader from './components/AppHeader.vue';
 import ModeBanner from './components/ModeBanner.vue';
 import { useAppStore } from './stores/app';
+import { useThemeStore } from './stores/theme';
 
 const appStore = useAppStore();
+const themeStore = useThemeStore();
 
 onMounted(() => {
+  themeStore.init();
   void appStore.init();
 });
 </script>

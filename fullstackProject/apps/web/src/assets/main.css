@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;
   --bg: #0d1117;
   --bg-soft: #161b22;
   --bg-softer: #1c2230;
@@ -13,6 +14,13 @@
   --violet: #a371f7;
   --radius: 12px;
   --font-display: 'Unbounded', 'Segoe UI', -apple-system, sans-serif;
+  /* производные от темы — перекрываются блоком [data-theme='light'] */
+  --btn-fg: #051018; /* текст на акцентной заливке */
+  --bg-glow: #1b2433; /* радиальный подсвет фона страницы */
+  --header-bg: rgba(13, 17, 23, 0.85);
+  --shimmer-hi: #262e3f; /* блик скелетона */
+  --chip-overlay: rgba(13, 17, 23, 0.45); /* чипы поверх hero */
+  --backdrop: rgba(1, 4, 9, 0.7); /* фон под модалкой */
 }
 
 * {
@@ -27,7 +35,7 @@ body {
 
 body {
   background:
-    radial-gradient(1100px 500px at 85% -10%, #1b2433 0%, transparent 60%),
+    radial-gradient(1100px 500px at 85% -10%, var(--bg-glow) 0%, transparent 60%),
     var(--bg);
   color: var(--text);
   font-family:
@@ -73,7 +81,7 @@ code {
 
 .site-header {
   border-bottom: 1px solid var(--border);
-  background: rgba(13, 17, 23, 0.85);
+  background: var(--header-bg);
   backdrop-filter: blur(8px);
   position: sticky;
   top: 0;
@@ -284,7 +292,7 @@ main.container {
   font-size: 13px;
   color: var(--text);
   border: 1px solid var(--border);
-  background: rgba(13, 17, 23, 0.45);
+  background: var(--chip-overlay);
   backdrop-filter: blur(6px);
   padding: 6px 13px;
   border-radius: 999px;
@@ -334,7 +342,7 @@ main.container {
   padding: 9px 18px;
   font-size: 14px;
   font-weight: 600;
-  color: #051018;
+  color: var(--btn-fg);
   background: linear-gradient(180deg, var(--accent-2), var(--accent));
   cursor: pointer;
   transition:
@@ -413,7 +421,7 @@ main.container {
 }
 
 .genre-filter__chip--active {
-  color: #051018;
+  color: var(--btn-fg);
   background: linear-gradient(180deg, var(--accent-2), var(--accent));
   border-color: transparent;
   font-weight: 600;
@@ -557,7 +565,7 @@ main.container {
     linear-gradient(
       100deg,
       var(--bg-softer) 40%,
-      #262e3f 50%,
+      var(--shimmer-hi) 50%,
       var(--bg-softer) 60%
     );
   background-size: 200% 100%;
@@ -605,7 +613,7 @@ main.container {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(1, 4, 9, 0.7);
+  background: var(--backdrop);
   backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
@@ -856,7 +864,7 @@ main.container {
 .hall__seat--selected {
   background: var(--accent);
   border-color: var(--accent-2);
-  color: #0d1117;
+  color: var(--btn-fg);
   font-weight: 700;
 }
 
@@ -1282,7 +1290,7 @@ main.container {
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  color: #051018;
+  color: var(--btn-fg);
   background: linear-gradient(180deg, var(--accent-2), var(--accent));
 }
 
@@ -1360,6 +1368,51 @@ main.container {
   font-size: 13px;
   padding-top: 18px;
   padding-bottom: 26px;
+}
+
+/* ---------- светлая тема ----------
+   Весь интерфейс красится из токенов выше; здесь их переворачиваем.
+   Атрибут на <html> ставит инлайн-скрипт в index.html (до отрисовки)
+   и stores/theme.ts при переключении тумблера в шапке. */
+
+[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f6f8fa;
+  --bg-soft: #ffffff;
+  --bg-softer: #eef1f5;
+  --border: #d8dee4;
+  --text: #1f2328;
+  --muted: #59636e;
+  --accent: #0969da;
+  --accent-2: #218bff;
+  --green: #1a7f37;
+  --amber: #9a6700;
+  --red: #cf222e;
+  --violet: #8250df;
+  --btn-fg: #ffffff;
+  --bg-glow: #dceafb;
+  --header-bg: rgba(255, 255, 255, 0.85);
+  --shimmer-hi: #e4e9ef;
+  --chip-overlay: rgba(255, 255, 255, 0.6);
+  --backdrop: rgba(31, 35, 40, 0.45);
+}
+
+/* белое на белом: ховеры и чипы, чей фон был «подсветкой» тёмной темы */
+[data-theme='light'] .nav a:hover,
+[data-theme='light'] .nav a.router-link-active {
+  background: var(--bg-softer);
+}
+
+[data-theme='light'] .btn--ghost:hover {
+  background: var(--bg-softer);
+}
+
+[data-theme='light'] .user-chip {
+  background: rgba(31, 35, 40, 0.06);
+}
+
+[data-theme='light'] .toast {
+  box-shadow: 0 8px 30px rgba(31, 35, 40, 0.22);
 }
 
 /* ---------- адаптив ---------- */
