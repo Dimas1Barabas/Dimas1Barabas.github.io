@@ -263,10 +263,17 @@ watch(
               </button>
               <button
                 class="btn"
+                :class="{ 'btn--loading': submitting }"
                 type="button"
                 :disabled="submitting || !selected.length"
+                :aria-busy="submitting || undefined"
                 @click="submit"
               >
+                <span
+                  v-if="submitting"
+                  class="spinner"
+                  aria-hidden="true"
+                ></span>
                 {{
                   submitting
                     ? 'Отправляем…'

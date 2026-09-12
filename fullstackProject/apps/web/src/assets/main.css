@@ -381,6 +381,30 @@ main.container {
   border-radius: 8px;
 }
 
+/* кнопка с крутящимся индикатором: спиннер + текст в строку */
+.btn--loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* отмена брони в списке: спокойная, но с красным подтекстом */
 .btn--danger {
   background: transparent;
@@ -466,6 +490,57 @@ main.container {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* зерно в ::after уходит за край — клипим, чтобы не задело тело карточки */
+  overflow: hidden;
+}
+
+/* киноплёночная виньетка: притемняет края постера */
+.movie-card__poster::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    130% 100% at 50% 25%,
+    transparent 55%,
+    rgba(0, 0, 0, 0.3)
+  );
+  pointer-events: none;
+}
+
+/* зерно: SVG-нойз feTurbulence, мерцает скачками смещения (steps) */
+.movie-card__poster::after {
+  content: '';
+  position: absolute;
+  inset: -50px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E")
+    repeat;
+  background-size: 140px 140px;
+  opacity: 0.15;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  animation: grain 0.8s steps(1) infinite;
+}
+
+@keyframes grain {
+  0% {
+    transform: translate(0, 0);
+  }
+
+  20% {
+    transform: translate(-28px, 16px);
+  }
+
+  40% {
+    transform: translate(16px, -24px);
+  }
+
+  60% {
+    transform: translate(-12px, -8px);
+  }
+
+  80% {
+    transform: translate(24px, 20px);
+  }
 }
 
 .movie-card__genre {

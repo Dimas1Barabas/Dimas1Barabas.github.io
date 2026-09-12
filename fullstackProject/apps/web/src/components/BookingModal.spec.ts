@@ -1,8 +1,10 @@
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Movie, SeatMap } from '../api/types';
+import type { Booking, Movie, SeatMap } from '../api/types';
 import { useAppStore } from '../stores/app';
+import { useBookingsStore } from '../stores/bookings';
 import { useMoviesStore } from '../stores/movies';
 import BookingModal from './BookingModal.vue';
 
@@ -81,5 +83,51 @@ describe('BookingModal', () => {
     const submit = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
     expect(submit.text()).toBe('Забронировать');
     expect(submit.attributes('disabled')).toBeUndefined();
+  });
+
+  it('пока бронь создаётся — кнопка крутит спиннер и выключена', async () => {
+    const wrapper = mountModal();
+    const bookingsStore = useBookingsStore();
+    let resolveCreate!: (booking: Booking) => void;
+    bookingsStore.create = vi.fn(
+      () => new Promise<Booking>((resolve) => (resolveCreate = resolve)),
+    );
+
+    await wrapper.find('input.field__input').setValue('Дима');
+    await wrapper
+      .findAll('button.hall__seat:not([disabled])')[0]
+      .trigger('click');
+
+    const submit = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+    void submit.trigger('click'); // не ждём — create висит в pending
+    await nextTick();
+
+    expect(submit.classes()).toContain('btn--loading');
+    expect(submit.find('.spinner').exists()).toBe(true);
+    expect(submit.attributes('aria-busy')).toBe('true');
+    expect(submit.attributes('disabled')).toBeDefined();
+    expect(submit.text()).toContain('Отправляем');
+
+    resolveCreate({
+      id: 'b-1',
+      movieId: 'm-1',
+      movieTitle: 'Рекурсия',
+      movieHue: 275,
+      movieGenreIcon: '👻',
+      customerName: 'Дима',
+      userId: null,
+      seats: ['1-2'],
+      totalRub: 400,
+      status: 'PENDING',
+      message: null,
+      processedBy: null,
+      processedAt: null,
+      createdAt: '2026-09-12T10:00:00Z',
+    });
+    await flushPromises();
+
+    expect(submit.classes()).not.toContain('btn--loading');
+    expect(submit.find('.spinner').exists()).toBe(false);
+    expect(wrapper.emitted('created')).toHaveLength(1);
   });
 });
