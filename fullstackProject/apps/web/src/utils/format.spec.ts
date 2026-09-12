@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  formatDayShort,
   formatDuration,
   formatPrice,
   formatSeats,
   formatSession,
+  formatSessionsLine,
+  formatTime,
   timeAgo,
 } from './format';
 
@@ -47,6 +50,64 @@ describe('formatSession', () => {
     expect(out).toContain('сентября');
     expect(out).toContain('19:00');
     expect(out).toContain('3');
+  });
+});
+
+describe('formatTime', () => {
+  it('только часы и минуты', () => {
+    const iso = new Date(2026, 8, 3, 9, 5).toISOString();
+    expect(formatTime(iso)).toBe('09:05');
+  });
+});
+
+describe('formatDayShort', () => {
+  it('сегодня / завтра по календарным дням, не по часам', () => {
+    const now = new Date(2026, 8, 12, 23, 30);
+    // вчера 23:59 — всё ещё «вчера», не «сегодня»
+    expect(formatDayShort(new Date(2026, 8, 11, 23, 59).toISOString(), now)).not.toBe(
+      'сегодня',
+    );
+    expect(formatDayShort(new Date(2026, 8, 12, 0, 1).toISOString(), now)).toBe('сегодня');
+    expect(formatDayShort(new Date(2026, 8, 13, 10, 0).toISOString(), now)).toBe('завтра');
+  });
+
+  it('далёкие дни — число и короткий месяц', () => {
+    const now = new Date(2026, 8, 12);
+    const out = formatDayShort(new Date(2026, 8, 20, 19, 0).toISOString(), now);
+    expect(out).toContain('20');
+  });
+});
+
+describe('formatSessionsLine', () => {
+  const now = new Date(2026, 8, 12, 12, 0);
+
+  it('пусто и все прошедшие — «Сеансов нет»', () => {
+    expect(formatSessionsLine([], now)).toBe('Сеансов нет');
+    const past = [{ id: 's', startsAt: new Date(2026, 8, 11, 19, 0).toISOString() }];
+    expect(formatSessionsLine(past, now)).toBe('Сеансов нет');
+  });
+
+  it('один-два сеанса — без хвоста', () => {
+    const one = [{ id: 's1', startsAt: new Date(2026, 8, 12, 19, 0).toISOString() }];
+    expect(formatSessionsLine(one, now)).toBe('сегодня 19:00');
+
+    const two = [
+      ...one,
+      { id: 's2', startsAt: new Date(2026, 8, 13, 21, 0).toISOString() },
+    ];
+    expect(formatSessionsLine(two, now)).toBe('сегодня 19:00 · завтра 21:00');
+  });
+
+  it('три и больше — первые два и счётчик остатка', () => {
+    const many = [
+      { id: 's1', startsAt: new Date(2026, 8, 12, 19, 0).toISOString() },
+      { id: 's2', startsAt: new Date(2026, 8, 13, 21, 0).toISOString() },
+      { id: 's3', startsAt: new Date(2026, 8, 14, 15, 0).toISOString() },
+      { id: 's4', startsAt: new Date(2026, 8, 15, 12, 0).toISOString() },
+    ];
+    expect(formatSessionsLine(many, now)).toBe(
+      'сегодня 19:00 · завтра 21:00 · ещё 2',
+    );
   });
 });
 

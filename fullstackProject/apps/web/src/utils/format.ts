@@ -7,6 +7,43 @@ export function formatSession(iso: string): string {
   });
 }
 
+/** Только время сеанса: «19:00» */
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** Короткая метка дня: «сегодня» / «завтра» / «12 сен» */
+export function formatDayShort(iso: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  const oneDayMs = 86_400_000;
+  // сравниваем календарные дни, а не разницу часов: вчера 23:59 ≠ «сегодня»
+  const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((startOf(date) - startOf(now)) / oneDayMs);
+  if (diffDays === 0) return 'сегодня';
+  if (diffDays === 1) return 'завтра';
+  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+}
+
+/** Строка ближайших сеансов для карточки: «сегодня 19:00 · завтра 21:00 · ещё 2» */
+export function formatSessionsLine(
+  sessions: { id: string; startsAt: string }[],
+  now: Date = new Date(),
+): string {
+  const upcoming = sessions
+    .filter((s) => new Date(s.startsAt).getTime() >= now.getTime())
+    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  if (!upcoming.length) return 'Сеансов нет';
+  const head = upcoming
+    .slice(0, 2)
+    .map((s) => `${formatDayShort(s.startsAt, now)} ${formatTime(s.startsAt)}`)
+    .join(' · ');
+  const rest = upcoming.length - 2;
+  return rest > 0 ? `${head} · ещё ${rest}` : head;
+}
+
 export function formatPrice(rub: number): string {
   return `${rub.toLocaleString('ru-RU')} ₽`;
 }
