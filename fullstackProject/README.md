@@ -103,7 +103,7 @@ docker compose exec postgres dropdb -U cine cine_empty
 Три уровня, фронт и бэк:
 
 ```bash
-# фронт: vitest (63 теста) — форматтеры, зал, демо-движок, сторы pinia
+# фронт: vitest (64 теста) — форматтеры, зал, демо-движок, сторы pinia
 # (включая auth-сессию, «мои билеты» и тему), компоненты
 cd apps/web && npm test
 
