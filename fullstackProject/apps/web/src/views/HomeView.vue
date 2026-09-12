@@ -5,6 +5,7 @@ import MovieCard from '../components/MovieCard.vue';
 import type { Booking, Movie } from '../api/types';
 import { useAuthStore } from '../stores/auth';
 import { useMoviesStore } from '../stores/movies';
+import { hasSessionOnDate } from '../utils/sessions';
 
 const authStore = useAuthStore();
 const moviesStore = useMoviesStore();
@@ -12,6 +13,8 @@ const selectedMovie = ref<Movie | null>(null);
 const justCreated = ref<Booking | null>(null);
 /** выбранный жанр афиши; null — показываем все сеансы */
 const selectedGenre = ref<string | null>(null);
+/** фильтр по дню: сегодня / завтра / вся неделя */
+const dayFilter = ref<'all' | 'today' | 'tomorrow'>('all');
 
 /** жанры афиши в порядке появления — как идут сеансы в каталоге */
 const genres = computed<string[]>(() => [
@@ -25,10 +28,21 @@ const filteredGenre = computed<string | null>(() =>
     : null,
 );
 
+/** дата фильтра дня — вычисляется раз при отрисовке страницы, этого достаточно */
+const filterDate = computed<Date | null>(() => {
+  if (dayFilter.value === 'all') return null;
+  const d = new Date();
+  if (dayFilter.value === 'tomorrow') d.setDate(d.getDate() + 1);
+  return d;
+});
+
+/** жанр и день работают вместе: фильм подходит, если есть сеанс в этот день */
 const filteredMovies = computed<Movie[]>(() =>
-  filteredGenre.value
-    ? moviesStore.movies.filter((movie) => movie.genre === filteredGenre.value)
-    : moviesStore.movies,
+  moviesStore.movies.filter(
+    (movie) =>
+      (!filteredGenre.value || movie.genre === filteredGenre.value) &&
+      (!filterDate.value || hasSessionOnDate(movie.sessions, filterDate.value)),
+  ),
 );
 
 onMounted(() => {
@@ -82,6 +96,36 @@ function closeToast(): void {
 
     <div
       v-if="!moviesStore.loading && moviesStore.movies.length"
+      class="genre-filter day-filter"
+    >
+      <button
+        class="genre-filter__chip"
+        :class="{ 'genre-filter__chip--active': dayFilter === 'today' }"
+        type="button"
+        @click="dayFilter = 'today'"
+      >
+        Сегодня
+      </button>
+      <button
+        class="genre-filter__chip"
+        :class="{ 'genre-filter__chip--active': dayFilter === 'tomorrow' }"
+        type="button"
+        @click="dayFilter = 'tomorrow'"
+      >
+        Завтра
+      </button>
+      <button
+        class="genre-filter__chip"
+        :class="{ 'genre-filter__chip--active': dayFilter === 'all' }"
+        type="button"
+        @click="dayFilter = 'all'"
+      >
+        Вся неделя
+      </button>
+    </div>
+
+    <div
+      v-if="!moviesStore.loading && moviesStore.movies.length"
       class="genre-filter"
     >
       <button
@@ -126,6 +170,11 @@ function closeToast(): void {
       <RouterLink v-if="authStore.isAdmin" class="btn btn--sm" to="/admin">
         Добавить сеанс
       </RouterLink>
+    </div>
+
+    <div v-else-if="!filteredMovies.length" class="empty">
+      <div class="empty__icon">🗓️</div>
+      <p>В этот день сеансов нет — попробуйте другой фильтр.</p>
     </div>
 
     <div v-else class="movie-grid">

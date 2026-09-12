@@ -1,7 +1,7 @@
 import { mount, RouterLinkStub } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Movie, User } from '../api/types';
 import { useAuthStore } from '../stores/auth';
 import { useMoviesStore } from '../stores/movies';
@@ -45,6 +45,11 @@ function mountHome(pinia: ReturnType<typeof createPinia>) {
   return mount(HomeView, {
     global: { plugins: [pinia], stubs: { RouterLink: RouterLinkStub } },
   });
+}
+
+/** чипы жанрового ряда (дни живут в .day-filter — отдельном ряду) */
+function genreChips(wrapper: ReturnType<typeof mountHome>) {
+  return wrapper.findAll('.genre-filter:not(.day-filter) .genre-filter__chip');
 }
 
 beforeEach(() => {
@@ -104,7 +109,7 @@ describe('HomeView', () => {
     moviesStore.movies = [movie, comedy];
 
     const wrapper = mountHome(pinia);
-    const chips = wrapper.findAll('.genre-filter__chip');
+    const chips = genreChips(wrapper);
     expect(chips.map((c) => c.text())).toEqual(['Все', 'хоррор', 'комедия']);
     expect(wrapper.findAll('.movie-card')).toHaveLength(2);
 
@@ -113,9 +118,7 @@ describe('HomeView', () => {
     expect(wrapper.text()).toContain('Рекурсия');
     expect(wrapper.text()).not.toContain('Дежавю');
 
-    const allChip = wrapper
-      .findAll('.genre-filter__chip')
-      .find((c) => c.text() === 'Все')!;
+    const allChip = genreChips(wrapper).find((c) => c.text() === 'Все')!;
     await allChip.trigger('click');
     expect(wrapper.findAll('.movie-card')).toHaveLength(2);
   });
@@ -138,8 +141,82 @@ describe('HomeView', () => {
 
     expect(wrapper.findAll('.movie-card')).toHaveLength(1);
     expect(wrapper.text()).toContain('Дежавю');
-    // активен снова «Все»
-    const activeChip = wrapper.find('.genre-filter__chip--active');
+    // активен снова «Все» (в жанровом ряду — дни не трогаем)
+    const activeChip = wrapper.find(
+      '.genre-filter:not(.day-filter) .genre-filter__chip--active',
+    );
     expect(activeChip.text()).toBe('Все');
+  });
+
+  describe('фильтр по дню', () => {
+    afterEach(() => vi.useRealTimers());
+
+    /** системное «сейчас» — 10 января 2030, день первого сеанса фикстуры */
+    function fakeNow() {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2030, 0, 10, 12, 0));
+    }
+
+    /** фильм с сеансом только завтра (11 января) */
+    const tomorrowMovie: Movie = {
+      ...movie,
+      id: 'm-2',
+      title: 'Завтрашний',
+      genre: 'комедия',
+      sessions: [
+        { id: 's-3', hall: 'IMAX', startsAt: new Date(2030, 0, 11, 19, 0).toISOString() },
+      ],
+    };
+
+    function chip(wrapper: ReturnType<typeof mountHome>, label: string) {
+      const found = wrapper
+        .findAll('.genre-filter__chip')
+        .find((c) => c.text() === label);
+      if (!found) throw new Error(`нет чипа «${label}»`);
+      return found;
+    }
+
+    it('«Сегодня» — только фильмы с сеансом сегодня', async () => {
+      fakeNow();
+      const { pinia, moviesStore } = setup();
+      moviesStore.movies = [movie, tomorrowMovie];
+
+      const wrapper = mountHome(pinia);
+      expect(wrapper.findAll('.movie-card')).toHaveLength(2);
+
+      await chip(wrapper, 'Сегодня').trigger('click');
+      expect(wrapper.findAll('.movie-card')).toHaveLength(1);
+      expect(wrapper.text()).toContain('Рекурсия');
+      expect(wrapper.text()).not.toContain('Завтрашний');
+    });
+
+    it('«Завтра» — только завтрашние, «Вся неделя» возвращает всё', async () => {
+      fakeNow();
+      const { pinia, moviesStore } = setup();
+      // у «Рекурсии» оставляем только сегодняшний сеанс — завтра она не подходит
+      const todayOnly: Movie = { ...movie, sessions: [movie.sessions[0]] };
+      moviesStore.movies = [todayOnly, tomorrowMovie];
+
+      const wrapper = mountHome(pinia);
+      await chip(wrapper, 'Завтра').trigger('click');
+      expect(wrapper.findAll('.movie-card')).toHaveLength(1);
+      expect(wrapper.text()).toContain('Завтрашний');
+
+      await chip(wrapper, 'Вся неделя').trigger('click');
+      expect(wrapper.findAll('.movie-card')).toHaveLength(2);
+    });
+
+    it('день и жанр работают вместе; пусто — подсказка', async () => {
+      fakeNow();
+      const { pinia, moviesStore } = setup();
+      moviesStore.movies = [movie, tomorrowMovie];
+
+      const wrapper = mountHome(pinia);
+      await chip(wrapper, 'Сегодня').trigger('click');
+      await chip(wrapper, 'комедия').trigger('click'); // у комедии сеанс только завтра
+
+      expect(wrapper.findAll('.movie-card')).toHaveLength(0);
+      expect(wrapper.text()).toContain('В этот день сеансов нет');
+    });
   });
 });
