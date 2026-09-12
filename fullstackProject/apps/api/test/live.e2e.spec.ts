@@ -68,14 +68,14 @@ describe('CineBooking e2e: живой docker-стенд', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        movieId: '00000000-0000-0000-0000-000000000000',
+        sessionId: '00000000-0000-0000-0000-000000000000',
         seats: ['1-1'],
       }),
     });
     expect(res.status).toBe(401);
   });
 
-  it('admin: создаёт сеанс, он появляется в афише', async () => {
+  it('admin: создаёт фильм с сеансами, он появляется в афише', async () => {
     if (!available) return;
     // админ сеется при старте API: admin@cine.local / admin-secret-1
     const login = await api<{ accessToken: string }>('/auth/login', {
@@ -101,12 +101,17 @@ describe('CineBooking e2e: живой docker-стенд', () => {
         durationMin: 80,
         priceRub: 300,
         hue: 45,
-        sessionAt: '2026-12-31T21:00:00Z',
+        sessions: [
+          { hall: 'IMAX', startsAt: '2026-12-31T21:00:00Z' },
+          { hall: 'Красный', startsAt: '2027-01-01T13:00:00Z' },
+        ],
       }),
     });
     expect(res.status).toBe(201);
+    const created = (await res.json()) as { sessions: unknown[] };
+    expect(created.sessions).toHaveLength(2);
 
-    // кэш каталога сброшен — новый сеанс виден сразу
+    // кэш каталога сброшен — новый фильм виден сразу
     const after = await api<{ data: unknown[] }>('/movies');
     expect(after.data.length).toBe(before.data.length + 1);
   });
@@ -122,25 +127,35 @@ describe('CineBooking e2e: живой docker-стенд', () => {
     });
   });
 
-  it('movies: из БД, затем из Redis-кэша', async () => {
+  it('movies: из БД, затем из Redis-кэша; у фильмов — сеансы по времени', async () => {
     if (!available) return;
-    const first = await api<{ source: string; data: unknown[] }>('/movies');
+    const first = await api<{ source: string; data: E2EMovie[] }>('/movies');
     const second = await api<{ source: string }>('/movies');
 
     expect(first.data.length).toBeGreaterThanOrEqual(6);
     expect(['db', 'cache']).toContain(first.source); // могли прогреть раньше
     expect(second.source).toBe('cache');
+
+    // у каждого фильма — отсортированные по startsAt сеансы
+    for (const movie of first.data) {
+      expect(movie.sessions.length).toBeGreaterThanOrEqual(1);
+      const times = movie.sessions.map((s) => Date.parse(s.startsAt));
+      expect([...times].sort((a, b) => a - b)).toEqual(times);
+    }
   });
 
-  it('seats: карта зала с геометрией 8×10', async () => {
+  it('seats: карта зала сеанса с геометрией 8×10', async () => {
     if (!available) return;
-    const movies = await api<{ data: { id: string }[] }>('/movies');
+    const movies = await api<{ data: E2EMovie[] }>('/movies');
+    const session = movies.data[0].sessions[0];
     const map = await api<{
+      sessionId: string;
       layout: { rows: number; seatsPerRow: number };
       occupied: string[];
       free: number;
-    }>(`/movies/${movies.data[0].id}/seats`);
+    }>(`/sessions/${session.id}/seats`);
 
+    expect(map.sessionId).toBe(session.id);
     expect(map.layout).toEqual({ rows: 8, seatsPerRow: 10 });
     expect(map.free + map.occupied.length).toBe(80);
     for (const seat of map.occupied) {
@@ -150,9 +165,10 @@ describe('CineBooking e2e: живой docker-стенд', () => {
 
   it('одно место нельзя забронировать дважды: 409 со списком мест', async () => {
     if (!available) return;
-    const movies = await api<{ data: { id: string }[] }>('/movies');
+    const movies = await api<{ data: E2EMovie[] }>('/movies');
+    const session = movies.data[0].sessions[0];
     const body = {
-      movieId: movies.data[0].id,
+      sessionId: session.id,
       customerName: 'E2E Гонка',
       seats: ['1-1'],
     };
@@ -179,32 +195,62 @@ describe('CineBooking e2e: живой docker-стенд', () => {
     const conflict = (await second.json()) as { seatsTaken: string[] };
     expect(conflict.seatsTaken).toContain('1-1');
 
-    // место видно занятым в карте
+    // место видно занятым в карте своего сеанса
     const map = await api<{ occupied: string[] }>(
-      `/movies/${movies.data[0].id}/seats`,
+      `/sessions/${session.id}/seats`,
     );
     expect(map.occupied).toContain('1-1');
   });
 
+  it('изоляция: одно место продано в одном сеансе и свободно в другом', async () => {
+    if (!available) return;
+    const movies = await api<{ data: E2EMovie[] }>('/movies');
+    const withTwo = movies.data.find((m) => m.sessions.length >= 2);
+    if (!withTwo) throw new Error('в афише должен быть фильм с двумя сеансами');
+    const [first, second] = withTwo.sessions;
+
+    const res = await fetch(`${BASE}/bookings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        sessionId: second.id,
+        customerName: 'E2E Другой сеанс',
+        seats: ['2-2'],
+      }),
+    });
+    expect(res.status).toBe(201);
+
+    // в первом сеансе того же фильма место всё ещё свободно
+    const map = await api<{ occupied: string[] }>(`/sessions/${first.id}/seats`);
+    expect(map.occupied).not.toContain('2-2');
+  });
+
   it('полный цикл: POST → PENDING → Go-воркер → вердикт', async () => {
     if (!available) return;
-    const movies = await api<{ data: { id: string; title: string }[] }>('/movies');
+    const movies = await api<{ data: E2EMovie[] }>('/movies');
     const movie = movies.data[0];
 
     const created = await api<{
       id: string;
       status: string;
       totalRub: number;
+      sessionId: string;
+      hall: string;
     }>('/bookings', {
       method: 'POST',
       body: JSON.stringify({
-        movieId: movie.id,
+        sessionId: movie.sessions[0].id,
         customerName: 'E2E Дмитрий',
         seats: ['8-8', '8-9'],
       }),
     });
 
     expect(created.status).toBe('PENDING');
+    expect(created.sessionId).toBe(movie.sessions[0].id);
+    expect(created.hall).toBeTruthy();
 
     // ждём вердикт воркера (обработка 1,2–2,8 c + накладные)
     const booking = await waitForStatus(created.id, 'PENDING');
@@ -226,8 +272,8 @@ describe('CineBooking e2e: живой docker-стенд', () => {
 
   it('сага отмены: cancel → CANCELLING → Go-воркер возвращает платёж', async () => {
     if (!available) return;
-    const movies = await api<{ data: { id: string; title: string }[] }>('/movies');
-    const movie = movies.data[0];
+    const movies = await api<{ data: E2EMovie[] }>('/movies');
+    const sessionId = movies.data[0].sessions[0].id;
 
     // добиваемся подтверждённой брони (воркер отказывает в ~10% случаев)
     let bookingId = '';
@@ -235,7 +281,7 @@ describe('CineBooking e2e: живой docker-стенд', () => {
       const created = await api<{ id: string }>('/bookings', {
         method: 'POST',
         body: JSON.stringify({
-          movieId: movie.id,
+          sessionId,
           customerName: `E2E отмена ${attempt}`,
           seats: [`7-${attempt + 1}`],
         }),
@@ -265,7 +311,7 @@ describe('CineBooking e2e: живой docker-стенд', () => {
 
   it('SSE: вердикт воркера приходит в стрим без опроса', async () => {
     if (!available) return;
-    const movies = await api<{ data: { id: string }[] }>('/movies');
+    const movies = await api<{ data: E2EMovie[] }>('/movies');
 
     const controller = new AbortController();
     const res = await fetch(`${BASE}/bookings/stream`, {
@@ -278,7 +324,7 @@ describe('CineBooking e2e: живой docker-стенд', () => {
     const created = await api<{ id: string }>('/bookings', {
       method: 'POST',
       body: JSON.stringify({
-        movieId: movies.data[0].id,
+        sessionId: movies.data[0].sessions[0].id,
         customerName: 'E2E SSE',
         seats: ['5-5'],
       }),
@@ -306,6 +352,12 @@ describe('CineBooking e2e: живой docker-стенд', () => {
     controller.abort();
   });
 });
+
+interface E2EMovie {
+  id: string;
+  title: string;
+  sessions: { id: string; hall: string; startsAt: string }[];
+}
 
 interface E2EStreamPayload {
   booking: E2EBooking;
