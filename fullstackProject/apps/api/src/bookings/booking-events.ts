@@ -5,6 +5,10 @@ export interface BookingCreatedEvent {
   bookingId: string;
   movieId: string;
   movieTitle: string;
+  sessionId: string;
+  /** время сеанса (зал + время), ISO */
+  sessionAt: string;
+  hall: string;
   customerName: string;
   /** коды мест «ряд-место», например ["5-7", "5-8"] */
   seats: string[];
@@ -26,6 +30,10 @@ export interface BookingCancelledEvent {
   bookingId: string;
   movieId: string;
   movieTitle: string;
+  sessionId: string;
+  /** время сеанса (зал + время), ISO */
+  sessionAt: string;
+  hall: string;
   customerName: string;
   seats: string[];
   totalRub: number;

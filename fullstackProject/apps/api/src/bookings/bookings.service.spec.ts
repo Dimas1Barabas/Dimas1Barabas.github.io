@@ -5,6 +5,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { Movie } from '../movies/movie.entity';
+import { Session } from '../movies/session.entity';
 import { Booking } from './booking.entity';
 import { BookingStream } from './booking-stream';
 import { BookingsService } from './bookings.service';
@@ -20,7 +21,16 @@ const movieFixture: Movie = {
   durationMin: 112,
   priceRub: 400,
   hue: 275,
-  sessionAt: new Date('2026-09-05T19:00:00Z'),
+  sessions: [],
+  createdAt: new Date('2026-09-01T00:00:00Z'),
+};
+
+const sessionFixture: Session = {
+  id: 'session-1',
+  movieId: 'movie-1',
+  movie: movieFixture,
+  hall: 'IMAX',
+  startsAt: new Date('2026-09-05T19:00:00Z'),
   createdAt: new Date('2026-09-01T00:00:00Z'),
 };
 
@@ -37,6 +47,8 @@ function bookingFixture(): Booking {
     id: 'booking-1',
     movieId: movieFixture.id,
     movie: movieFixture,
+    sessionId: sessionFixture.id,
+    session: sessionFixture,
     customerName: 'Дмитрий',
     userId: 'user-1',
     seats: ['5-7', '5-8', '5-9'],
@@ -60,6 +72,7 @@ describe('BookingsService (unit)', () => {
     createQueryBuilder: jest.Mock;
   };
   let moviesRepo: { findOneByOrFail: jest.Mock };
+  let sessionsRepo: { findOneByOrFail: jest.Mock };
   let occupancyRepo: { find: jest.Mock; delete: jest.Mock };
   let rabbit: { publish: jest.Mock };
   /** SSE-шина: спаем, что после мутаций ушли события */
@@ -84,6 +97,7 @@ describe('BookingsService (unit)', () => {
       })),
     };
     moviesRepo = { findOneByOrFail: jest.fn(async () => movieFixture) };
+    sessionsRepo = { findOneByOrFail: jest.fn(async () => sessionFixture) };
     occupancyRepo = { find: jest.fn(async () => []), delete: jest.fn() };
     rabbit = { publish: jest.fn() };
     stream = { emit: jest.fn() };
@@ -92,12 +106,18 @@ describe('BookingsService (unit)', () => {
     // «транзакция» сразу выполняет callback с эмуляцией EntityManager:
     // insert может упасть с pg-кодом 23505 — как настоящий констрейнт
     const em: {
-      findOneByOrFail: (entity: unknown, where: { id: string }) => Promise<Movie>;
+      findOneByOrFail: (
+        entity: unknown,
+        where: { id: string },
+      ) => Promise<unknown>;
       create: (entity: unknown, x: Partial<Booking>) => Partial<Booking>;
       save: (entity: unknown, x: Booking) => Promise<Booking>;
       insert: jest.Mock;
     } = {
-      findOneByOrFail: (_entity, where) => moviesRepo.findOneByOrFail(where),
+      findOneByOrFail: (entity, where) =>
+        entity === Session
+          ? sessionsRepo.findOneByOrFail(where)
+          : moviesRepo.findOneByOrFail(where),
       create: (_entity, x) => x,
       save: (_entity, x) => bookingsRepo.save(x),
       insert: emInsert,
@@ -109,6 +129,7 @@ describe('BookingsService (unit)', () => {
         { provide: DataSource, useValue: { transaction: (cb: (e: typeof em) => unknown) => cb(em) } },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
+        { provide: getRepositoryToken(Session), useValue: sessionsRepo },
         { provide: getRepositoryToken(SeatOccupancy), useValue: occupancyRepo },
         { provide: AmqpConnection, useValue: rabbit },
         { provide: BookingStream, useValue: stream },
@@ -119,9 +140,9 @@ describe('BookingsService (unit)', () => {
   });
 
   describe('create', () => {
-    it('сохраняет PENDING-бронь с рассчитанной суммой', async () => {
+    it('сохраняет PENDING-бронь с рассчитанной суммой и данными сеанса', async () => {
       const dto: CreateBookingDto = {
-        movieId: 'movie-1',
+        sessionId: 'session-1',
         customerName: 'Дмитрий',
         seats: ['5-7', '5-8', '5-9'],
       };
@@ -131,12 +152,29 @@ describe('BookingsService (unit)', () => {
       expect(result.status).toBe('PENDING');
       expect(result.totalRub).toBe(1200); // 400 × 3
       expect(result.movieTitle).toBe('Рекурсия');
+      expect(result.sessionId).toBe('session-1');
+      expect(result.hall).toBe('IMAX');
+      expect(result.sessionAt).toBe('2026-09-05T19:00:00.000Z');
       expect(result.seats).toEqual(['5-7', '5-8', '5-9']);
+    });
+
+    it('фильм выводит из сеанса — бронь привязана к обоим', async () => {
+      await service.create(
+        { sessionId: 'session-1', seats: ['1-1'] },
+        authUser,
+      );
+
+      expect(sessionsRepo.findOneByOrFail).toHaveBeenCalledWith({
+        id: 'session-1',
+      });
+      expect(moviesRepo.findOneByOrFail).toHaveBeenCalledWith({
+        id: 'movie-1', // movieId взят из сеанса
+      });
     });
 
     it('имя покупателя берёт из JWT, если customerName не передан', async () => {
       const result = await service.create(
-        { movieId: 'movie-1', seats: ['1-1'] },
+        { sessionId: 'session-1', seats: ['1-1'] },
         authUser,
       );
 
@@ -144,10 +182,10 @@ describe('BookingsService (unit)', () => {
       expect(result.userId).toBe('user-1');
     });
 
-    it('занимает места строками занятости в той же транзакции', async () => {
+    it('занимает места строками занятости сеанса в той же транзакции', async () => {
       await service.create(
         {
-          movieId: 'movie-1',
+          sessionId: 'session-1',
           customerName: 'Дмитрий',
           seats: ['5-7'],
         },
@@ -157,7 +195,7 @@ describe('BookingsService (unit)', () => {
       expect(emInsert).toHaveBeenCalledWith(
         SeatOccupancy,
         expect.arrayContaining([
-          expect.objectContaining({ movieId: 'movie-1', seat: '5-7' }),
+          expect.objectContaining({ sessionId: 'session-1', seat: '5-7' }),
         ]),
       );
     });
@@ -165,7 +203,7 @@ describe('BookingsService (unit)', () => {
     it('публикует booking.created в обмен cinema', async () => {
       await service.create(
         {
-          movieId: 'movie-1',
+          sessionId: 'session-1',
           customerName: 'Дмитрий',
           seats: ['5-7', '5-8', '5-9'],
         },
@@ -178,6 +216,9 @@ describe('BookingsService (unit)', () => {
       expect(routingKey).toBe('booking.created');
       expect(event).toMatchObject({
         movieTitle: 'Рекурсия',
+        sessionId: 'session-1',
+        sessionAt: '2026-09-05T19:00:00.000Z',
+        hall: 'IMAX',
         seats: ['5-7', '5-8', '5-9'],
         totalRub: 1200,
       });
@@ -186,7 +227,7 @@ describe('BookingsService (unit)', () => {
     it('обрезает пробелы вокруг имени', async () => {
       const result = await service.create(
         {
-          movieId: 'movie-1',
+          sessionId: 'session-1',
           customerName: '  Дмитрий  ',
           seats: ['1-1'],
         },
@@ -196,16 +237,16 @@ describe('BookingsService (unit)', () => {
     });
 
     it('409 со списком мест, если констрейнт отбил вставку', async () => {
-      // имитируем pg: уникальный констрейнт (movie_id, seat)
+      // имитируем pg: уникальный констрейнт (session_id, seat)
       emInsert.mockRejectedValue({ code: '23505' });
       occupancyRepo.find.mockResolvedValue([
-        { seat: '5-7', movieId: 'movie-1' },
-        { seat: '5-8', movieId: 'movie-1' },
+        { seat: '5-7', sessionId: 'session-1' },
+        { seat: '5-8', sessionId: 'session-1' },
       ]);
 
       const promise = service.create(
         {
-          movieId: 'movie-1',
+          sessionId: 'session-1',
           customerName: 'Дмитрий',
           seats: ['5-8', '5-7', '6-1'],
         },
@@ -218,13 +259,19 @@ describe('BookingsService (unit)', () => {
       expect(err.getResponse()).toMatchObject({
         seatsTaken: ['5-7', '5-8'],
       });
+      // конфликт искали среди мест именно этого сеанса
+      expect(occupancyRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ sessionId: 'session-1' }),
+        }),
+      );
       // событие в очередь не ушло
       expect(rabbit.publish).not.toHaveBeenCalled();
     });
   });
 
   describe('list', () => {
-    it('возвращает DTO с данными фильма', async () => {
+    it('возвращает DTO с данными фильма и сеанса', async () => {
       bookingsRepo.find.mockResolvedValue([bookingFixture()]);
 
       const result = await service.list();
@@ -235,6 +282,8 @@ describe('BookingsService (unit)', () => {
         movieTitle: 'Рекурсия',
         movieHue: 275,
         movieGenreIcon: '🌀',
+        sessionId: 'session-1',
+        hall: 'IMAX',
         status: 'PENDING',
       });
     });
@@ -278,7 +327,7 @@ describe('BookingsService (unit)', () => {
       );
     });
 
-    it('публикует booking.cancelled с суммой возврата', async () => {
+    it('публикует booking.cancelled с суммой возврата и сеансом', async () => {
       await service.cancel('booking-1', authUser);
 
       expect(rabbit.publish).toHaveBeenCalledWith(
@@ -287,6 +336,8 @@ describe('BookingsService (unit)', () => {
         expect.objectContaining({
           bookingId: 'booking-1',
           movieTitle: 'Рекурсия',
+          sessionId: 'session-1',
+          hall: 'IMAX',
           seats: ['5-7', '5-8', '5-9'],
           totalRub: 1200,
         }),
@@ -448,7 +499,7 @@ describe('BookingsService (unit)', () => {
     it('create → событие с новой бронью и статистикой', async () => {
       await service.create(
         {
-          movieId: 'movie-1',
+          sessionId: 'session-1',
           customerName: 'Дмитрий',
           seats: ['1-1'],
         },
@@ -459,6 +510,8 @@ describe('BookingsService (unit)', () => {
       const payload = stream.emit.mock.calls[0][0];
       expect(payload.booking).toMatchObject({
         movieId: 'movie-1',
+        sessionId: 'session-1',
+        hall: 'IMAX',
         status: 'PENDING',
         movieTitle: 'Рекурсия',
       });
@@ -503,15 +556,18 @@ describe('BookingsService (unit)', () => {
   });
 
   describe('seatMap', () => {
-    it('отдаёт занятые места, геометрию зала и счётчик свободных', async () => {
+    it('отдаёт занятые места сеанса, геометрию зала и счётчик свободных', async () => {
       occupancyRepo.find.mockResolvedValue([
         { seat: '5-7' },
         { seat: '1-1' },
       ]);
 
-      const map = await service.seatMap('movie-1');
+      const map = await service.seatMap('session-1');
 
-      expect(map.movieId).toBe('movie-1');
+      expect(sessionsRepo.findOneByOrFail).toHaveBeenCalledWith({
+        id: 'session-1',
+      });
+      expect(map.sessionId).toBe('session-1');
       expect(map.layout).toEqual({ rows: 8, seatsPerRow: 10 });
       expect(map.occupied).toEqual(['1-1', '5-7']); // сортировка по залу
       expect(map.free).toBe(80 - 2);

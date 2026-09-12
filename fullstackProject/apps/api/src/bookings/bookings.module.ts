@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Movie } from '../movies/movie.entity';
+import { Session } from '../movies/session.entity';
 import { rabbitMqModule } from '../rabbit/rabbitmq.config';
 import { Booking } from './booking.entity';
 import { BookingStream } from './booking-stream';
@@ -13,7 +14,7 @@ import { SeatsController } from './seats.controller';
 @Module({
   // rabbitMqModule — чтобы инжектить AmqpConnection (публикация событий)
   imports: [
-    TypeOrmModule.forFeature([Booking, Movie, SeatOccupancy]),
+    TypeOrmModule.forFeature([Booking, Movie, Session, SeatOccupancy]),
     rabbitMqModule,
   ],
   controllers: [BookingsController, SeatsController],

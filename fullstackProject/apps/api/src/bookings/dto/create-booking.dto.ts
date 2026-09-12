@@ -11,8 +11,9 @@ import {
 } from 'class-validator';
 
 export class CreateBookingDto {
+  /** бронь привязана к сеансу; фильм выводится из сеанса на сервере */
   @IsUUID()
-  movieId!: string;
+  sessionId!: string;
 
   /** не указано — берём имя из JWT авторизованного пользователя */
   @IsOptional()

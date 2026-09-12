@@ -7,8 +7,11 @@ function inDays(days: number, hour: number): Date {
   return d;
 }
 
-/** Стартовые фильмы — сеансы на ближайшие дни */
-export const MOVIE_SEEDS: Partial<Movie>[] = [
+/** Стартовые фильмы с расписанием: у каждого 2–3 сеанса, «завтра» обязателен —
+ *  чтобы фильтр «Сегодня» и ночная демка не оставались пустыми */
+export const MOVIE_SEEDS: Array<
+  Omit<Partial<Movie>, 'sessions'> & { sessions: { hall: string; startsAt: Date }[] }
+> = [
   {
     title: 'Млечный Путь: Операция «Туманность»',
     description:
@@ -18,7 +21,11 @@ export const MOVIE_SEEDS: Partial<Movie>[] = [
     durationMin: 132,
     priceRub: 450,
     hue: 220,
-    sessionAt: inDays(1, 19),
+    sessions: [
+      { hall: 'IMAX', startsAt: inDays(0, 19) },
+      { hall: 'Красный', startsAt: inDays(1, 12) },
+      { hall: 'IMAX', startsAt: inDays(2, 21) },
+    ],
   },
   {
     title: 'Последний дебаг',
@@ -29,7 +36,10 @@ export const MOVIE_SEEDS: Partial<Movie>[] = [
     durationMin: 98,
     priceRub: 320,
     hue: 160,
-    sessionAt: inDays(1, 21),
+    sessions: [
+      { hall: 'Красный', startsAt: inDays(1, 21) },
+      { hall: 'Красный', startsAt: inDays(3, 15) },
+    ],
   },
   {
     title: 'Госпожа Кэш',
@@ -40,7 +50,10 @@ export const MOVIE_SEEDS: Partial<Movie>[] = [
     durationMin: 141,
     priceRub: 380,
     hue: 330,
-    sessionAt: inDays(2, 18),
+    sessions: [
+      { hall: 'Красный', startsAt: inDays(0, 21) },
+      { hall: 'IMAX', startsAt: inDays(1, 18) },
+    ],
   },
   {
     title: 'Рекурсия',
@@ -51,7 +64,10 @@ export const MOVIE_SEEDS: Partial<Movie>[] = [
     durationMin: 112,
     priceRub: 400,
     hue: 275,
-    sessionAt: inDays(2, 22),
+    sessions: [
+      { hall: 'IMAX', startsAt: inDays(1, 23) },
+      { hall: 'Красный', startsAt: inDays(2, 22) },
+    ],
   },
   {
     title: 'Тайна старого репозитория',
@@ -62,7 +78,11 @@ export const MOVIE_SEEDS: Partial<Movie>[] = [
     durationMin: 124,
     priceRub: 350,
     hue: 30,
-    sessionAt: inDays(3, 15),
+    sessions: [
+      { hall: 'Красный', startsAt: inDays(2, 15) },
+      { hall: 'IMAX', startsAt: inDays(3, 13) },
+      { hall: 'Красный', startsAt: inDays(3, 20) },
+    ],
   },
   {
     title: 'Сорок девятый поток',
@@ -73,6 +93,9 @@ export const MOVIE_SEEDS: Partial<Movie>[] = [
     durationMin: 76,
     priceRub: 250,
     hue: 200,
-    sessionAt: inDays(3, 20),
+    sessions: [
+      { hall: 'Красный', startsAt: inDays(1, 14) },
+      { hall: 'Красный', startsAt: inDays(2, 18) },
+    ],
   },
 ];

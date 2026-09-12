@@ -2,8 +2,10 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { Session, SessionDto, toSessionDtos } from './session.entity';
 
 @Entity('movies')
 export class Movie {
@@ -33,8 +35,11 @@ export class Movie {
   @Column({ type: 'smallint' })
   hue: number;
 
-  @Column({ name: 'session_at', type: 'timestamptz' })
-  sessionAt: Date;
+  /** сеансы фильма: зал + время; cascade — создание/посев одним save */
+  @OneToMany(() => Session, (session) => session.movie, {
+    cascade: true,
+  })
+  sessions: Session[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
@@ -49,7 +54,8 @@ export interface MovieDto {
   durationMin: number;
   priceRub: number;
   hue: number;
-  sessionAt: string;
+  /** отсортированы по startsAt */
+  sessions: SessionDto[];
 }
 
 export function toMovieDto(movie: Movie): MovieDto {
@@ -62,6 +68,6 @@ export function toMovieDto(movie: Movie): MovieDto {
     durationMin: movie.durationMin,
     priceRub: movie.priceRub,
     hue: movie.hue,
-    sessionAt: movie.sessionAt.toISOString(),
+    sessions: toSessionDtos(movie.sessions),
   };
 }

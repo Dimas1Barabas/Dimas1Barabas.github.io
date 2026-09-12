@@ -1,14 +1,18 @@
+import { Type } from 'class-transformer';
 import {
-  IsDateString,
+  ArrayMinSize,
+  IsArray,
   IsInt,
   IsString,
   Max,
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { CreateSessionDto } from './create-session.dto';
 
-/** новые сеансы добавляет администратор: POST /api/movies */
+/** новые фильмы добавляет администратор: POST /api/movies — сразу с сеансами */
 export class CreateMovieDto {
   @IsString()
   @MinLength(1, { message: 'Название пустое' })
@@ -47,6 +51,10 @@ export class CreateMovieDto {
   @Max(360)
   hue!: number;
 
-  @IsDateString()
-  sessionAt!: string;
+  /** @Type обязателен: без него nested-объекты не валидируются (whitelist их выкинет) */
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Хотя бы один сеанс' })
+  @ValidateNested({ each: true })
+  @Type(() => CreateSessionDto)
+  sessions!: CreateSessionDto[];
 }

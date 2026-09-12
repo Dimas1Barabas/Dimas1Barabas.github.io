@@ -23,9 +23,9 @@ export function compareSeats(a: string, b: string): number {
   return ar - br || an - bn;
 }
 
-/** Ответ GET /api/movies/:id/seats — всё, что нужно для карты зала */
+/** Ответ GET /api/sessions/:id/seats — всё, что нужно для карты зала */
 export interface SeatMapDto {
-  movieId: string;
+  sessionId: string;
   layout: { rows: number; seatsPerRow: number };
   /** занятые места (PENDING держит место, CONFIRMED — тем более) */
   occupied: string[];

@@ -15,6 +15,7 @@ import { BookingsService } from '../src/bookings/bookings.service';
 import { SeatsController } from '../src/bookings/seats.controller';
 import { HealthController } from '../src/health/health.controller';
 import { Movie } from '../src/movies/movie.entity';
+import { Session } from '../src/movies/session.entity';
 import { MoviesController } from '../src/movies/movies.controller';
 import { MoviesService } from '../src/movies/movies.service';
 import { RedisService } from '../src/redis/redis.service';
@@ -34,6 +35,11 @@ import { sseFrames, waitForSseEvent } from './sse';
  * INSERT дубля в seat_occupancy падает кодом 23505 — как pg-констрейнт.
  */
 
+/** «фильм с сеансами», как приходит из сидов/админского create */
+type MovieWithSessionSeeds = Partial<Movie> & {
+  sessions?: { hall: string; startsAt: Date }[];
+};
+
 class FakeMovieRepo {
   rows: Movie[] = [];
 
@@ -41,20 +47,33 @@ class FakeMovieRepo {
     return this.rows.length;
   }
 
-  async find(): Promise<Movie[]> {
+  async find(_opts?: { relations?: unknown }): Promise<Movie[]> {
     return [...this.rows];
   }
 
-  create(x: Partial<Movie>): Movie {
+  create(x: MovieWithSessionSeeds): Movie {
     return x as Movie;
   }
 
-  async save(entities: Movie | Movie[]): Promise<Movie | Movie[]> {
+  /** save эмулирует cascade: сеансы фильма становятся строками Session */
+  async save(
+    entities: Movie | Movie[],
+  ): Promise<Movie | Movie[]> {
     const list = Array.isArray(entities) ? entities : [entities];
     for (const e of list) {
       // id-uuid, чтобы проходить @IsUUID() в DTO
       if (!e.id) e.id = randomUUID();
       if (!e.createdAt) e.createdAt = new Date();
+      // сюда всегда приходят «сырые» сеансы {hall, startsAt} — из сидов
+      // и из админского create; раздуваем их в полноценные Session
+      e.sessions = (e.sessions ?? []).map((s) => ({
+        id: randomUUID(),
+        movieId: e.id,
+        movie: e,
+        hall: s.hall,
+        startsAt: s.startsAt,
+        createdAt: new Date(),
+      }));
       if (!this.rows.includes(e)) this.rows.push(e);
     }
     return entities;
@@ -63,6 +82,16 @@ class FakeMovieRepo {
   async findOneByOrFail(where: { id: string }): Promise<Movie> {
     const found = this.rows.find((r) => r.id === where.id);
     if (!found) throw new NotFoundException('Фильм не найден');
+    return found;
+  }
+}
+
+class FakeSessionRepo {
+  rows: Session[] = [];
+
+  async findOneByOrFail(where: { id: string }): Promise<Session> {
+    const found = this.rows.find((r) => r.id === where.id);
+    if (!found) throw new NotFoundException('Сеанс не найден');
     return found;
   }
 }
@@ -140,14 +169,14 @@ class FakeOccupancyRepo {
 
   async find(opts?: {
     where?: {
-      movieId?: string;
+      sessionId?: string;
       bookingId?: string;
       seat?: string | FindOperator<string>;
     };
   }): Promise<SeatOccupancy[]> {
     let rows = [...this.rows];
     const w = opts?.where ?? {};
-    if (w.movieId) rows = rows.filter((r) => r.movieId === w.movieId);
+    if (w.sessionId) rows = rows.filter((r) => r.sessionId === w.sessionId);
     if (w.bookingId) rows = rows.filter((r) => r.bookingId === w.bookingId);
     if (w.seat) {
       if (w.seat instanceof FindOperator) {
@@ -163,7 +192,7 @@ class FakeOccupancyRepo {
 
   async delete(criteria: {
     bookingId?: string;
-    movieId?: string;
+    sessionId?: string;
     seat?: string;
   }): Promise<{ affected: number }> {
     const before = this.rows.length;
@@ -171,21 +200,23 @@ class FakeOccupancyRepo {
       (r) =>
         !(
           (criteria.bookingId && r.bookingId === criteria.bookingId) ||
-          (criteria.movieId &&
+          (criteria.sessionId &&
             criteria.seat &&
-            r.movieId === criteria.movieId &&
+            r.sessionId === criteria.sessionId &&
             r.seat === criteria.seat)
         ),
     );
     return { affected: before - this.rows.length };
   }
 
-  /** INSERT: дубль (movieId, seat) падает кодом 23505 — как uq-констрейнт */
+  /** INSERT: дубль (sessionId, seat) падает кодом 23505 — как uq-констрейнт */
   insert(
-    rows: { movieId: string; seat: string; bookingId: string }[],
+    rows: { sessionId: string; seat: string; bookingId: string }[],
   ): Promise<void> {
     for (const r of rows) {
-      if (this.rows.some((x) => x.movieId === r.movieId && x.seat === r.seat)) {
+      if (
+        this.rows.some((x) => x.sessionId === r.sessionId && x.seat === r.seat)
+      ) {
         return Promise.reject(Object.assign(new Error('dup'), { code: '23505' }));
       }
     }
@@ -202,6 +233,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
 
   let app: INestApplication;
   let moviesRepo: FakeMovieRepo;
+  let sessionsRepo: FakeSessionRepo;
   let bookingsRepo: FakeBookingRepo;
   let occupancyRepo: FakeOccupancyRepo;
   let redisStore: Map<string, string>;
@@ -212,8 +244,22 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
   let bearerB: string;
   let bearerAdmin: string;
 
+  /** каталог из /api/movies (DTO с sessions[]) */
+  type MovieDtoJson = {
+    id: string;
+    title: string;
+    priceRub: number;
+    sessions: { id: string; hall: string; startsAt: string }[];
+  };
+
+  async function catalog(): Promise<MovieDtoJson[]> {
+    const res = await request(app.getHttpServer()).get('/api/movies');
+    return res.body.data;
+  }
+
   beforeAll(async () => {
     moviesRepo = new FakeMovieRepo();
+    sessionsRepo = new FakeSessionRepo();
     bookingsRepo = new FakeBookingRepo();
     occupancyRepo = new FakeOccupancyRepo();
     redisStore = new Map();
@@ -223,11 +269,15 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     const em = {
       findOneByOrFail: (entity: unknown, where: { id: string }) => {
         if (entity === Movie) return moviesRepo.findOneByOrFail(where);
+        if (entity === Session) return sessionsRepo.findOneByOrFail(where);
         throw new Error('unexpected entity');
       },
       create: (_entity: unknown, x: Partial<Booking>) => x,
       save: (_entity: unknown, x: Booking) => bookingsRepo.save(x),
-      insert: (entity: unknown, rows: { movieId: string; seat: string; bookingId: string }[]) => {
+      insert: (
+        entity: unknown,
+        rows: { sessionId: string; seat: string; bookingId: string }[],
+      ) => {
         if (entity === SeatOccupancy) return occupancyRepo.insert(rows);
         throw new Error('unexpected entity');
       },
@@ -251,6 +301,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         RedisService,
         { provide: REDIS_CLIENT, useValue: redisFake(redisStore) },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
+        { provide: getRepositoryToken(Session), useValue: sessionsRepo },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         {
           provide: getRepositoryToken(SeatOccupancy),
@@ -280,7 +331,10 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
-    await app.init(); // onModuleInit → посев фильмов
+    await app.init(); // onModuleInit → посев фильмов (с сеансами, каскадом в фейке)
+
+    // строки Session — после каскада в FakeMovieRepo.save
+    sessionsRepo.rows = moviesRepo.rows.flatMap((m) => m.sessions ?? []);
 
     bookingsService = moduleRef.get(BookingsService);
 
@@ -298,7 +352,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
   });
 
   describe('GET /api/movies', () => {
-    it('первый вызов — из «БД», с посевом 6 фильмов', async () => {
+    it('первый вызов — из «БД», с посевом 6 фильмов и сеансами', async () => {
       const res = await request(app.getHttpServer()).get('/api/movies');
 
       expect(res.status).toBe(200);
@@ -307,8 +361,29 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       expect(res.body.data[0]).toMatchObject({
         title: expect.any(String),
         priceRub: expect.any(Number),
-        sessionAt: expect.any(String),
+        sessions: expect.any(Array),
       });
+      // sessionAt у фильма больше нет — время живёт в сеансах
+      expect(res.body.data[0].sessionAt).toBeUndefined();
+      expect(res.body.data[0].sessions.length).toBeGreaterThanOrEqual(2);
+      expect(res.body.data[0].sessions[0]).toMatchObject({
+        id: expect.any(String),
+        hall: expect.any(String),
+        startsAt: expect.any(String),
+      });
+    });
+
+    it('афиша отсортирована по ближайшему сеансу', async () => {
+      const data = await catalog();
+      // ближайший БУДУЩИЙ сеанс: прошедшие в конце дня уже не считаются
+      const now = Date.now();
+      const nearest = (m: MovieDtoJson) =>
+        Math.min(
+          ...m.sessions
+            .map((s) => new Date(s.startsAt).getTime())
+            .filter((t) => t >= now),
+        );
+      expect(nearest(data[0])).toBeLessThanOrEqual(nearest(data[1]));
     });
 
     it('повторный — из Redis-кэша (Map-фейк)', async () => {
@@ -316,20 +391,21 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
 
       expect(res.status).toBe(200);
       expect(res.body.source).toBe('cache');
-      expect(redisStore.has('movies:all')).toBe(true);
+      expect(redisStore.has('movies:all:v2')).toBe(true);
     });
   });
 
   describe('POST /api/bookings', () => {
-    it('создаёт PENDING-бронь с конкретными местами и публикует событие', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+    it('создаёт PENDING-бронь по sessionId с данными сеанса и публикует событие', async () => {
+      const movies = await catalog();
       const movie = movies[0];
+      const session = movie.sessions[0];
 
       const res = await request(app.getHttpServer())
         .post('/api/bookings')
         .set('Authorization', bearer)
         .send({
-          movieId: movie.id,
+          sessionId: session.id,
           customerName: 'Дмитрий',
           seats: ['5-7', '5-8'],
         });
@@ -340,6 +416,9 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         seats: ['5-7', '5-8'],
         totalRub: movie.priceRub * 2,
         movieTitle: movie.title,
+        sessionId: session.id,
+        hall: session.hall,
+        sessionAt: session.startsAt,
         customerName: 'Дмитрий',
       });
 
@@ -347,6 +426,8 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         'cinema',
         'booking.created',
         expect.objectContaining({
+          sessionId: session.id,
+          hall: session.hall,
           seats: ['5-7', '5-8'],
           totalRub: movie.priceRub * 2,
         }),
@@ -354,14 +435,14 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     });
 
     it.each([
-      ['мест больше 8', { movieId: validUuid(), customerName: 'Дмитрий', seats: ['1-1','1-2','1-3','1-4','1-5','1-6','1-7','1-8','1-9'] }],
-      ['пустой список мест', { movieId: validUuid(), customerName: 'Дмитрий', seats: [] }],
-      ['места не массив', { movieId: validUuid(), customerName: 'Дмитрий', seats: 2 }],
-      ['код не «ряд-место»', { movieId: validUuid(), customerName: 'Дмитрий', seats: ['5'] }],
-      ['место вне зала (ряд 9)', { movieId: validUuid(), customerName: 'Дмитрий', seats: ['9-1'] }],
-      ['место вне зала (место 11)', { movieId: validUuid(), customerName: 'Дмитрий', seats: ['1-11'] }],
-      ['имя из 1 символа', { movieId: validUuid(), customerName: 'Д', seats: ['1-1'] }],
-      ['не-uuid movieId', { movieId: 'abc', customerName: 'Дмитрий', seats: ['1-1'] }],
+      ['мест больше 8', { sessionId: validUuid(), customerName: 'Дмитрий', seats: ['1-1','1-2','1-3','1-4','1-5','1-6','1-7','1-8','1-9'] }],
+      ['пустой список мест', { sessionId: validUuid(), customerName: 'Дмитрий', seats: [] }],
+      ['места не массив', { sessionId: validUuid(), customerName: 'Дмитрий', seats: 2 }],
+      ['код не «ряд-место»', { sessionId: validUuid(), customerName: 'Дмитрий', seats: ['5'] }],
+      ['место вне зала (ряд 9)', { sessionId: validUuid(), customerName: 'Дмитрий', seats: ['9-1'] }],
+      ['место вне зала (место 11)', { sessionId: validUuid(), customerName: 'Дмитрий', seats: ['1-11'] }],
+      ['имя из 1 символа', { sessionId: validUuid(), customerName: 'Д', seats: ['1-1'] }],
+      ['не-uuid sessionId', { sessionId: 'abc', customerName: 'Дмитрий', seats: ['1-1'] }],
     ])('400 при невалидных данных: %s', async (_case, payload) => {
       const res = await request(app.getHttpServer())
         .post('/api/bookings')
@@ -371,12 +452,12 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       expect(res.status).toBe(400);
     });
 
-    it('404 на несуществующий фильм', async () => {
+    it('404 на несуществующий сеанс', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/bookings')
         .set('Authorization', bearer)
         .send({
-          movieId: '00000000-0000-0000-0000-000000000000',
+          sessionId: '00000000-0000-0000-0000-000000000000',
           customerName: 'Дмитрий',
           seats: ['1-1'],
         });
@@ -385,11 +466,40 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     });
   });
 
+  describe('изоляция занятости между сеансами', () => {
+    it('одно место свободно в другом сеансе того же фильма', async () => {
+      const movies = await catalog();
+      const movie = movies[0];
+      const [first, second] = movie.sessions;
+      if (!second) throw new Error('в фикстуре должно быть ≥2 сеанса');
+
+      const taken = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Authorization', bearer)
+        .send({ sessionId: first.id, customerName: 'Первый сеанс', seats: ['5-5'] });
+      expect(taken.status).toBe(201);
+
+      // то же место во втором сеансе — свободно
+      const other = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Authorization', bearer)
+        .send({ sessionId: second.id, customerName: 'Второй сеанс', seats: ['5-5'] });
+      expect(other.status).toBe(201);
+
+      // но повторно в первом сеансе — конфликт
+      const dup = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Authorization', bearer)
+        .send({ sessionId: first.id, customerName: 'Дубль', seats: ['5-5'] });
+      expect(dup.status).toBe(409);
+    });
+  });
+
   describe('авторизация: Bearer-JWT на мутациях', () => {
     it('401: POST /api/bookings без токена', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/bookings')
-        .send({ movieId: validUuid(), seats: ['1-1'] });
+        .send({ sessionId: validUuid(), seats: ['1-1'] });
 
       expect(res.status).toBe(401);
     });
@@ -398,17 +508,17 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       const res = await request(app.getHttpServer())
         .post('/api/bookings')
         .set('Authorization', 'Bearer not-a-jwt')
-        .send({ movieId: validUuid(), seats: ['1-1'] });
+        .send({ sessionId: validUuid(), seats: ['1-1'] });
 
       expect(res.status).toBe(401);
     });
 
     it('имя покупателя из JWT, когда customerName не передан', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+      const movies = await catalog();
       const res = await request(app.getHttpServer())
         .post('/api/bookings')
         .set('Authorization', bearer)
-        .send({ movieId: movies[5].id, seats: ['2-5'] });
+        .send({ sessionId: movies[5].sessions[0].id, seats: ['2-5'] });
 
       expect(res.status).toBe(201);
       expect(res.body.customerName).toBe('Анна Тест');
@@ -416,12 +526,16 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     });
 
     it('403: чужую бронь отменить нельзя', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+      const movies = await catalog();
       const created = (
         await request(app.getHttpServer())
           .post('/api/bookings')
           .set('Authorization', bearer)
-          .send({ movieId: movies[5].id, customerName: 'Владелец', seats: ['2-6'] })
+          .send({
+            sessionId: movies[5].sessions[0].id,
+            customerName: 'Владелец',
+            seats: ['2-6'],
+          })
       ).body;
       await bookingsService.handleProcessed({
         bookingId: created.id,
@@ -439,8 +553,16 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     });
 
     it('витрина без токена открыта: movies, seats, stats, health', async () => {
+      const movies = await catalog();
       expect(
         (await request(app.getHttpServer()).get('/api/movies')).status,
+      ).toBe(200);
+      expect(
+        (
+          await request(app.getHttpServer()).get(
+            `/api/sessions/${movies[0].sessions[0].id}/seats`,
+          )
+        ).status,
       ).toBe(200);
       expect(
         (await request(app.getHttpServer()).get('/api/bookings/stats')).status,
@@ -459,12 +581,12 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     });
 
     it('показывает только брони владельца из токена', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+      const movies = await catalog();
       const foreign = (
         await request(app.getHttpServer())
           .post('/api/bookings')
           .set('Authorization', bearerB)
-          .send({ movieId: movies[5].id, seats: ['3-1'] })
+          .send({ sessionId: movies[5].sessions[0].id, seats: ['3-1'] })
       ).body;
       expect(foreign.userId).toBe('user-b');
 
@@ -503,7 +625,10 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       durationMin: 90,
       priceRub: 350,
       hue: 120,
-      sessionAt: '2026-12-31T23:00:00Z',
+      sessions: [
+        { hall: 'IMAX', startsAt: '2026-12-31T23:00:00Z' },
+        { hall: 'Красный', startsAt: '2027-01-01T13:00:00Z' },
+      ],
     };
 
     it('401 без токена', async () => {
@@ -521,7 +646,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       expect(res.status).toBe(403);
     });
 
-    it('201 с админским токеном; каталог обновился и кэш сброшен', async () => {
+    it('201 с админским токеном; сеансы создались, каталог обновился, кэш сброшен', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/movies')
         .set('Authorization', bearerAdmin)
@@ -530,6 +655,8 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ title: 'Тестовый сеанс', priceRub: 350 });
       expect(res.body.id).toBeTruthy();
+      expect(res.body.sessions).toHaveLength(2);
+      expect(res.body.sessions[0]).toMatchObject({ hall: 'IMAX' });
 
       // до создания кэш прогрет одним из предыдущих GET /api/movies;
       // create его сбросил — список читается из «БД» и содержит новинку
@@ -544,27 +671,53 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       const res = await request(app.getHttpServer())
         .post('/api/movies')
         .set('Authorization', bearerAdmin)
-        .send({ ...newMovie, hue: 999 });
+        .send({ ...newMovie, title: 'Кривой hue', hue: 999 });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('400 без единого сеанса', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/movies')
+        .set('Authorization', bearerAdmin)
+        .send({ ...newMovie, title: 'Без сеансов', sessions: [] });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('400 с мусором вместо объекта сеанса (nested-валидация)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/movies')
+        .set('Authorization', bearerAdmin)
+        .send({
+          ...newMovie,
+          title: 'Мусорный сеанс',
+          sessions: [{ hall: 'IMAX', startsAt: 'завтра-в-семь' }],
+        });
 
       expect(res.status).toBe(400);
     });
   });
 
-  describe('гонка за места: констрейнт (movie_id, seat)', () => {
+  describe('гонка за места: констрейнт (session_id, seat)', () => {
     it('409 со списком мест при повторном бронировании занятого', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
-      const movie = movies[0];
+      const movies = await catalog();
+      const session = movies[0].sessions[0];
 
       const first = await request(app.getHttpServer())
         .post('/api/bookings')
         .set('Authorization', bearer)
-        .send({ movieId: movie.id, customerName: 'Первый', seats: ['4-4'] });
+        .send({ sessionId: session.id, customerName: 'Первый', seats: ['4-4'] });
       expect(first.status).toBe(201);
 
       const second = await request(app.getHttpServer())
         .post('/api/bookings')
         .set('Authorization', bearer)
-        .send({ movieId: movie.id, customerName: 'Второй', seats: ['4-3', '4-4'] });
+        .send({
+          sessionId: session.id,
+          customerName: 'Второй',
+          seats: ['4-3', '4-4'],
+        });
 
       expect(second.status).toBe(409);
       expect(second.body).toMatchObject({
@@ -574,35 +727,37 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       expect(second.body.message).toContain('4-4');
       // свободное место из отклонённой брони не занялось
       const map = await request(app.getHttpServer())
-        .get(`/api/movies/${movie.id}/seats`);
+        .get(`/api/sessions/${session.id}/seats`);
       expect(map.body.occupied).toContain('4-4');
       expect(map.body.occupied).not.toContain('4-3');
     });
 
-    it('GET /api/movies/:id/seats — геометрия зала и счётчик свободных', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+    it('GET /api/sessions/:id/seats — геометрия зала и счётчик свободных', async () => {
+      const movies = await catalog();
+      const session = movies[1].sessions[0];
       const map = await request(app.getHttpServer())
-        .get(`/api/movies/${movies[1].id}/seats`);
+        .get(`/api/sessions/${session.id}/seats`);
 
       expect(map.status).toBe(200);
       expect(map.body.layout).toEqual({ rows: 8, seatsPerRow: 10 });
-      expect(map.body.movieId).toBe(movies[1].id);
+      expect(map.body.sessionId).toBe(session.id);
       expect(map.body.free + map.body.occupied.length).toBe(80);
     });
 
-    it('GET /api/movies/:id/seats — 404 на несуществующий фильм', async () => {
+    it('GET /api/sessions/:id/seats — 404 на несуществующий сеанс', async () => {
       const res = await request(app.getHttpServer())
-        .get('/api/movies/00000000-0000-0000-0000-000000000000/seats');
+        .get('/api/sessions/00000000-0000-0000-0000-000000000000/seats');
       expect(res.status).toBe(404);
     });
   });
 
   describe('полный цикл брони: вердикт Go-воркера', () => {
     it('handleProcessed → бронь становится CONFIRMED и видна в списке и статистике', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+      const movies = await catalog();
+      const session = movies[0].sessions[0];
       const created = (
         await request(app.getHttpServer()).post('/api/bookings').set('Authorization', bearer).send({
-          movieId: movies[0].id,
+          sessionId: session.id,
           customerName: 'Аноним',
           seats: ['6-1', '6-2', '6-3'],
         })
@@ -627,9 +782,9 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       expect(updated.processedBy).toBe('go-worker-1');
       expect(updated.processedAt).toBeTruthy();
 
-      // подтверждённая бронь держит места
+      // подтверждённая бронь держит места своего сеанса
       const map = await request(app.getHttpServer())
-        .get(`/api/movies/${movies[0].id}/seats`);
+        .get(`/api/sessions/${session.id}/seats`);
       expect(map.body.occupied).toEqual(
         expect.arrayContaining(['6-1', '6-2', '6-3', '5-7', '5-8', '4-4']),
       );
@@ -641,12 +796,12 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     });
 
     it('FAILED → места освобождаются, и их снова можно забронировать', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
-      const movie = movies[2];
+      const movies = await catalog();
+      const session = movies[2].sessions[0];
 
       const created = (
         await request(app.getHttpServer()).post('/api/bookings').set('Authorization', bearer).send({
-          movieId: movie.id,
+          sessionId: session.id,
           customerName: 'Отказ',
           seats: ['2-2'],
         })
@@ -661,23 +816,27 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       });
 
       const map = await request(app.getHttpServer())
-        .get(`/api/movies/${movie.id}/seats`);
+        .get(`/api/sessions/${session.id}/seats`);
       expect(map.body.occupied).not.toContain('2-2');
 
       const rebook = await request(app.getHttpServer())
         .post('/api/bookings')
         .set('Authorization', bearer)
-        .send({ movieId: movie.id, customerName: 'Повтор', seats: ['2-2'] });
+        .send({ sessionId: session.id, customerName: 'Повтор', seats: ['2-2'] });
       expect(rebook.status).toBe(201);
     });
   });
 
   describe('сага отмены: возврат через Go-воркера', () => {
     /** создаёт и «оплачивает» бронь — готова к отмене */
-    async function confirmedBooking(movieId: string, seats: string[], name: string) {
+    async function confirmedBooking(
+      sessionId: string,
+      seats: string[],
+      name: string,
+    ) {
       const created = (
         await request(app.getHttpServer()).post('/api/bookings').set('Authorization', bearer).send({
-          movieId,
+          sessionId,
           customerName: name,
           seats,
         })
@@ -692,10 +851,10 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       return created;
     }
 
-    it('cancel: CONFIRMED → CANCELLING, публикация booking.cancelled', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
-      const movie = movies[3];
-      const created = await confirmedBooking(movie.id, ['3-5', '3-6'], 'Отмена');
+    it('cancel: CONFIRMED → CANCELLING, публикация booking.cancelled с сеансом', async () => {
+      const movies = await catalog();
+      const session = movies[3].sessions[0];
+      const created = await confirmedBooking(session.id, ['3-5', '3-6'], 'Отмена');
 
       rabbitPublish.mockClear();
       const res = await request(app.getHttpServer())
@@ -708,6 +867,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         'booking.cancelled',
         expect.objectContaining({
           bookingId: created.id,
+          sessionId: session.id,
           seats: ['3-5', '3-6'],
           totalRub: created.totalRub,
         }),
@@ -715,7 +875,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
 
       // до вердикта возврата места держатся занятыми
       const map = await request(app.getHttpServer())
-        .get(`/api/movies/${movie.id}/seats`);
+        .get(`/api/sessions/${session.id}/seats`);
       expect(map.body.occupied).toEqual(expect.arrayContaining(['3-5', '3-6']));
 
       // повторная отмена по CANCELLING — 409: гонку закрыл статус
@@ -725,9 +885,9 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     });
 
     it('booking.refunded CANCELLED → места свободны и снова покупаемы', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
-      const movie = movies[4];
-      const created = await confirmedBooking(movie.id, ['7-1'], 'Возврат');
+      const movies = await catalog();
+      const session = movies[4].sessions[0];
+      const created = await confirmedBooking(session.id, ['7-1'], 'Возврат');
       await request(app.getHttpServer()).post(`/api/bookings/${created.id}/cancel`).set('Authorization', bearer);
 
       // то, что в реальном стеке делает Go ticket-worker через RabbitMQ
@@ -745,20 +905,20 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       expect(cancelled.message).toContain('Возврат');
 
       const map = await request(app.getHttpServer())
-        .get(`/api/movies/${movie.id}/seats`);
+        .get(`/api/sessions/${session.id}/seats`);
       expect(map.body.occupied).not.toContain('7-1');
 
       const rebook = await request(app.getHttpServer())
         .post('/api/bookings')
         .set('Authorization', bearer)
-        .send({ movieId: movie.id, customerName: 'Снова', seats: ['7-1'] });
+        .send({ sessionId: session.id, customerName: 'Снова', seats: ['7-1'] });
       expect(rebook.status).toBe(201);
     });
 
     it('booking.refunded REFUND_FAILED → откат в CONFIRMED, места держатся', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
-      const movie = movies[5];
-      const created = await confirmedBooking(movie.id, ['8-10'], 'Банк не смог');
+      const movies = await catalog();
+      const session = movies[5].sessions[0];
+      const created = await confirmedBooking(session.id, ['8-10'], 'Банк не смог');
       await request(app.getHttpServer()).post(`/api/bookings/${created.id}/cancel`).set('Authorization', bearer);
 
       await bookingsService.handleRefunded({
@@ -775,15 +935,15 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       expect(restored.message).toContain('возврат');
 
       const map = await request(app.getHttpServer())
-        .get(`/api/movies/${movie.id}/seats`);
+        .get(`/api/sessions/${session.id}/seats`);
       expect(map.body.occupied).toContain('8-10');
     });
 
     it('409 на отмену брони не в CONFIRMED (PENDING)', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
+      const movies = await catalog();
       const created = (
         await request(app.getHttpServer()).post('/api/bookings').set('Authorization', bearer).send({
-          movieId: movies[0].id,
+          sessionId: movies[0].sessions[0].id,
           customerName: 'Нетерпеливый',
           seats: ['1-8'],
         })
@@ -804,9 +964,9 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     });
 
     it('ределивери booking.refunded по закрытой саге — без последствий', async () => {
-      const movies = (await request(app.getHttpServer()).get('/api/movies')).body.data;
-      const movie = movies[4];
-      const created = await confirmedBooking(movie.id, ['2-9'], 'Дубль');
+      const movies = await catalog();
+      const session = movies[4].sessions[0];
+      const created = await confirmedBooking(session.id, ['2-9'], 'Дубль');
       await request(app.getHttpServer()).post(`/api/bookings/${created.id}/cancel`).set('Authorization', bearer);
       await bookingsService.handleRefunded({
         bookingId: created.id,
@@ -830,7 +990,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       expect(cancelled.status).toBe('CANCELLED');
 
       const map = await request(app.getHttpServer())
-        .get(`/api/movies/${movie.id}/seats`);
+        .get(`/api/sessions/${session.id}/seats`);
       expect(map.body.occupied).not.toContain('2-9');
     });
   });
@@ -855,7 +1015,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       const frames = sseFrames(res.body!);
       const movies = (
         (await (await fetch(`${base}/api/movies`)).json()) as {
-          data: { id: string }[];
+          data: { sessions: { id: string }[] }[];
         }
       ).data;
       const created = (
@@ -864,7 +1024,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: bearer },
             body: JSON.stringify({
-              movieId: movies[1].id,
+              sessionId: movies[1].sessions[0].id,
               customerName: 'SSE-клиент',
               seats: ['1-2'],
             }),

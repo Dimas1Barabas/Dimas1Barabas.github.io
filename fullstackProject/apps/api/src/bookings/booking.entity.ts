@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Movie } from '../movies/movie.entity';
+import { Session } from '../movies/session.entity';
 
 export type BookingStatus =
   | 'PENDING'
@@ -27,6 +28,14 @@ export class Booking {
   @ManyToOne(() => Movie, { nullable: false })
   @JoinColumn({ name: 'movie_id' })
   movie: Movie;
+
+  /** сеанс, на который куплены места (фильм + зал + время) */
+  @Column({ name: 'session_id' })
+  sessionId: string;
+
+  @ManyToOne(() => Session, { nullable: false })
+  @JoinColumn({ name: 'session_id' })
+  session: Session;
 
   @Column({ name: 'customer_name', length: 60 })
   customerName: string;
@@ -68,6 +77,9 @@ export interface BookingDto {
   movieTitle: string;
   movieHue: number;
   movieGenreIcon: string;
+  sessionId: string;
+  sessionAt: string;
+  hall: string;
   customerName: string;
   userId: string | null;
   seats: string[];
@@ -79,14 +91,22 @@ export interface BookingDto {
   createdAt: string;
 }
 
-export function toBookingDto(booking: Booking, movie?: Movie): BookingDto {
+export function toBookingDto(
+  booking: Booking,
+  movie?: Movie,
+  session?: Session,
+): BookingDto {
   const m = movie ?? booking.movie;
+  const s = session ?? booking.session;
   return {
     id: booking.id,
     movieId: booking.movieId,
     movieTitle: m?.title ?? '—',
     movieHue: m?.hue ?? 220,
     movieGenreIcon: m?.genreIcon ?? '🎟️',
+    sessionId: booking.sessionId,
+    sessionAt: s?.startsAt.toISOString() ?? '—',
+    hall: s?.hall ?? '—',
     customerName: booking.customerName,
     userId: booking.userId ?? null,
     seats: booking.seats,

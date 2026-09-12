@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { DataSource, In, Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { Movie } from '../movies/movie.entity';
+import { Session } from '../movies/session.entity';
 import { BookingStream } from './booking-stream';
 import {
   BookingCancelledEvent,
@@ -64,6 +65,8 @@ export class BookingsService {
     private readonly bookings: Repository<Booking>,
     @InjectRepository(Movie)
     private readonly movies: Repository<Movie>,
+    @InjectRepository(Session)
+    private readonly sessions: Repository<Session>,
     @InjectRepository(SeatOccupancy)
     private readonly occupancy: Repository<SeatOccupancy>,
     private readonly rabbit: AmqpConnection,
@@ -74,11 +77,23 @@ export class BookingsService {
   private async push(
     booking: Booking,
     movie: Movie,
+    session: Session,
   ): Promise<void> {
     this.stream.emit({
-      booking: toBookingDto(booking, movie),
+      booking: toBookingDto(booking, movie, session),
       stats: await this.stats(),
     });
+  }
+
+  /** фильм и сеанс брони — findOneByOrFail не грузит relations */
+  private async contextOf(
+    booking: Booking,
+  ): Promise<{ movie: Movie; session: Session }> {
+    const [movie, session] = await Promise.all([
+      this.movies.findOneByOrFail({ id: booking.movieId }),
+      this.sessions.findOneByOrFail({ id: booking.sessionId }),
+    ]);
+    return { movie, session };
   }
 
   /**
@@ -86,8 +101,9 @@ export class BookingsService {
    * дальше её подхватывает Go-воркер ticket-worker.
    *
    * Владелец и имя покупателя — из JWT: customerName в теле опционален.
+   * Фильм выводится из сеанса — истина о привязке хранится в одном месте.
    * Бронь и занятость мест пишутся одной транзакцией; уникальный
-   * констрейнт (movie_id, seat) не пускает двух клиентов на одно место:
+   * констрейнт (session_id, seat) не пускает двух клиентов на одно место:
    * проигравший в гонке получает 409 со списком занятых мест.
    */
   async create(dto: CreateBookingDto, user: AuthUser): Promise<BookingDto> {
@@ -96,13 +112,21 @@ export class BookingsService {
 
     let booking: Booking;
     let movie: Movie;
+    let session: Session;
     try {
       const result = await this.dataSource.transaction(async (em) => {
-        const found = await em.findOneByOrFail(Movie, { id: dto.movieId });
+        const foundSession = await em.findOneByOrFail(Session, {
+          id: dto.sessionId,
+        });
+        const found = await em.findOneByOrFail(Movie, {
+          id: foundSession.movieId,
+        });
         const toSave = em.create(Booking, {
           id: randomUUID(), // нужен до сохранения — на него ссылаются места
           movieId: found.id,
           movie: found,
+          sessionId: foundSession.id,
+          session: foundSession,
           customerName,
           userId: user.id,
           seats,
@@ -114,7 +138,7 @@ export class BookingsService {
           await em.insert(
             SeatOccupancy,
             seats.map((seat) => ({
-              movieId: found.id,
+              sessionId: foundSession.id,
               seat,
               bookingId: toSave.id,
             })),
@@ -124,15 +148,20 @@ export class BookingsService {
           throw err;
         }
 
-        return { booking: await em.save(Booking, toSave), movie: found };
+        return {
+          booking: await em.save(Booking, toSave),
+          movie: found,
+          session: foundSession,
+        };
       });
       booking = result.booking;
       movie = result.movie;
+      session = result.session;
     } catch (err) {
       if (err instanceof SeatsTakenError) {
         // транзакция откатилась — спрашиваем у БД, какие именно места заняты
         const rows = await this.occupancy.find({
-          where: { movieId: dto.movieId, seat: In(seats) },
+          where: { sessionId: dto.sessionId, seat: In(seats) },
         });
         const seatsTaken = rows.map((r) => r.seat).sort(compareSeats);
         throw new ConflictException({
@@ -149,6 +178,9 @@ export class BookingsService {
       bookingId: booking.id,
       movieId: movie.id,
       movieTitle: movie.title,
+      sessionId: session.id,
+      sessionAt: session.startsAt.toISOString(),
+      hall: session.hall,
       customerName: booking.customerName,
       seats: booking.seats,
       totalRub: booking.totalRub,
@@ -156,18 +188,18 @@ export class BookingsService {
     };
     this.rabbit.publish('cinema', 'booking.created', event);
     this.logger.log(
-      `Бронь ${booking.id} (${movie.title}, места ${booking.seats.join(', ')}) → в очередь`,
+      `Бронь ${booking.id} (${movie.title}, ${session.hall} ${session.startsAt.toISOString()}, места ${booking.seats.join(', ')}) → в очередь`,
     );
-    await this.push(booking, movie);
+    await this.push(booking, movie, session);
 
-    return toBookingDto(booking, movie);
+    return toBookingDto(booking, movie, session);
   }
 
   async list(limit = 30): Promise<BookingDto[]> {
     const rows = await this.bookings.find({
       order: { createdAt: 'DESC' },
       take: limit,
-      relations: { movie: true },
+      relations: { movie: true, session: true },
     });
     return rows.map((row) => toBookingDto(row));
   }
@@ -178,7 +210,7 @@ export class BookingsService {
       where: { userId: user.id },
       order: { createdAt: 'DESC' },
       take: limit,
-      relations: { movie: true },
+      relations: { movie: true, session: true },
     });
     return rows.map((row) => toBookingDto(row));
   }
@@ -195,7 +227,9 @@ export class BookingsService {
     if (booking.userId && booking.userId !== user.id) {
       throw new ForbiddenException('Это не ваша бронь');
     }
-    const movie = await this.movies.findOneByOrFail({ id: booking.movieId });
+    // грузим явно: findOneByOrFail не подтягивает relations, а событию
+    // нужны title/hall (в юнит-тестах это маскировали Map-фейки)
+    const { movie, session } = await this.contextOf(booking);
 
     const switched = await this.bookings.update(
       { id, status: 'CONFIRMED' },
@@ -213,7 +247,10 @@ export class BookingsService {
     const event: BookingCancelledEvent = {
       bookingId: booking.id,
       movieId: booking.movieId,
-      movieTitle: booking.movie.title,
+      movieTitle: movie.title,
+      sessionId: session.id,
+      sessionAt: session.startsAt.toISOString(),
+      hall: session.hall,
       customerName: booking.customerName,
       seats: booking.seats,
       totalRub: booking.totalRub,
@@ -221,12 +258,12 @@ export class BookingsService {
     };
     this.rabbit.publish('cinema', 'booking.cancelled', event);
     this.logger.log(
-      `Отмена брони ${booking.id} (${booking.movie.title}, возврат ${booking.totalRub} ₽) → в очередь`,
+      `Отмена брони ${booking.id} (${movie.title}, возврат ${booking.totalRub} ₽) → в очередь`,
     );
 
     booking.status = 'CANCELLING';
-    await this.push(booking, movie);
-    return toBookingDto(booking, movie);
+    await this.push(booking, movie, session);
+    return toBookingDto(booking, movie, session);
   }
 
   async stats(): Promise<Record<BookingStatus, number>> {
@@ -250,16 +287,16 @@ export class BookingsService {
     return stats;
   }
 
-  /** Карта занятости зала — источник данных для сетки мест на фронте */
-  async seatMap(movieId: string): Promise<SeatMapDto> {
-    await this.movies.findOneByOrFail({ id: movieId });
+  /** Карта занятости зала сеанса — источник данных для сетки мест на фронте */
+  async seatMap(sessionId: string): Promise<SeatMapDto> {
+    await this.sessions.findOneByOrFail({ id: sessionId });
     const rows = await this.occupancy.find({
-      where: { movieId },
+      where: { sessionId },
       select: { seat: true },
     });
     const occupied = rows.map((r) => r.seat).sort(compareSeats);
     return {
-      movieId,
+      sessionId,
       layout: { rows: HALL_ROWS, seatsPerRow: HALL_SEATS_PER_ROW },
       occupied,
       free: HALL_CAPACITY - occupied.length,
@@ -280,7 +317,8 @@ export class BookingsService {
     this.logger.log(
       `Бронь ${event.bookingId} → ${event.status} (${event.processedBy})`,
     );
-    await this.push(booking, await this.movies.findOneByOrFail({ id: booking.movieId }));
+    const { movie, session } = await this.contextOf(booking);
+    await this.push(booking, movie, session);
   }
 
   /** Callback события booking.refunded от Go-воркера */
@@ -304,6 +342,7 @@ export class BookingsService {
     this.logger.log(
       `Возврат ${event.bookingId} → ${event.status} (${event.processedBy})`,
     );
-    await this.push(updated, await this.movies.findOneByOrFail({ id: booking.movieId }));
+    const { movie, session } = await this.contextOf(updated);
+    await this.push(updated, movie, session);
   }
 }
