@@ -2,7 +2,14 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import type { Booking, Movie } from '../api/types';
 import { ApiError } from '../api/client';
-import { formatPrice, formatSession, formatSeats } from '../utils/format';
+import {
+  formatDayShort,
+  formatPrice,
+  formatSession,
+  formatSeats,
+  formatTime,
+} from '../utils/format';
+import { upcomingSessions } from '../utils/sessions';
 import { useAppStore } from '../stores/app';
 import { useAuthStore } from '../stores/auth';
 import { useBookingsStore } from '../stores/bookings';
@@ -19,6 +26,8 @@ const moviesStore = useMoviesStore();
 
 const customerName = ref('');
 const selected = ref<string[]>([]);
+/** выбранный сеанс — по нему карта зала и бронь */
+const selectedSessionId = ref<string | null>(null);
 const submitting = ref(false);
 const error = ref<string | null>(null);
 /** сам диалог — фокусируем при открытии, чтобы Esc закрывал без клика */
@@ -32,6 +41,13 @@ const needLogin = computed(
 const askName = computed(() => appStore.mode === 'demo');
 
 const seatMap = computed(() => moviesStore.seatMap);
+/** будущие сеансы фильма — чипами в модалке; прошедшие не показываем */
+const upcoming = computed(() =>
+  props.movie ? upcomingSessions(props.movie.sessions) : [],
+);
+const selectedSession = computed(
+  () => upcoming.value.find((s) => s.id === selectedSessionId.value) ?? null,
+);
 const total = computed(() =>
   props.movie && seatMap.value
     ? props.movie.priceRub * selected.value.length
@@ -78,6 +94,10 @@ async function submit(): Promise<void> {
     error.value = 'Введите имя (минимум 2 символа)';
     return;
   }
+  if (!selectedSessionId.value) {
+    error.value = 'Нет доступных сеансов';
+    return;
+  }
   if (!selected.value.length) {
     error.value = 'Выберите хотя бы одно место';
     return;
@@ -86,7 +106,7 @@ async function submit(): Promise<void> {
   error.value = null;
   try {
     const booking = await bookingsStore.create({
-      movieId: props.movie.id,
+      sessionId: selectedSessionId.value,
       // в live имя возьмёт из JWT; в демо — как раньше, из поля
       ...(askName.value ? { customerName: customerName.value } : {}),
       seats: selected.value,
@@ -100,7 +120,7 @@ async function submit(): Promise<void> {
         ? `Места уже заняты: ${formatSeats(taken)} — выберите другие`
         : 'Выбранные места уже заняты — обновите выбор';
       selected.value = selected.value.filter((s) => !taken.includes(s));
-      void moviesStore.loadSeats(props.movie.id);
+      void moviesStore.loadSeats(selectedSessionId.value);
     } else {
       error.value =
         err instanceof Error ? err.message : 'Не удалось создать бронь';
@@ -110,7 +130,7 @@ async function submit(): Promise<void> {
   }
 }
 
-// при каждом открытии — свежая карта зала и пустой выбор
+// при каждом открытии — ближайший сеанс, свежая карта зала и пустой выбор
 watch(
   () => props.movie,
   async (movie) => {
@@ -118,13 +138,24 @@ watch(
     selected.value = [];
     error.value = null;
     if (movie) {
-      void moviesStore.loadSeats(movie.id);
+      // дефолт — ближайший будущий сеанс (loadSeats здесь: при переоткрытии
+      // того же сеанса watch(selectedSessionId) не сработает — id не сменится)
+      selectedSessionId.value = upcomingSessions(movie.sessions)[0]?.id ?? null;
+      if (selectedSessionId.value) {
+        void moviesStore.loadSeats(selectedSessionId.value);
+      }
       await nextTick();
       modalEl.value?.focus({ preventScroll: true });
     }
   },
   { immediate: true },
 );
+
+// смена сеанса — своя карта занятости и пустой выбор мест
+watch(selectedSessionId, (sessionId) => {
+  selected.value = [];
+  if (sessionId) void moviesStore.loadSeats(sessionId);
+});
 </script>
 
 <template>
@@ -153,7 +184,11 @@ watch(
             <div>
               <h2 class="modal__title">{{ movie.title }}</h2>
               <p class="modal__meta">
-                {{ movie.genre }} · {{ formatSession(movie.sessionAt) }}
+                {{ movie.genre }}
+                <template v-if="selectedSession">
+                  · {{ selectedSession.hall }} ·
+                  {{ formatSession(selectedSession.startsAt) }}
+                </template>
               </p>
             </div>
             <button
@@ -186,6 +221,31 @@ watch(
                 placeholder="Например, Дмитрий"
               />
             </label>
+
+            <div v-if="upcoming.length" class="field">
+              <span class="field__label">Сеанс</span>
+              <div class="session-chips">
+                <button
+                  v-for="session in upcoming"
+                  :key="session.id"
+                  class="session-chip"
+                  type="button"
+                  :class="{
+                    'session-chip--active': session.id === selectedSessionId,
+                  }"
+                  @click="selectedSessionId = session.id"
+                >
+                  <span class="session-chip__when">
+                    {{ formatDayShort(session.startsAt) }}
+                    {{ formatTime(session.startsAt) }}
+                  </span>
+                  <span class="session-chip__hall">{{ session.hall }}</span>
+                </button>
+              </div>
+            </div>
+            <p v-else class="modal__login-hint">
+              Будущих сеансов нет — бронирование закрыто.
+            </p>
 
             <div class="field">
               <span class="field__label">Места (максимум 8)</span>
@@ -265,7 +325,7 @@ watch(
                 class="btn"
                 :class="{ 'btn--loading': submitting }"
                 type="button"
-                :disabled="submitting || !selected.length"
+                :disabled="submitting || !selectedSessionId || !selected.length"
                 :aria-busy="submitting || undefined"
                 @click="submit"
               >

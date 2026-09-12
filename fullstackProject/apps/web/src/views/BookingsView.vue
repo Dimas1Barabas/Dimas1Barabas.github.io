@@ -3,7 +3,12 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import StatusBadge from '../components/StatusBadge.vue';
 import { useAppStore } from '../stores/app';
 import { useBookingsStore } from '../stores/bookings';
-import { formatPrice, formatSeats, timeAgo } from '../utils/format';
+import {
+  formatPrice,
+  formatSeats,
+  formatSession,
+  timeAgo,
+} from '../utils/format';
 
 const store = useBookingsStore();
 const app = useAppStore();
@@ -87,8 +92,9 @@ function isCancelling(id: string): boolean {
           <div class="booking-row__main">
             <h3 class="booking-row__title">{{ booking.movieTitle }}</h3>
             <p class="booking-row__meta">
-              {{ booking.customerName }} · места {{ formatSeats(booking.seats) }}
-              · {{ formatPrice(booking.totalRub) }}
+              {{ booking.customerName }} · {{ booking.hall }},
+              {{ formatSession(booking.sessionAt) }} · места
+              {{ formatSeats(booking.seats) }} · {{ formatPrice(booking.totalRub) }}
             </p>
             <p
               v-if="booking.message"

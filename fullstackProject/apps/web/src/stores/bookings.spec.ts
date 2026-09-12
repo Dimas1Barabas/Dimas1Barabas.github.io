@@ -77,7 +77,7 @@ describe('stores: демо-режим целиком (movies + bookings)', () =>
   it('movies store грузит карту зала сеанса', async () => {
     const movies = useMoviesStore();
     await movies.load();
-    await movies.loadSeats(movies.movies[0].id);
+    await movies.loadSeats(movies.movies[0].sessions[0].id);
 
     expect(movies.seatMap).not.toBeNull();
     expect(movies.seatMap!.layout).toEqual({ rows: 8, seatsPerRow: 10 });
@@ -87,11 +87,11 @@ describe('stores: демо-режим целиком (movies + bookings)', () =>
   it('bookings store: create → PENDING в списке и статистике', async () => {
     const movies = useMoviesStore();
     await movies.load();
-    const seats = freeSeats(demoEngine.seatMap(movies.movies[0].id), 2);
+    const seats = freeSeats(demoEngine.seatMap(movies.movies[0].sessions[0].id), 2);
 
     const bookings = useBookingsStore();
     const booking = await bookings.create({
-      movieId: movies.movies[0].id,
+      sessionId: movies.movies[0].sessions[0].id,
       customerName: 'Дмитрий',
       seats,
     });
@@ -106,10 +106,10 @@ describe('stores: демо-режим целиком (movies + bookings)', () =>
   it('refresh подтягивает вердикт «воркера» после таймера', async () => {
     const movies = useMoviesStore();
     await movies.load();
-    const [seat] = freeSeats(demoEngine.seatMap(movies.movies[0].id), 1);
+    const [seat] = freeSeats(demoEngine.seatMap(movies.movies[0].sessions[0].id), 1);
     const bookings = useBookingsStore();
     await bookings.create({
-      movieId: movies.movies[0].id,
+      sessionId: movies.movies[0].sessions[0].id,
       customerName: 'Таймер',
       seats: [seat],
     });
@@ -131,9 +131,9 @@ describe('stores: демо-режим целиком (movies + bookings)', () =>
     expect(bookings.source).toBeNull(); // демо — без EventSource
     expect(bookings.unsubscribe).not.toBeNull();
 
-    const [seat] = freeSeats(demoEngine.seatMap(movies.movies[0].id), 1);
+    const [seat] = freeSeats(demoEngine.seatMap(movies.movies[0].sessions[0].id), 1);
     await bookings.create({
-      movieId: movies.movies[0].id,
+      sessionId: movies.movies[0].sessions[0].id,
       customerName: 'Подписка',
       seats: [seat],
     });
@@ -188,11 +188,11 @@ describe('stores: демо-режим целиком (movies + bookings)', () =>
   it('cancel: сага в списке и статистике — CANCELLING, затем CANCELLED', async () => {
     const movies = useMoviesStore();
     await movies.load();
-    const [seat] = freeSeats(demoEngine.seatMap(movies.movies[0].id), 1);
+    const [seat] = freeSeats(demoEngine.seatMap(movies.movies[0].sessions[0].id), 1);
     const bookings = useBookingsStore();
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
     await bookings.create({
-      movieId: movies.movies[0].id,
+      sessionId: movies.movies[0].sessions[0].id,
       customerName: 'Отмена',
       seats: [seat],
     });

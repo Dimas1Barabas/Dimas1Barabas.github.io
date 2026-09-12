@@ -39,20 +39,20 @@ export const useMoviesStore = defineStore('movies', {
     },
 
     /** Занятость мест не кэшируется — гонка за место решается на бэкенде */
-    async loadSeats(movieId: string): Promise<void> {
+    async loadSeats(sessionId: string): Promise<void> {
       this.seatsLoading = true;
       const app = useAppStore();
       try {
         this.seatMap =
           app.mode === 'demo'
-            ? demoEngine.seatMap(movieId)
-            : await api.seatMap(movieId);
+            ? demoEngine.seatMap(sessionId)
+            : await api.seatMap(sessionId);
       } finally {
         this.seatsLoading = false;
       }
     },
 
-    /** новый сеанс (админ): после создания перезагружаем каталог */
+    /** новый фильм с сеансами (админ): после создания перезагружаем каталог */
     async create(payload: CreateMoviePayload): Promise<Movie> {
       const movie = await api.createMovie(payload);
       await this.load();

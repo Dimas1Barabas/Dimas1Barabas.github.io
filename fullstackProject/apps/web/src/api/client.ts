@@ -99,7 +99,8 @@ export const api = {
   /** личный кабинет: свои брони по Bearer-токену */
   myBookings: () => request<Booking[]>('/bookings/my'),
   /** карта занятости зала сеанса (без кэша — всегда свежая) */
-  seatMap: (movieId: string) => request<SeatMap>(`/movies/${movieId}/seats`),
+  seatMap: (sessionId: string) =>
+    request<SeatMap>(`/sessions/${sessionId}/seats`),
   createBooking: (payload: CreateBookingPayload) =>
     request<Booking>('/bookings', {
       method: 'POST',

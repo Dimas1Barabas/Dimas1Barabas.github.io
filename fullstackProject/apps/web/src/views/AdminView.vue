@@ -16,7 +16,11 @@ const genreIcon = ref('🎬');
 const durationMin = ref(100);
 const priceRub = ref(400);
 const hue = ref(220);
-const sessionAt = ref('');
+/** сеансы нового фильма: зал + время; минимум один непустой */
+const sessions = ref<{ hall: string; startsAt: string }[]>([
+  { hall: 'Красный', startsAt: '' },
+]);
+const HALLS = ['Красный', 'IMAX'];
 const submitting = ref(false);
 const error = ref<string | null>(null);
 const success = ref<string | null>(null);
@@ -25,8 +29,18 @@ const allowed = computed(
   () => appStore.mode === 'live' && authStore.isAdmin,
 );
 
+function addSession(): void {
+  sessions.value.push({ hall: HALLS[0]!, startsAt: '' });
+}
+
+/** последнюю строку не убираем — фильм без сеансов не имеет смысла */
+function dropSession(index: number): void {
+  if (sessions.value.length > 1) sessions.value.splice(index, 1);
+}
+
 async function submit(): Promise<void> {
-  if (submitting.value || !sessionAt.value) return;
+  const filled = sessions.value.filter((s) => s.startsAt);
+  if (submitting.value || !filled.length) return;
   submitting.value = true;
   error.value = null;
   success.value = null;
@@ -40,13 +54,16 @@ async function submit(): Promise<void> {
       priceRub: priceRub.value,
       hue: hue.value,
       // datetime-local даёт локальное время без зоны — договоримся, что это МСК
-      sessionAt: new Date(`${sessionAt.value}:00+03:00`).toISOString(),
+      sessions: filled.map((s) => ({
+        hall: s.hall,
+        startsAt: new Date(`${s.startsAt}:00+03:00`).toISOString(),
+      })),
     });
-    success.value = `Сеанс «${movie.title}» в афише`;
+    success.value = `Фильм «${movie.title}» в афише, сеансов: ${filled.length}`;
     title.value = '';
     description.value = '';
     genre.value = '';
-    sessionAt.value = '';
+    sessions.value = [{ hall: HALLS[0]!, startsAt: '' }];
   } catch (err) {
     if (err instanceof ApiError) {
       try {
@@ -56,7 +73,7 @@ async function submit(): Promise<void> {
         /* ниже общий текст */
       }
     }
-    error.value ??= err instanceof Error ? err.message : 'Не удалось создать сеанс';
+    error.value ??= err instanceof Error ? err.message : 'Не удалось создать фильм';
   } finally {
     submitting.value = false;
   }
@@ -65,7 +82,7 @@ async function submit(): Promise<void> {
 
 <template>
   <section class="container admin">
-    <h1 class="page-title">Новый сеанс</h1>
+    <h1 class="page-title">Новый фильм</h1>
 
     <p v-if="!allowed" class="admin-note">
       Раздел для администратора: войдите под админом при живом API
@@ -155,15 +172,44 @@ async function submit(): Promise<void> {
         </label>
       </div>
 
-      <label class="field">
-        <span class="field__label">Дата и время сеанса</span>
-        <input
-          v-model="sessionAt"
-          class="field__input"
-          type="datetime-local"
-          required
-        />
-      </label>
+      <div class="field">
+        <span class="field__label">Сеансы (зал и время)</span>
+        <div class="admin-sessions">
+          <div
+            v-for="(session, i) in sessions"
+            :key="i"
+            class="admin-session"
+          >
+            <select v-model="session.hall" class="field__input" required>
+              <option v-for="hall in HALLS" :key="hall" :value="hall">
+                {{ hall }}
+              </option>
+            </select>
+            <input
+              v-model="session.startsAt"
+              class="field__input"
+              type="datetime-local"
+              :required="i === 0"
+            />
+            <button
+              class="btn btn--ghost btn--sm"
+              type="button"
+              :disabled="sessions.length === 1"
+              :aria-label="`Убрать сеанс ${i + 1}`"
+              @click="dropSession(i)"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        <button
+          class="btn btn--ghost btn--sm admin-session-add"
+          type="button"
+          @click="addSession"
+        >
+          + Ещё сеанс
+        </button>
+      </div>
 
       <p v-if="error" class="admin-error">{{ error }}</p>
       <p v-if="success" class="admin-success">{{ success }}</p>
@@ -195,6 +241,35 @@ async function submit(): Promise<void> {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 12px;
+}
+
+.admin-sessions {
+  display: grid;
+  gap: 8px;
+}
+
+/** строка сеанса: зал + время + снятие; на узких экранах переносится */
+.admin-session {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(180px, 2fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-session-add {
+  margin-top: 8px;
+  justify-self: start;
+}
+
+@media (max-width: 560px) {
+  .admin-session {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .admin-session button {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
 }
 
 .admin-error {

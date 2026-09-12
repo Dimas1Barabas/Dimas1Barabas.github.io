@@ -14,7 +14,11 @@ const movie: Movie = {
   durationMin: 112,
   priceRub: 400,
   hue: 275,
-  sessionAt: new Date(2026, 8, 5, 22, 0).toISOString(),
+  sessions: [
+    // «завтра» относительно типичной даты запуска — карточка покажет будущее
+    { id: 's-1', hall: 'IMAX', startsAt: new Date(2030, 0, 5, 22, 0).toISOString() },
+    { id: 's-2', hall: 'Красный', startsAt: new Date(2030, 0, 6, 15, 0).toISOString() },
+  ],
 };
 
 describe('StatusBadge', () => {
@@ -95,6 +99,13 @@ describe('MovieCard', () => {
     expect(wrapper.text()).toContain('хоррор');
     expect(wrapper.text()).toContain('1 ч 52 мин');
     expect(wrapper.text()).toContain('400 ₽');
+  });
+
+  it('мета — строка ближайших сеансов', () => {
+    const wrapper = mount(MovieCard, { props: { movie } });
+
+    // оба сеанса будущие: «22:00 · ещё не названные дни» — проверяем время
+    expect(wrapper.find('.movie-card__meta').text()).toContain('22:00');
   });
 
   it('градиент постера строится от hue фильма', () => {

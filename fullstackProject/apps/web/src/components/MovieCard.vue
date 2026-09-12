@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { Movie } from '../api/types';
-import { formatDuration, formatPrice, formatSession } from '../utils/format';
+import {
+  formatDuration,
+  formatPrice,
+  formatSessionsLine,
+} from '../utils/format';
 
 // индекс в сетке — только для stagger-задержки появления
 withDefaults(defineProps<{ movie: Movie; index?: number }>(), { index: 0 });
@@ -29,7 +33,7 @@ defineEmits<{ book: [movie: Movie] }>();
       <h3 class="movie-card__title" :title="movie.title">
         {{ movie.title }}
       </h3>
-      <p class="movie-card__meta">{{ formatSession(movie.sessionAt) }}</p>
+      <p class="movie-card__meta">{{ formatSessionsLine(movie.sessions) }}</p>
       <p class="movie-card__desc">{{ movie.description }}</p>
 
       <div class="movie-card__footer">

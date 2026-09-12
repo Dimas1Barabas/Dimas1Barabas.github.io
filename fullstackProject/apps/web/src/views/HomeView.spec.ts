@@ -16,7 +16,11 @@ const movie: Movie = {
   durationMin: 112,
   priceRub: 400,
   hue: 275,
-  sessionAt: '2026-09-10T19:00:00Z',
+  sessions: [
+    // локальные даты далеко в будущем — не зависим от «сейчас»
+    { id: 's-1', hall: 'IMAX', startsAt: new Date(2030, 0, 10, 19, 0).toISOString() },
+    { id: 's-2', hall: 'Красный', startsAt: new Date(2030, 0, 11, 21, 0).toISOString() },
+  ],
 };
 
 const admin: User = {

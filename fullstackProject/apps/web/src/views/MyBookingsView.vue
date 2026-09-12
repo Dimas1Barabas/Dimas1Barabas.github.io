@@ -4,7 +4,11 @@ import StatusBadge from '../components/StatusBadge.vue';
 import { useAppStore } from '../stores/app';
 import { useAuthStore } from '../stores/auth';
 import { useBookingsStore } from '../stores/bookings';
-import { formatPrice, formatSeats } from '../utils/format';
+import {
+  formatPrice,
+  formatSeats,
+  formatSession,
+} from '../utils/format';
 
 const app = useAppStore();
 const auth = useAuthStore();
@@ -76,6 +80,7 @@ async function cancel(id: string): Promise<void> {
             <div class="booking-row__main">
               <h3 class="booking-row__title">{{ booking.movieTitle }}</h3>
               <p class="booking-row__meta">
+                {{ booking.hall }}, {{ formatSession(booking.sessionAt) }} ·
                 места {{ formatSeats(booking.seats) }} · {{ formatPrice(booking.totalRub) }}
               </p>
               <p

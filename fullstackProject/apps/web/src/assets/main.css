@@ -845,6 +845,57 @@ main.container {
   margin-top: 10px;
 }
 
+/* чипы сеансов в модалке: когда + зал, активный — акцентной заливкой */
+.session-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.session-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+  touch-action: manipulation;
+}
+
+.session-chip:hover {
+  border-color: var(--accent);
+}
+
+.session-chip__when {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.session-chip__hall {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.session-chip--active {
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+  border-color: transparent;
+  color: var(--btn-fg);
+}
+
+.session-chip--active .session-chip__hall {
+  color: var(--btn-fg);
+  opacity: 0.8;
+}
+
 .seat-chip {
   display: inline-flex;
   align-items: center;

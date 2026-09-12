@@ -1,3 +1,10 @@
+/** сеанс фильма: зал + время (у фильма их много) */
+export interface MovieSession {
+  id: string;
+  hall: string;
+  startsAt: string;
+}
+
 export interface Movie {
   id: string;
   title: string;
@@ -8,7 +15,8 @@ export interface Movie {
   priceRub: number;
   /** оттенок градиентного постера (HSL hue) */
   hue: number;
-  sessionAt: string;
+  /** расписание фильма, отсортировано по времени */
+  sessions: MovieSession[];
 }
 
 export type BookingStatus =
@@ -18,9 +26,9 @@ export type BookingStatus =
   | 'CANCELLING'
   | 'CANCELLED';
 
-/** карта занятости зала сеанса — GET /api/movies/:id/seats */
+/** карта занятости зала сеанса — GET /api/sessions/:id/seats */
 export interface SeatMap {
-  movieId: string;
+  sessionId: string;
   layout: { rows: number; seatsPerRow: number };
   /** коды занятых мест «ряд-место» */
   occupied: string[];
@@ -33,6 +41,10 @@ export interface Booking {
   movieTitle: string;
   movieHue: number;
   movieGenreIcon: string;
+  /** сеанс, на который куплены места */
+  sessionId: string;
+  sessionAt: string;
+  hall: string;
   customerName: string;
   /** владелец брони (null — досимвольные брони без владельца) */
   userId: string | null;
@@ -68,7 +80,8 @@ export interface HealthResponse {
 }
 
 export interface CreateBookingPayload {
-  movieId: string;
+  /** бронь привязана к сеансу; фильм бэкенд выводит из сеанса */
+  sessionId: string;
   /** в live-режиме не передаём — имя берёт из JWT на бэкенде */
   customerName?: string;
   seats: string[];
@@ -97,7 +110,7 @@ export interface RegisterPayload {
   name: string;
 }
 
-/** новый сеанс в афишу — POST /api/movies (только админ) */
+/** новый фильм в афишу — POST /api/movies (только админ), сразу с сеансами */
 export interface CreateMoviePayload {
   title: string;
   description: string;
@@ -106,6 +119,6 @@ export interface CreateMoviePayload {
   durationMin: number;
   priceRub: number;
   hue: number;
-  /** ISO-дата сеанса */
-  sessionAt: string;
+  /** хотя бы один сеанс */
+  sessions: { hall: string; startsAt: string }[];
 }

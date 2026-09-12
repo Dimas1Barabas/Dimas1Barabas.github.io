@@ -3,6 +3,7 @@ import type {
   BookingStats,
   CreateBookingPayload,
   Movie,
+  MovieSession,
   SeatMap,
 } from './types';
 import { ApiError } from './client';
@@ -18,11 +19,13 @@ import {
 /**
  * Демо-режим: браузерная симуляция бэкенда для GitHub Pages.
  * Повторяет поведение реального стенда:
- *  - фильмы с пометкой источника «кэш»/«БД» (как Redis-кэш API);
- *  - карта занятости зала, детерминированно посеянная при первом заходе
- *    (в живом стенде места занимают брони в Postgres);
+ *  - фильмы с расписанием сеансов (зал + время) и пометкой источника
+ *    «кэш»/«БД» (как Redis-кэш API);
+ *  - карта занятости зала сеанса, детерминированно посеянная при первом
+ *    заходе (в живом стенде места занимают брони в Postgres);
  *  - созданная бронь держит выбранные места; конфликт мест — 409, как
- *    уникальный констрейнт (movie_id, seat) в API;
+ *    уникальный констрейнт (session_id, seat) в API; одно место в
+ *    разных сеансах одного фильма — независимо;
  *  - через 1,2–2,8 с «воркер» (те же тайминги и вероятность успеха, что у
  *    Go ticket-worker) выносит вердикт; при FAILED места освобождаются;
  *  - сага отмены: CONFIRMED → CANCELLING → возврат 0,8–1,6 с с той же
@@ -44,6 +47,18 @@ function inDays(days: number, hour: number): string {
   return d.toISOString();
 }
 
+/** сеансы демо-фильма: «завтра» обязателен, чтобы демо не пустовало ночью */
+function sessionsOf(
+  movieId: string,
+  defs: [days: number, hour: number, hall: string][],
+): MovieSession[] {
+  return defs.map(([days, hour, hall], i) => ({
+    id: `${movieId}-s${i + 1}`,
+    hall,
+    startsAt: inDays(days, hour),
+  }));
+}
+
 const DEMO_MOVIES: Movie[] = [
   {
     id: 'demo-milky-way',
@@ -55,7 +70,11 @@ const DEMO_MOVIES: Movie[] = [
     durationMin: 132,
     priceRub: 450,
     hue: 220,
-    sessionAt: inDays(1, 19),
+    sessions: sessionsOf('demo-milky-way', [
+      [0, 19, 'IMAX'],
+      [1, 12, 'Красный'],
+      [2, 21, 'IMAX'],
+    ]),
   },
   {
     id: 'demo-last-debug',
@@ -67,7 +86,10 @@ const DEMO_MOVIES: Movie[] = [
     durationMin: 98,
     priceRub: 320,
     hue: 160,
-    sessionAt: inDays(1, 21),
+    sessions: sessionsOf('demo-last-debug', [
+      [1, 21, 'Красный'],
+      [3, 15, 'Красный'],
+    ]),
   },
   {
     id: 'demo-cache-lady',
@@ -79,7 +101,10 @@ const DEMO_MOVIES: Movie[] = [
     durationMin: 141,
     priceRub: 380,
     hue: 330,
-    sessionAt: inDays(2, 18),
+    sessions: sessionsOf('demo-cache-lady', [
+      [0, 21, 'Красный'],
+      [1, 18, 'IMAX'],
+    ]),
   },
   {
     id: 'demo-recursion',
@@ -91,7 +116,10 @@ const DEMO_MOVIES: Movie[] = [
     durationMin: 112,
     priceRub: 400,
     hue: 275,
-    sessionAt: inDays(2, 22),
+    sessions: sessionsOf('demo-recursion', [
+      [1, 23, 'IMAX'],
+      [2, 22, 'Красный'],
+    ]),
   },
   {
     id: 'demo-old-repo',
@@ -103,7 +131,11 @@ const DEMO_MOVIES: Movie[] = [
     durationMin: 124,
     priceRub: 350,
     hue: 30,
-    sessionAt: inDays(3, 15),
+    sessions: sessionsOf('demo-old-repo', [
+      [2, 15, 'Красный'],
+      [3, 13, 'IMAX'],
+      [3, 20, 'Красный'],
+    ]),
   },
   {
     id: 'demo-49th-stream',
@@ -115,7 +147,10 @@ const DEMO_MOVIES: Movie[] = [
     durationMin: 76,
     priceRub: 250,
     hue: 200,
-    sessionAt: inDays(3, 20),
+    sessions: sessionsOf('demo-49th-stream', [
+      [1, 14, 'Красный'],
+      [2, 18, 'Красный'],
+    ]),
   },
 ];
 
@@ -132,7 +167,7 @@ class DemoEngine {
   private bookings: Booking[] = [];
   private listeners = new Set<Listener>();
   private firstLoad = true;
-  /** movieId → занятые места (посев ленивый, при первом обращении) */
+  /** sessionId → занятые места (посев ленивый, при первом обращении) */
   private occupied = new Map<string, Set<string>>();
 
   onChange(cb: Listener): () => void {
@@ -157,32 +192,45 @@ class DemoEngine {
     return { source, data: DEMO_MOVIES };
   }
 
+  /** сеанс по id: {фильм, сеанс} или null */
+  private findSession(sessionId: string): {
+    movie: Movie;
+    session: MovieSession;
+  } | null {
+    for (const movie of DEMO_MOVIES) {
+      const session = movie.sessions.find((s) => s.id === sessionId);
+      if (session) return { movie, session };
+    }
+    return null;
+  }
+
   /**
    * Детерминированный «посев» занятости: без случайностей, чтобы демо
-   * выглядел живым, а тесты — стабильными (~20% зала занято).
+   * выглядело живым, а тесты — стабильными (~20% зала занято).
+   * Ключ — sessionId: у каждого сеанса свой посев.
    */
-  private occupiedFor(movieId: string): Set<string> {
-    let seats = this.occupied.get(movieId);
+  private occupiedFor(sessionId: string): Set<string> {
+    let seats = this.occupied.get(sessionId);
     if (!seats) {
       seats = new Set<string>();
       let h = 0;
-      for (const ch of movieId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      for (const ch of sessionId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
       for (const code of allSeatCodes()) {
         const [row, num] = code.split('-').map(Number);
         if ((h + row * 7 + num * 3) % 5 === 0) seats.add(code);
       }
-      this.occupied.set(movieId, seats);
+      this.occupied.set(sessionId, seats);
     }
     return seats;
   }
 
-  seatMap(movieId: string): SeatMap {
-    if (!DEMO_MOVIES.some((m) => m.id === movieId)) {
-      throw new Error('Фильм не найден');
+  seatMap(sessionId: string): SeatMap {
+    if (!this.findSession(sessionId)) {
+      throw new Error('Сеанс не найден');
     }
-    const occupied = [...this.occupiedFor(movieId)].sort(compareSeats);
+    const occupied = [...this.occupiedFor(sessionId)].sort(compareSeats);
     return {
-      movieId,
+      sessionId,
       layout: { rows: HALL_ROWS, seatsPerRow: HALL_SEATS_PER_ROW },
       occupied,
       free: HALL_CAPACITY - occupied.length,
@@ -207,8 +255,9 @@ class DemoEngine {
   }
 
   create(payload: CreateBookingPayload): Booking {
-    const movie = DEMO_MOVIES.find((m) => m.id === payload.movieId);
-    if (!movie) throw new Error('Фильм не найден');
+    const found = this.findSession(payload.sessionId);
+    if (!found) throw new Error('Сеанс не найден');
+    const { movie, session } = found;
 
     const seats = [...new Set(payload.seats)].sort(compareSeats);
     const invalid = seats.filter((s) => !isValidSeat(s));
@@ -219,8 +268,8 @@ class DemoEngine {
       }));
     }
 
-    // уникальный констрейнт (movie_id, seat) в миниатюре
-    const occupied = this.occupiedFor(movie.id);
+    // уникальный констрейнт (session_id, seat) в миниатюре
+    const occupied = this.occupiedFor(session.id);
     const seatsTaken = seats.filter((s) => occupied.has(s));
     if (seatsTaken.length > 0) {
       throw new ApiError('HTTP 409', 409, JSON.stringify({
@@ -238,6 +287,9 @@ class DemoEngine {
       movieTitle: movie.title,
       movieHue: movie.hue,
       movieGenreIcon: movie.genreIcon,
+      sessionId: session.id,
+      sessionAt: session.startsAt,
+      hall: session.hall,
       customerName: (payload.customerName ?? 'Гость').trim(),
       // демо-режим без токенов — владелец не привязывается (как брони до авторизации в API)
       userId: null,
@@ -264,7 +316,7 @@ class DemoEngine {
       booking.processedAt = new Date().toISOString();
       if (!ok) {
         // оплата не прошла — места возвращаются в продажу (как в API)
-        const occupiedSet = this.occupiedFor(movie.id);
+        const occupiedSet = this.occupiedFor(booking.sessionId);
         booking.seats.forEach((s) => occupiedSet.delete(s));
       }
       this.notify();
@@ -304,7 +356,7 @@ class DemoEngine {
       booking.processedAt = new Date().toISOString();
       if (ok) {
         // возврат прошёл — места снова в продаже (как booking.refunded в API)
-        const occupiedSet = this.occupiedFor(booking.movieId);
+        const occupiedSet = this.occupiedFor(booking.sessionId);
         booking.seats.forEach((s) => occupiedSet.delete(s));
       }
       this.notify();
