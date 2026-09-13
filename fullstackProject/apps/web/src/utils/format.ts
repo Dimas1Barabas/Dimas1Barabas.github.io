@@ -66,3 +66,11 @@ export function timeAgo(ts: number | null): string {
   if (sec < 60) return `${sec} с назад`;
   return `${Math.floor(sec / 60)} мин назад`;
 }
+
+/** Остаток до дедлайна оплаты: «05:00»; просрочка и потолок клампятся */
+export function formatCountdown(msLeft: number): string {
+  const totalSec = Math.min(99 * 60 + 59, Math.max(0, Math.floor(msLeft / 1000)));
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}

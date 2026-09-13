@@ -20,6 +20,11 @@ const router = createRouter({
       component: () => import('../views/MyBookingsView.vue'),
     },
     {
+      path: '/pay/:bookingId',
+      name: 'pay',
+      component: () => import('../views/PaymentView.vue'),
+    },
+    {
       path: '/architecture',
       name: 'architecture',
       component: () => import('../views/ArchitectureView.vue'),

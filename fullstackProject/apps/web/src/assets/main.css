@@ -1090,26 +1090,52 @@ main.container {
   transform: scale(0.96) translateY(8px);
 }
 
-/* ---------- тост ---------- */
+/* ---------- экран оплаты ---------- */
 
-.toast {
-  position: fixed;
-  left: 50%;
-  bottom: 26px;
-  transform: translateX(-50%);
-  z-index: 60;
-  background: var(--bg-softer);
-  border: 1px solid var(--accent);
-  color: var(--text);
-  border-radius: 999px;
-  padding: 11px 20px;
+.pay-card {
+  display: grid;
+  gap: 18px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.pay-card__summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px dashed var(--border);
+  padding-top: 16px;
+  color: var(--muted);
   font-size: 14px;
-  cursor: pointer;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-  white-space: nowrap;
-  max-width: calc(100vw - 32px);
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.pay-card__total {
+  color: var(--text);
+  font-size: 26px;
+  font-weight: 700;
+  font-family: var(--font-display);
+}
+
+.pay-timer {
+  margin: 0;
+  text-align: center;
+  font-size: 15px;
+  color: var(--cyan);
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-timer--overdue {
+  color: var(--muted);
+}
+
+.pay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
 }
 
 /* ---------- статистика ---------- */

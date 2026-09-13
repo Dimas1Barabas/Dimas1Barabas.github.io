@@ -50,7 +50,10 @@ export const useBookingsStore = defineStore('bookings', {
     async refresh(): Promise<void> {
       const app = useAppStore();
       if (app.mode === 'demo') {
-        this.bookings = demoEngine.list();
+        // копии строк движка: движок мутирует свои объекты на месте — вне
+        // реактивности; свежие идентичности заставляют computed и рендеры
+        // увидеть новый статус (как JSON по проводу в live-режиме)
+        this.bookings = demoEngine.list().map((b) => ({ ...b }));
         this.stats = demoEngine.stats();
         this.lastUpdated = Date.now();
         return;

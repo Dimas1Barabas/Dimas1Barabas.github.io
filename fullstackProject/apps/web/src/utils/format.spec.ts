@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  formatCountdown,
   formatDayShort,
   formatDuration,
   formatPrice,
@@ -9,6 +10,19 @@ import {
   formatTime,
   timeAgo,
 } from './format';
+
+describe('formatCountdown', () => {
+  it.each([
+    [5 * 60_000, '05:00'],
+    [61_000, '01:01'],
+    [59_000, '00:59'],
+    [0, '00:00'],
+    [-5_000, '00:00'], // просрочка клампится в ноль
+    [120 * 60_000, '99:59'], // потолок
+  ])('%d мс → «%s»', (msLeft, want) => {
+    expect(formatCountdown(msLeft)).toBe(want);
+  });
+});
 
 describe('formatPrice', () => {
   it('добавляет знак рубля', () => {

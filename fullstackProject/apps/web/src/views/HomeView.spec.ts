@@ -1,10 +1,12 @@
-import { mount, RouterLinkStub } from '@vue/test-utils';
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Movie, User } from '../api/types';
 import { useAuthStore } from '../stores/auth';
 import { useMoviesStore } from '../stores/movies';
+import BookingModal from '../components/BookingModal.vue';
 import HomeView from './HomeView.vue';
 
 const movie: Movie = {
@@ -41,9 +43,23 @@ function setup() {
   return { pinia, moviesStore, authStore };
 }
 
-function mountHome(pinia: ReturnType<typeof createPinia>) {
+/** роутер с маршрутом оплаты — HomeView после брони ведёт на /pay/:id */
+function makeRouter() {
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', name: 'home', component: HomeView },
+      { path: '/pay/:bookingId', name: 'pay', component: { render: () => null } },
+    ],
+  });
+}
+
+function mountHome(
+  pinia: ReturnType<typeof createPinia>,
+  router = makeRouter(),
+) {
   return mount(HomeView, {
-    global: { plugins: [pinia], stubs: { RouterLink: RouterLinkStub } },
+    global: { plugins: [pinia, router], stubs: { RouterLink: RouterLinkStub } },
   });
 }
 
@@ -101,6 +117,21 @@ describe('HomeView', () => {
     expect(wrapper.findAll('.movie-card')).toHaveLength(1);
     expect(wrapper.text()).toContain('Рекурсия');
     expect(wrapper.find('.skeleton-card').exists()).toBe(false);
+  });
+
+  it('после создания брони ведёт на экран оплаты', async () => {
+    const { pinia, moviesStore } = setup();
+    moviesStore.movies = [movie];
+    const router = makeRouter();
+    await router.push('/');
+    await router.isReady();
+
+    const wrapper = mountHome(pinia, router);
+    wrapper.findComponent(BookingModal).vm.$emit('created', { id: 'b-42' });
+    await flushPromises(); // router.push — асинхронная навигация
+
+    expect(router.currentRoute.value.name).toBe('pay');
+    expect(router.currentRoute.value.params.bookingId).toBe('b-42');
   });
 
   it('фильтр по жанру оставляет только его сеансы, «Все» возвращает всё', async () => {

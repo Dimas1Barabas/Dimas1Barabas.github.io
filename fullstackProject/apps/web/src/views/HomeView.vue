@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import BookingModal from '../components/BookingModal.vue';
 import MovieCard from '../components/MovieCard.vue';
 import type { Booking, Movie } from '../api/types';
@@ -7,10 +8,10 @@ import { useAuthStore } from '../stores/auth';
 import { useMoviesStore } from '../stores/movies';
 import { hasSessionOnDate } from '../utils/sessions';
 
+const router = useRouter();
 const authStore = useAuthStore();
 const moviesStore = useMoviesStore();
 const selectedMovie = ref<Movie | null>(null);
-const justCreated = ref<Booking | null>(null);
 /** выбранный жанр афиши; null — показываем все сеансы */
 const selectedGenre = ref<string | null>(null);
 /** фильтр по дню: сегодня / завтра / вся неделя */
@@ -49,13 +50,10 @@ onMounted(() => {
   void moviesStore.load();
 });
 
+/** бронь создана — ведём клиента оплачивать, окно резерва уже тикает */
 function onCreated(booking: Booking): void {
-  justCreated.value = booking;
   selectedMovie.value = null;
-}
-
-function closeToast(): void {
-  justCreated.value = null;
+  void router.push({ name: 'pay', params: { bookingId: booking.id } });
 }
 </script>
 
@@ -192,12 +190,5 @@ function closeToast(): void {
       @close="selectedMovie = null"
       @created="onCreated"
     />
-
-    <Transition name="modal">
-      <div v-if="justCreated" class="toast" @click="closeToast">
-        Бронь создана — статус «в обработке».
-        <RouterLink to="/bookings">Следить за бронью →</RouterLink>
-      </div>
-    </Transition>
   </section>
 </template>
