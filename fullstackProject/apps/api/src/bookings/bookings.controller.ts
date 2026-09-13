@@ -34,6 +34,13 @@ export class BookingsController {
     return this.bookings.create(dto, req.user);
   }
 
+  /** оплата брони: запускает проведение платежа Go-воркером */
+  @Post(':id/pay')
+  @HttpCode(200)
+  pay(@Param('id') id: string, @Req() req: { user: AuthUser }) {
+    return this.bookings.pay(id, req.user);
+  }
+
   /** запуск компенсирующей саги: возврат платежа через Go-воркера */
   @Post(':id/cancel')
   @HttpCode(200)

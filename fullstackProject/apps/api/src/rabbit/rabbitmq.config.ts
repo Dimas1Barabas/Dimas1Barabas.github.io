@@ -1,5 +1,6 @@
 import { RabbitMQModule } from '@golevelup/nestjs-rabbitmq';
 import type { RabbitMQQueueConfig } from '@golevelup/nestjs-rabbitmq';
+import { paymentTimeoutMs } from '../bookings/payment-timeout';
 import { RETRY_TTL_MS } from './retry';
 
 /**
@@ -22,6 +23,25 @@ export const rabbitMqModule = RabbitMQModule.forRoot({
   queues: [
     ...withRetryTopology('api.booking.processed', 'booking.processed'),
     ...withRetryTopology('api.booking.refunded', 'booking.refunded'),
+    ...withRetryTopology('api.booking.expired', 'booking.expired'),
+    // wait-очередь резерва: без потребителей, держит событие create ровно
+    // окно оплаты и по TTL (dead-letter) отдаёт его в «booking.payment.timeout».
+    // Декларирует только API — единственный публикатор: расхождение аргументов
+    // двух сторон невозможно, PAYMENT_TIMEOUT_MS — env одного сервиса.
+    {
+      name: 'booking.payment.wait',
+      exchange: 'cinema',
+      routingKey: 'booking.payment.wait',
+      createQueueIfNotExists: true,
+      options: {
+        durable: true,
+        arguments: {
+          'x-message-ttl': paymentTimeoutMs(),
+          'x-dead-letter-exchange': 'cinema',
+          'x-dead-letter-routing-key': 'booking.payment.timeout',
+        },
+      },
+    },
   ],
   connectionInitOptions: { wait: true, reject: true, timeout: 60_000 },
 });

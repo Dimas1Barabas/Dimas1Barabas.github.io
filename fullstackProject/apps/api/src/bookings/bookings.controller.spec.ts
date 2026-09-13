@@ -8,9 +8,11 @@ import type { BookingDto, BookingStatus } from './booking.entity';
 /** SSE-эндпоинт: шина событий + heartbeat в одном Observable */
 
 const emptyStats: Record<BookingStatus, number> = {
+  PENDING_PAYMENT: 0,
   PENDING: 0,
   CONFIRMED: 0,
   FAILED: 0,
+  EXPIRED: 0,
   CANCELLING: 0,
   CANCELLED: 0,
 };

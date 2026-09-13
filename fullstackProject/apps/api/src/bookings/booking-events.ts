@@ -1,5 +1,19 @@
 /** Контракты сообщений RabbitMQ (обмен «cinema», topic) */
 
+/**
+ * API → wait-очередь: routing key «booking.payment.wait».
+ * Сообщение «тикает» в очереди без потребителей ровно окно оплаты
+ * (x-message-ttl) и падает dead-letter'ом в «booking.payment.timeout» —
+ * его гасит Go-воркер. Воркеру нужен только bookingId; totalRub/expiresAt —
+ * для человекочитаемого инспекта в UI RabbitMQ.
+ */
+export interface BookingPaymentWaitEvent {
+  bookingId: string;
+  totalRub: number;
+  /** дедлайн оплаты, ISO */
+  expiresAt: string;
+}
+
 /** API → Go-воркер: routing key «booking.created» */
 export interface BookingCreatedEvent {
   bookingId: string;
@@ -38,6 +52,14 @@ export interface BookingCancelledEvent {
   seats: string[];
   totalRub: number;
   cancelledAt: string;
+}
+
+/** Go-воркер → API: routing key «booking.expired» — резерв истёк, не оплачена */
+export interface BookingExpiredEvent {
+  bookingId: string;
+  message: string;
+  processedBy: string;
+  expiredAt: string;
 }
 
 /**

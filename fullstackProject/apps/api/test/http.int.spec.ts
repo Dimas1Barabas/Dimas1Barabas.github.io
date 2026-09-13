@@ -396,11 +396,12 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
   });
 
   describe('POST /api/bookings', () => {
-    it('создаёт PENDING-бронь по sessionId с данными сеанса и публикует событие', async () => {
+    it('создаёт PENDING_PAYMENT-бронь с дедлайном и публикует wait-событие', async () => {
       const movies = await catalog();
       const movie = movies[0];
       const session = movie.sessions[0];
 
+      rabbitPublish.mockClear();
       const res = await request(app.getHttpServer())
         .post('/api/bookings')
         .set('Authorization', bearer)
@@ -412,7 +413,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
 
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({
-        status: 'PENDING',
+        status: 'PENDING_PAYMENT',
         seats: ['5-7', '5-8'],
         totalRub: movie.priceRub * 2,
         movieTitle: movie.title,
@@ -421,16 +422,22 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         sessionAt: session.startsAt,
         customerName: 'Дмитрий',
       });
+      // дедлайн оплаты — через стандартное окно
+      expect(res.body.expiresAt).toBeTruthy();
 
+      // таймер резерва: событие уходит «тикать» в wait-очередь
       expect(rabbitPublish).toHaveBeenCalledWith(
         'cinema',
-        'booking.created',
+        'booking.payment.wait',
         expect.objectContaining({
-          sessionId: session.id,
-          hall: session.hall,
-          seats: ['5-7', '5-8'],
+          bookingId: res.body.id,
           totalRub: movie.priceRub * 2,
         }),
+      );
+      expect(rabbitPublish).not.toHaveBeenCalledWith(
+        'cinema',
+        'booking.created',
+        expect.anything(),
       );
     });
 
@@ -537,6 +544,9 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
             seats: ['2-6'],
           })
       ).body;
+      await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/pay`)
+        .set('Authorization', bearer);
       await bookingsService.handleProcessed({
         bookingId: created.id,
         status: 'CONFIRMED',
@@ -752,7 +762,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
   });
 
   describe('полный цикл брони: вердикт Go-воркера', () => {
-    it('handleProcessed → бронь становится CONFIRMED и видна в списке и статистике', async () => {
+    it('pay → handleProcessed → бронь становится CONFIRMED и видна в списке и статистике', async () => {
       const movies = await catalog();
       const session = movies[0].sessions[0];
       const created = (
@@ -762,6 +772,13 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
           seats: ['6-1', '6-2', '6-3'],
         })
       ).body;
+
+      // оплата переводит в PENDING — только теперь вердикт воркера применим
+      const paid = await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/pay`)
+        .set('Authorization', bearer);
+      expect(paid.status).toBe(200);
+      expect(paid.body.status).toBe('PENDING');
 
       // то, что в реальном стеке делает Go ticket-worker через RabbitMQ
       await bookingsService.handleProcessed({
@@ -806,6 +823,9 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
           seats: ['2-2'],
         })
       ).body;
+      await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/pay`)
+        .set('Authorization', bearer);
 
       await bookingsService.handleProcessed({
         bookingId: created.id,
@@ -828,7 +848,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
   });
 
   describe('сага отмены: возврат через Go-воркера', () => {
-    /** создаёт и «оплачивает» бронь — готова к отмене */
+    /** создаёт и оплачивает бронь (create → pay → вердикт) — готова к отмене */
     async function confirmedBooking(
       sessionId: string,
       seats: string[],
@@ -841,6 +861,9 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
           seats,
         })
       ).body;
+      await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/pay`)
+        .set('Authorization', bearer);
       await bookingsService.handleProcessed({
         bookingId: created.id,
         status: 'CONFIRMED',
@@ -939,7 +962,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
       expect(map.body.occupied).toContain('8-10');
     });
 
-    it('409 на отмену брони не в CONFIRMED (PENDING)', async () => {
+    it('409 на отмену брони в PENDING (платёж уже в полёте)', async () => {
       const movies = await catalog();
       const created = (
         await request(app.getHttpServer()).post('/api/bookings').set('Authorization', bearer).send({
@@ -948,6 +971,9 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
           seats: ['1-8'],
         })
       ).body;
+      await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/pay`)
+        .set('Authorization', bearer);
 
       const res = await request(app.getHttpServer())
         .post(`/api/bookings/${created.id}/cancel`).set('Authorization', bearer);
@@ -995,6 +1021,180 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     });
   });
 
+  describe('оплата брони: POST /api/bookings/:id/pay', () => {
+    /** свежая неоплаченная бронь — единая заготовка тестов блока */
+    async function unpaidBooking(movieIdx: number, seats: string[]) {
+      const movies = await catalog();
+      const session = movies[movieIdx].sessions[0];
+      const res = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Authorization', bearer)
+        .send({ sessionId: session.id, customerName: 'Плательщик', seats });
+      expect(res.status).toBe(201);
+      return { created: res.body, sessionId: session.id };
+    }
+
+    it('PENDING_PAYMENT → PENDING и публикует booking.created для воркера', async () => {
+      const { created, sessionId } = await unpaidBooking(1, ['3-3']);
+
+      rabbitPublish.mockClear();
+      const res = await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/pay`)
+        .set('Authorization', bearer);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('PENDING');
+      expect(rabbitPublish).toHaveBeenCalledTimes(1);
+      expect(rabbitPublish).toHaveBeenCalledWith(
+        'cinema',
+        'booking.created',
+        expect.objectContaining({
+          bookingId: created.id,
+          sessionId,
+          seats: ['3-3'],
+          totalRub: created.totalRub,
+        }),
+      );
+    });
+
+    it('повторная оплата → 409 с текущим статусом', async () => {
+      const { created } = await unpaidBooking(1, ['3-4']);
+      await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/pay`)
+        .set('Authorization', bearer);
+
+      const again = await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/pay`)
+        .set('Authorization', bearer);
+
+      expect(again.status).toBe(409);
+      expect(again.body).toMatchObject({ status: 'PENDING' });
+    });
+
+    it('403: чужую бронь оплатить нельзя', async () => {
+      const { created } = await unpaidBooking(1, ['3-5']);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/pay`)
+        .set('Authorization', bearerB);
+
+      expect(res.status).toBe(403);
+    });
+
+    it('401 без токена', async () => {
+      const { created } = await unpaidBooking(1, ['3-6']);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/pay`);
+
+      expect(res.status).toBe(401);
+    });
+
+    it('404 на несуществующую бронь', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/bookings/00000000-0000-0000-0000-000000000009/pay')
+        .set('Authorization', bearer);
+
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('истечение резерва: booking.expired от Go-воркера', () => {
+    it('гасит неоплаченную в EXPIRED — места свободны и снова покупаемы', async () => {
+      const movies = await catalog();
+      const session = movies[2].sessions[1] ?? movies[2].sessions[0];
+
+      const created = (
+        await request(app.getHttpServer()).post('/api/bookings').set('Authorization', bearer).send({
+          sessionId: session.id,
+          customerName: 'Забыл заплатить',
+          seats: ['7-7'],
+        })
+      ).body;
+
+      // то, что в реальном стеке делает Go ticket-worker по TTL wait-очереди
+      await bookingsService.handleExpired({
+        bookingId: created.id,
+        message: 'Время оплаты истекло. Бронь отменена, места снова в продаже.',
+        processedBy: 'go-worker-1',
+        expiredAt: new Date().toISOString(),
+      });
+
+      const list = (await request(app.getHttpServer()).get('/api/bookings')).body;
+      const expired = list.find((b: { id: string }) => b.id === created.id);
+      expect(expired.status).toBe('EXPIRED');
+      expect(expired.message).toContain('истекло');
+
+      const map = await request(app.getHttpServer())
+        .get(`/api/sessions/${session.id}/seats`);
+      expect(map.body.occupied).not.toContain('7-7');
+
+      const rebook = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Authorization', bearer)
+        .send({ sessionId: session.id, customerName: 'Успел', seats: ['7-7'] });
+      expect(rebook.status).toBe(201);
+    });
+
+    it('просроченный таймер по оплаченной бронь — без последствий (гонка)', async () => {
+      const movies = await catalog();
+      const session = movies[3].sessions[0];
+      const created = (
+        await request(app.getHttpServer()).post('/api/bookings').set('Authorization', bearer).send({
+          sessionId: session.id,
+          customerName: 'Успел впритык',
+          seats: ['8-8'],
+        })
+      ).body;
+      await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/pay`)
+        .set('Authorization', bearer);
+
+      await bookingsService.handleExpired({
+        bookingId: created.id,
+        message: 'Время оплаты истекло',
+        processedBy: 'go-worker-1',
+        expiredAt: new Date().toISOString(),
+      });
+
+      const list = (await request(app.getHttpServer()).get('/api/bookings')).body;
+      const booking = list.find((b: { id: string }) => b.id === created.id);
+      expect(booking.status).toBe('PENDING'); // не погасилась — платёж ушёл раньше
+
+      const map = await request(app.getHttpServer())
+        .get(`/api/sessions/${session.id}/seats`);
+      expect(map.body.occupied).toContain('8-8');
+    });
+  });
+
+  describe('отмена неоплаченной брони', () => {
+    it('PENDING_PAYMENT → CANCELLED сразу, места свободны, воркер не зовётся', async () => {
+      const movies = await catalog();
+      const session = movies[4].sessions[1] ?? movies[4].sessions[0];
+      const created = (
+        await request(app.getHttpServer()).post('/api/bookings').set('Authorization', bearer).send({
+          sessionId: session.id,
+          customerName: 'Передумал',
+          seats: ['4-9'],
+        })
+      ).body;
+
+      rabbitPublish.mockClear();
+      const res = await request(app.getHttpServer())
+        .post(`/api/bookings/${created.id}/cancel`)
+        .set('Authorization', bearer);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('CANCELLED');
+      // возвращать нечего — события booking.cancelled нет
+      expect(rabbitPublish).not.toHaveBeenCalled();
+
+      const map = await request(app.getHttpServer())
+        .get(`/api/sessions/${session.id}/seats`);
+      expect(map.body.occupied).not.toContain('4-9');
+    });
+  });
+
   describe('SSE: GET /api/bookings/stream', () => {
     /**
      * SSE — вечный ответ, supertest его не прочитает: поднимаем реальный
@@ -1037,9 +1237,10 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         stats: Record<string, number>;
       }>(frames, 'booking', (p) => p.booking.id === created.id);
 
-      expect(payload.booking.status).toBe('PENDING');
+      expect(payload.booking.status).toBe('PENDING_PAYMENT');
       expect(payload.booking.id).toBe(created.id);
-      expect(payload.stats).toHaveProperty('PENDING');
+      expect(payload.stats).toHaveProperty('PENDING_PAYMENT');
+      expect(payload.stats).toHaveProperty('EXPIRED');
 
       controller.abort();
     });

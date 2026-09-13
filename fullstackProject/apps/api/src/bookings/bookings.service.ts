@@ -15,6 +15,8 @@ import { BookingStream } from './booking-stream';
 import {
   BookingCancelledEvent,
   BookingCreatedEvent,
+  BookingExpiredEvent,
+  BookingPaymentWaitEvent,
   BookingProcessedEvent,
   BookingRefundedEvent,
 } from './booking-events';
@@ -25,6 +27,7 @@ import {
   computeTotal,
   normalizeSeats,
 } from './booking.logic';
+import { paymentTimeoutMs } from './payment-timeout';
 import {
   HALL_CAPACITY,
   HALL_ROWS,
@@ -96,9 +99,31 @@ export class BookingsService {
     return { movie, session };
   }
 
+  /** событие «готова к проведению оплаты» — публикуется при pay() */
+  private createdEventOf(
+    booking: Booking,
+    movie: Movie,
+    session: Session,
+  ): BookingCreatedEvent {
+    return {
+      bookingId: booking.id,
+      movieId: movie.id,
+      movieTitle: movie.title,
+      sessionId: session.id,
+      sessionAt: session.startsAt.toISOString(),
+      hall: session.hall,
+      customerName: booking.customerName,
+      seats: booking.seats,
+      totalRub: booking.totalRub,
+      createdAt: booking.createdAt.toISOString(),
+    };
+  }
+
   /**
-   * Создаёт бронь со статусом PENDING и публикует событие в RabbitMQ —
-   * дальше её подхватывает Go-воркер ticket-worker.
+   * Создаёт бронь со статусом PENDING_PAYMENT и запускает таймер резерва:
+   * событие уходит в wait-очередь RabbitMQ, которая без потребителей держит
+   * его ровно окно оплаты и по TTL (dead-letter) отдаёт в
+   * «booking.payment.timeout» — оттуда её подхватывает Go-воркер.
    *
    * Владелец и имя покупателя — из JWT: customerName в теле опционален.
    * Фильм выводится из сеанса — истина о привязке хранится в одном месте.
@@ -131,7 +156,8 @@ export class BookingsService {
           userId: user.id,
           seats,
           totalRub: computeTotal(found.priceRub, seats),
-          status: 'PENDING',
+          status: 'PENDING_PAYMENT',
+          expiresAt: new Date(Date.now() + paymentTimeoutMs()),
         });
 
         try {
@@ -174,24 +200,55 @@ export class BookingsService {
       throw err;
     }
 
-    const event: BookingCreatedEvent = {
+    const waitEvent: BookingPaymentWaitEvent = {
       bookingId: booking.id,
-      movieId: movie.id,
-      movieTitle: movie.title,
-      sessionId: session.id,
-      sessionAt: session.startsAt.toISOString(),
-      hall: session.hall,
-      customerName: booking.customerName,
-      seats: booking.seats,
       totalRub: booking.totalRub,
-      createdAt: booking.createdAt.toISOString(),
+      expiresAt: booking.expiresAt!.toISOString(),
     };
-    this.rabbit.publish('cinema', 'booking.created', event);
+    this.rabbit.publish('cinema', 'booking.payment.wait', waitEvent);
     this.logger.log(
-      `Бронь ${booking.id} (${movie.title}, ${session.hall} ${session.startsAt.toISOString()}, места ${booking.seats.join(', ')}) → в очередь`,
+      `Бронь ${booking.id} (${movie.title}, ${session.hall} ${session.startsAt.toISOString()}, места ${booking.seats.join(', ')}) ждёт оплаты до ${waitEvent.expiresAt}`,
     );
     await this.push(booking, movie, session);
 
+    return toBookingDto(booking, movie, session);
+  }
+
+  /**
+   * Оплата брони: PENDING_PAYMENT → PENDING условным UPDATE — гонку с
+   * таймаутом резерва и двойным кликом разрешает БД, проигравший получает
+   * 409 с текущим статусом. После переключения публикуется существующее
+   * событие booking.created: Go-воркер «проводит платёж» и отвечает
+   * вердиктом booking.processed (CONFIRMED | FAILED).
+   */
+  async pay(id: string, user: AuthUser): Promise<BookingDto> {
+    const booking = await this.bookings.findOneByOrFail({ id });
+    if (booking.userId && booking.userId !== user.id) {
+      throw new ForbiddenException('Это не ваша бронь');
+    }
+    const { movie, session } = await this.contextOf(booking);
+
+    const switched = await this.bookings.update(
+      { id, status: 'PENDING_PAYMENT' },
+      { status: 'PENDING' },
+    );
+    if (!switched.affected) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Оплатить можно только бронь, ждущую оплаты (сейчас: ${booking.status})`,
+        status: booking.status,
+      });
+    }
+
+    booking.status = 'PENDING';
+    this.rabbit.publish(
+      'cinema',
+      'booking.created',
+      this.createdEventOf(booking, movie, session),
+    );
+    this.logger.log(`Оплата брони ${booking.id} (${booking.totalRub} ₽) → в очередь`);
+    await this.push(booking, movie, session);
     return toBookingDto(booking, movie, session);
   }
 
@@ -216,10 +273,37 @@ export class BookingsService {
   }
 
   /**
-   * Компенсирующая сага: просим Go-воркер вернуть платёж.
-   * Бронь уходит в CANCELLING условным UPDATE из CONFIRMED — двойной клик
-   * по «Отменить» разрешается на стороне БД, проигравший получает 409.
-   * Места держатся занятыми до вердикта воркера (booking.refunded).
+   * Неоплаченная бронь: возвращать нечего — закрываем сразу и без воркера,
+   * места освобождаются тут же. Условный UPDATE из PENDING_PAYMENT решает
+   * гонку с оплатой и таймаутом резерва (проигравший получает 409/пропуск).
+   */
+  private async cancelUnpaid(
+    booking: Booking,
+    movie: Movie,
+    session: Session,
+  ): Promise<BookingDto | null> {
+    const message = 'Бронь отменена до оплаты — места снова в продаже';
+    const switched = await this.bookings.update(
+      { id: booking.id, status: 'PENDING_PAYMENT' },
+      { status: 'CANCELLED', message },
+    );
+    if (!switched.affected) return null;
+
+    await this.occupancy.delete({ bookingId: booking.id });
+    this.logger.log(`Отмена неоплаченной брони ${booking.id} (${movie.title})`);
+    booking.status = 'CANCELLED';
+    booking.message = message;
+    await this.push(booking, movie, session);
+    return toBookingDto(booking, movie, session);
+  }
+
+  /**
+   * Отмена брони. Неоплаченная (PENDING_PAYMENT) закрывается сразу —
+   * локально, без воркера. Подтверждённая (CONFIRMED) запускает
+   * компенсирующую сагу: просим Go-воркера вернуть платёж, бронь уходит
+   * в CANCELLING условным UPDATE — двойной клик по «Отменить» разрешается
+   * на стороне БД, проигравший получает 409. Места держатся занятыми
+   * до вердикта воркера (booking.refunded).
    */
   async cancel(id: string, user: AuthUser): Promise<BookingDto> {
     const booking = await this.bookings.findOneByOrFail({ id });
@@ -231,6 +315,9 @@ export class BookingsService {
     // нужны title/hall (в юнит-тестах это маскировали Map-фейки)
     const { movie, session } = await this.contextOf(booking);
 
+    const unpaid = await this.cancelUnpaid(booking, movie, session);
+    if (unpaid) return unpaid;
+
     const switched = await this.bookings.update(
       { id, status: 'CONFIRMED' },
       { status: 'CANCELLING' },
@@ -239,7 +326,7 @@ export class BookingsService {
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
-        message: `Отменить можно только подтверждённую бронь (сейчас: ${booking.status})`,
+        message: `Отменить можно только неоплаченную или подтверждённую бронь (сейчас: ${booking.status})`,
         status: booking.status,
       });
     }
@@ -275,9 +362,11 @@ export class BookingsService {
       .getRawMany<{ status: BookingStatus; count: string }>();
 
     const stats: Record<BookingStatus, number> = {
+      PENDING_PAYMENT: 0,
       PENDING: 0,
       CONFIRMED: 0,
       FAILED: 0,
+      EXPIRED: 0,
       CANCELLING: 0,
       CANCELLED: 0,
     };
@@ -308,15 +397,53 @@ export class BookingsService {
     const booking = await this.bookings.findOneByOrFail({
       id: event.bookingId,
     });
+    if (booking.status !== 'PENDING') {
+      // ределивери или «хвост» старой топологии: бронь уже закрыта иначе
+      // (EXPIRED/CANCELLED) — вердикт по ней не должен оживлять места
+      this.logger.warn(
+        `booking.processed по бронь ${event.bookingId} в статусе ${booking.status} — пропуск`,
+      );
+      return;
+    }
     applyProcessed(booking, event);
     await this.bookings.save(booking);
-    if (booking.status === 'FAILED') {
+    if (event.status === 'FAILED') {
       // оплата не прошла — места возвращаются в продажу
       await this.occupancy.delete({ bookingId: booking.id });
     }
     this.logger.log(
       `Бронь ${event.bookingId} → ${event.status} (${event.processedBy})`,
     );
+    const { movie, session } = await this.contextOf(booking);
+    await this.push(booking, movie, session);
+  }
+
+  /**
+   * Callback события booking.expired от Go-воркера: TTL wait-очереди истёк.
+   * Условный UPDATE из PENDING_PAYMENT — если клиент успел заплатить или
+   * отменил бронь, affected = 0 и событие молча пропускается
+   * (идемпотентность гонки pay/cancel-vs-timeout).
+   */
+  async handleExpired(event: BookingExpiredEvent): Promise<void> {
+    const updated = await this.bookings.update(
+      { id: event.bookingId, status: 'PENDING_PAYMENT' },
+      {
+        status: 'EXPIRED',
+        message: event.message,
+        processedBy: event.processedBy,
+        processedAt: new Date(event.expiredAt),
+      },
+    );
+    if (!updated.affected) {
+      this.logger.warn(
+        `booking.expired по бронь ${event.bookingId} уже не в PENDING_PAYMENT — пропуск`,
+      );
+      return;
+    }
+    // резерв истёк — места снова в продаже
+    await this.occupancy.delete({ bookingId: event.bookingId });
+    this.logger.log(`Бронь ${event.bookingId} → EXPIRED (${event.processedBy})`);
+    const booking = await this.bookings.findOneByOrFail({ id: event.bookingId });
     const { movie, session } = await this.contextOf(booking);
     await this.push(booking, movie, session);
   }

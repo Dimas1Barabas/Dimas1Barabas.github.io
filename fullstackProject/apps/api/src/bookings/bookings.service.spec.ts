@@ -6,7 +6,7 @@ import { DataSource } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { Movie } from '../movies/movie.entity';
 import { Session } from '../movies/session.entity';
-import { Booking } from './booking.entity';
+import { Booking, BookingStatus } from './booking.entity';
 import { BookingStream } from './booking-stream';
 import { BookingsService } from './bookings.service';
 import { SeatOccupancy } from './seat-occupancy.entity';
@@ -54,6 +54,7 @@ function bookingFixture(): Booking {
     seats: ['5-7', '5-8', '5-9'],
     totalRub: 1200,
     status: 'PENDING',
+    expiresAt: new Date('2026-09-03T12:15:00Z'),
     message: null,
     processedBy: null,
     processedAt: null,
@@ -140,7 +141,7 @@ describe('BookingsService (unit)', () => {
   });
 
   describe('create', () => {
-    it('сохраняет PENDING-бронь с рассчитанной суммой и данными сеанса', async () => {
+    it('сохраняет PENDING_PAYMENT-бронь с дедлайном оплаты и суммой', async () => {
       const dto: CreateBookingDto = {
         sessionId: 'session-1',
         customerName: 'Дмитрий',
@@ -149,7 +150,13 @@ describe('BookingsService (unit)', () => {
 
       const result = await service.create(dto, authUser);
 
-      expect(result.status).toBe('PENDING');
+      expect(result.status).toBe('PENDING_PAYMENT');
+      // дедлайн — стандартное окно оплаты (15 мин) от создания
+      expect(result.expiresAt).toBeTruthy();
+      const skewMs = Math.abs(
+        Date.parse(result.expiresAt!) - Date.now() - 15 * 60_000,
+      );
+      expect(skewMs).toBeLessThan(60_000);
       expect(result.totalRub).toBe(1200); // 400 × 3
       expect(result.movieTitle).toBe('Рекурсия');
       expect(result.sessionId).toBe('session-1');
@@ -200,8 +207,8 @@ describe('BookingsService (unit)', () => {
       );
     });
 
-    it('публикует booking.created в обмен cinema', async () => {
-      await service.create(
+    it('публикует booking.payment.wait — запускает таймер резерва', async () => {
+      const result = await service.create(
         {
           sessionId: 'session-1',
           customerName: 'Дмитрий',
@@ -213,14 +220,11 @@ describe('BookingsService (unit)', () => {
       expect(rabbit.publish).toHaveBeenCalledTimes(1);
       const [exchange, routingKey, event] = rabbit.publish.mock.calls[0];
       expect(exchange).toBe('cinema');
-      expect(routingKey).toBe('booking.created');
+      expect(routingKey).toBe('booking.payment.wait');
       expect(event).toMatchObject({
-        movieTitle: 'Рекурсия',
-        sessionId: 'session-1',
-        sessionAt: '2026-09-05T19:00:00.000Z',
-        hall: 'IMAX',
-        seats: ['5-7', '5-8', '5-9'],
+        bookingId: result.id,
         totalRub: 1200,
+        expiresAt: result.expiresAt,
       });
     });
 
@@ -270,6 +274,66 @@ describe('BookingsService (unit)', () => {
     });
   });
 
+  describe('pay', () => {
+    beforeEach(() => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        status: 'PENDING_PAYMENT',
+      });
+    });
+
+    it('переводит PENDING_PAYMENT → PENDING условным UPDATE', async () => {
+      const result = await service.pay('booking-1', authUser);
+
+      expect(result.status).toBe('PENDING');
+      expect(bookingsRepo.update).toHaveBeenCalledWith(
+        { id: 'booking-1', status: 'PENDING_PAYMENT' },
+        { status: 'PENDING' },
+      );
+    });
+
+    it('публикует booking.created — воркер начинает проводить платёж', async () => {
+      await service.pay('booking-1', authUser);
+
+      expect(rabbit.publish).toHaveBeenCalledWith(
+        'cinema',
+        'booking.created',
+        expect.objectContaining({
+          bookingId: 'booking-1',
+          movieTitle: 'Рекурсия',
+          sessionId: 'session-1',
+          hall: 'IMAX',
+          seats: ['5-7', '5-8', '5-9'],
+          totalRub: 1200,
+        }),
+      );
+      expect(stream.emit).toHaveBeenCalledTimes(1);
+    });
+
+    it('409 с текущим статусом, если бронь уже не ждёт оплаты', async () => {
+      bookingsRepo.update.mockResolvedValue({ affected: 0 });
+
+      const promise = service.pay('booking-1', authUser);
+
+      await expect(promise).rejects.toBeInstanceOf(ConflictException);
+      const err = (await promise.catch((e: unknown) => e)) as ConflictException;
+      expect(err.getResponse()).toMatchObject({ status: 'PENDING_PAYMENT' });
+      expect(rabbit.publish).not.toHaveBeenCalled();
+    });
+
+    it('403: чужую бронь оплатить нельзя', async () => {
+      const promise = service.pay('booking-1', {
+        ...authUser,
+        id: 'user-2',
+        name: 'Гость',
+      });
+
+      await expect(promise).rejects.toBeInstanceOf(ForbiddenException);
+      expect(bookingsRepo.update).not.toHaveBeenCalled();
+      expect(rabbit.publish).not.toHaveBeenCalled();
+    });
+  });
+
   describe('list', () => {
     it('возвращает DTO с данными фильма и сеанса', async () => {
       bookingsRepo.find.mockResolvedValue([bookingFixture()]);
@@ -310,11 +374,21 @@ describe('BookingsService (unit)', () => {
   });
 
   describe('cancel', () => {
+    /** «строка БД»: условный UPDATE по статусу — как WHERE в реальном PG */
+    let db: Booking;
+
     beforeEach(() => {
-      bookingsRepo.findOneByOrFail.mockResolvedValue({
-        ...bookingFixture(),
-        status: 'CONFIRMED',
-      });
+      db = { ...bookingFixture(), status: 'CONFIRMED' };
+      bookingsRepo.findOneByOrFail.mockResolvedValue(db);
+      bookingsRepo.update.mockImplementation(
+        async (criteria: { status?: BookingStatus }, patch: Partial<Booking>) => {
+          if (criteria.status && db.status !== criteria.status) {
+            return { affected: 0 };
+          }
+          Object.assign(db, patch);
+          return { affected: 1 };
+        },
+      );
     });
 
     it('переводит CONFIRMED-бронь в CANCELLING', async () => {
@@ -357,12 +431,8 @@ describe('BookingsService (unit)', () => {
       expect(bookingsRepo.update).not.toHaveBeenCalled();
     });
 
-    it('409 с текущим статусом, если UPDATE не затронул строку', async () => {
-      bookingsRepo.update.mockResolvedValue({ affected: 0 });
-      bookingsRepo.findOneByOrFail.mockResolvedValue({
-        ...bookingFixture(),
-        status: 'PENDING',
-      });
+    it('409 с текущим статусом, если статус не отменяемый', async () => {
+      db.status = 'PENDING'; // платёж уже в полёте
 
       const promise = service.cancel('booking-1', authUser);
 
@@ -372,6 +442,30 @@ describe('BookingsService (unit)', () => {
       expect(err.getResponse()).toMatchObject({ status: 'PENDING' });
       // сага не запущена — события нет
       expect(rabbit.publish).not.toHaveBeenCalled();
+    });
+
+    it('неоплаченную (PENDING_PAYMENT) закрывает сразу, без воркера', async () => {
+      db.status = 'PENDING_PAYMENT';
+
+      const result = await service.cancel('booking-1', authUser);
+
+      expect(result.status).toBe('CANCELLED');
+      expect(bookingsRepo.update).toHaveBeenCalledWith(
+        { id: 'booking-1', status: 'PENDING_PAYMENT' },
+        expect.objectContaining({ status: 'CANCELLED' }),
+      );
+      // возвращать нечего — события booking.cancelled нет
+      expect(rabbit.publish).not.toHaveBeenCalled();
+    });
+
+    it('отмена неоплаченной освобождает места сразу', async () => {
+      db.status = 'PENDING_PAYMENT';
+
+      await service.cancel('booking-1', authUser);
+
+      expect(occupancyRepo.delete).toHaveBeenCalledWith({
+        bookingId: 'booking-1',
+      });
     });
   });
 
@@ -391,9 +485,11 @@ describe('BookingsService (unit)', () => {
       const result = await service.stats();
 
       expect(result).toEqual({
+        PENDING_PAYMENT: 0,
         PENDING: 1,
         CONFIRMED: 2,
         FAILED: 0,
+        EXPIRED: 0,
         CANCELLING: 0,
         CANCELLED: 3,
       });
@@ -436,6 +532,70 @@ describe('BookingsService (unit)', () => {
       expect(occupancyRepo.delete).toHaveBeenCalledWith({
         bookingId: 'booking-1',
       });
+    });
+
+    it('пропускает вердикт по бронь не в PENDING (ределивери/EXPIRED)', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        status: 'EXPIRED',
+      });
+
+      await service.handleProcessed({
+        bookingId: 'booking-1',
+        status: 'CONFIRMED',
+        message: 'Оплата прошла',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:00:05Z',
+      });
+
+      expect(bookingsRepo.save).not.toHaveBeenCalled();
+      expect(occupancyRepo.delete).not.toHaveBeenCalled();
+      expect(stream.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleExpired', () => {
+    it('гасит ждущую оплаты бронь в EXPIRED и освобождает места', async () => {
+      bookingsRepo.update.mockResolvedValue({ affected: 1 });
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        status: 'EXPIRED',
+      });
+
+      await service.handleExpired({
+        bookingId: 'booking-1',
+        message: 'Время оплаты истекло',
+        processedBy: 'go-worker-1',
+        expiredAt: '2026-09-03T12:15:00Z',
+      });
+
+      expect(bookingsRepo.update).toHaveBeenCalledWith(
+        { id: 'booking-1', status: 'PENDING_PAYMENT' },
+        {
+          status: 'EXPIRED',
+          message: 'Время оплаты истекло',
+          processedBy: 'go-worker-1',
+          processedAt: new Date('2026-09-03T12:15:00Z'),
+        },
+      );
+      expect(occupancyRepo.delete).toHaveBeenCalledWith({
+        bookingId: 'booking-1',
+      });
+      expect(stream.emit).toHaveBeenCalledTimes(1);
+    });
+
+    it('пропускает событие, если бронь уже не ждёт оплаты (pay-vs-timeout)', async () => {
+      bookingsRepo.update.mockResolvedValue({ affected: 0 });
+
+      await service.handleExpired({
+        bookingId: 'booking-1',
+        message: 'Время оплаты истекло',
+        processedBy: 'go-worker-1',
+        expiredAt: '2026-09-03T12:15:00Z',
+      });
+
+      expect(occupancyRepo.delete).not.toHaveBeenCalled();
+      expect(stream.emit).not.toHaveBeenCalled();
     });
   });
 
@@ -512,13 +672,15 @@ describe('BookingsService (unit)', () => {
         movieId: 'movie-1',
         sessionId: 'session-1',
         hall: 'IMAX',
-        status: 'PENDING',
+        status: 'PENDING_PAYMENT',
         movieTitle: 'Рекурсия',
       });
       expect(payload.stats).toEqual({
+        PENDING_PAYMENT: 0,
         PENDING: 0,
         CONFIRMED: 0,
         FAILED: 0,
+        EXPIRED: 0,
         CANCELLING: 0,
         CANCELLED: 0,
       });

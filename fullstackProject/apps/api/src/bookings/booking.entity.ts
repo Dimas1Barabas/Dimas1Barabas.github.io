@@ -11,9 +11,11 @@ import { Movie } from '../movies/movie.entity';
 import { Session } from '../movies/session.entity';
 
 export type BookingStatus =
+  | 'PENDING_PAYMENT'
   | 'PENDING'
   | 'CONFIRMED'
   | 'FAILED'
+  | 'EXPIRED'
   | 'CANCELLING'
   | 'CANCELLED';
 
@@ -51,8 +53,13 @@ export class Booking {
   @Column({ name: 'total_rub', type: 'int' })
   totalRub: number;
 
-  @Column({ length: 16, default: 'PENDING' })
+  /** lifecycle: ждёт оплаты → проводится → вердикт; не оплачена вовремя — истекла */
+  @Column({ length: 24, default: 'PENDING_PAYMENT' })
   status: BookingStatus;
+
+  /** дедлайн оплаты (актуален для PENDING_PAYMENT) */
+  @Column({ name: 'expires_at', type: 'timestamptz', nullable: true })
+  expiresAt: Date | null;
 
   /** сообщение от Go-воркера (детали оплаты или возврата) */
   @Column({ type: 'text', nullable: true })
@@ -85,6 +92,7 @@ export interface BookingDto {
   seats: string[];
   totalRub: number;
   status: BookingStatus;
+  expiresAt: string | null;
   message: string | null;
   processedBy: string | null;
   processedAt: string | null;
@@ -112,6 +120,7 @@ export function toBookingDto(
     seats: booking.seats,
     totalRub: booking.totalRub,
     status: booking.status,
+    expiresAt: booking.expiresAt?.toISOString() ?? null,
     message: booking.message,
     processedBy: booking.processedBy,
     processedAt: booking.processedAt?.toISOString() ?? null,
