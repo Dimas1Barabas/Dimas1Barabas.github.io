@@ -49,6 +49,10 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       # секрет подписи JWT; для продакшена задавать свой через env
       JWT_SECRET: ${JWT_SECRET:-dev-cine-secret}
+      # окно оплаты брони (TTL wait-очереди RabbitMQ + expires_at).
+      # Меняешь значение — пересоздай очередь: docker compose down
+      # (у rabbitmq нет volume, но брокер между рестартами помнит args)
+      PAYMENT_TIMEOUT_MS: '120000'
     ports:
       - '13000:3000'
     depends_on:
