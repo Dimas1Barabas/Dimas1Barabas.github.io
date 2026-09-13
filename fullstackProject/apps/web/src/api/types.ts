@@ -20,9 +20,11 @@ export interface Movie {
 }
 
 export type BookingStatus =
+  | 'PENDING_PAYMENT'
   | 'PENDING'
   | 'CONFIRMED'
   | 'FAILED'
+  | 'EXPIRED'
   | 'CANCELLING'
   | 'CANCELLED';
 
@@ -52,6 +54,8 @@ export interface Booking {
   seats: string[];
   totalRub: number;
   status: BookingStatus;
+  /** дедлайн оплаты (актуален для PENDING_PAYMENT), ISO */
+  expiresAt: string | null;
   message: string | null;
   processedBy: string | null;
   processedAt: string | null;
@@ -59,9 +63,11 @@ export interface Booking {
 }
 
 export interface BookingStats {
+  PENDING_PAYMENT: number;
   PENDING: number;
   CONFIRMED: number;
   FAILED: number;
+  EXPIRED: number;
   CANCELLING: number;
   CANCELLED: number;
 }

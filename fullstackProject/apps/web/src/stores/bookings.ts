@@ -27,9 +27,11 @@ export const useBookingsStore = defineStore('bookings', {
     mine: [] as Booking[],
     mineError: null as string | null,
     stats: {
+      PENDING_PAYMENT: 0,
       PENDING: 0,
       CONFIRMED: 0,
       FAILED: 0,
+      EXPIRED: 0,
       CANCELLING: 0,
       CANCELLED: 0,
     } as BookingStats,
@@ -38,6 +40,8 @@ export const useBookingsStore = defineStore('bookings', {
     creating: false,
     /** id броней, по которым летит запрос отмены (кнопка «Отменить») */
     cancelling: [] as string[],
+    /** id броней, по которым летит запрос оплаты (кнопка «Оплатить») */
+    paying: [] as string[],
     /** живое SSE-соединение (live-режим) */
     source: null as EventSource | null,
     unsubscribe: null as (() => void) | null,
@@ -103,6 +107,32 @@ export const useBookingsStore = defineStore('bookings', {
         this.cancelling = this.cancelling.filter((x) => x !== id);
       }
       await this.refresh();
+    },
+
+    /**
+     * Оплата брони: PENDING_PAYMENT → PENDING, дальше вердикт прилетит по SSE.
+     * 409 «уже не ждёт» (двойной клик, гонка с таймаутом) — как ошибка списка.
+     * Возвращает обновлённую бронь (экрану оплаты нужен её статус).
+     */
+    async pay(id: string): Promise<Booking> {
+      const app = useAppStore();
+      this.paying.push(id);
+      try {
+        const booking =
+          app.mode === 'demo'
+            ? demoEngine.pay(id)
+            : await api.payBooking(id);
+        this.error = null;
+        return booking;
+      } catch (err) {
+        this.error =
+          err instanceof ApiError
+            ? cancelErrorMessage(err)
+            : 'Не удалось оплатить бронь';
+        throw err;
+      } finally {
+        this.paying = this.paying.filter((x) => x !== id);
+      }
     },
 
     /**

@@ -23,9 +23,13 @@ const movie: Movie = {
 
 describe('StatusBadge', () => {
   it.each([
-    ['PENDING', 'в обработке'],
+    ['PENDING_PAYMENT', 'ждёт оплаты'],
+    ['PENDING', 'оплата проводится'],
     ['CONFIRMED', 'подтверждена'],
     ['FAILED', 'отказ'],
+    ['EXPIRED', 'истекла'],
+    ['CANCELLING', 'идёт возврат'],
+    ['CANCELLED', 'отменена'],
   ] as const)('статус %s → подпись «%s»', (status, label) => {
     const wrapper = mount(StatusBadge, { props: { status } });
     expect(wrapper.text()).toContain(label);

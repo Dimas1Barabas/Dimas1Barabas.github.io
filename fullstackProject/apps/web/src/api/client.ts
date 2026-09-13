@@ -112,6 +112,11 @@ export const api = {
     request<Booking>(`/bookings/${id}/cancel`, {
       method: 'POST',
     }),
+  /** оплата: PENDING_PAYMENT → PENDING, воркер проводит платёж */
+  payBooking: (id: string) =>
+    request<Booking>(`/bookings/${id}/pay`, {
+      method: 'POST',
+    }),
   /** регистрация: пароль хэшируется на бэкенде, вернётся UserDto */
   register: (payload: RegisterPayload) =>
     request<User>('/auth/register', {

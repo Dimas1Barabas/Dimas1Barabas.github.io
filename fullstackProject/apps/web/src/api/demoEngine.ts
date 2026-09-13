@@ -23,13 +23,17 @@ import {
  *    «кэш»/«БД» (как Redis-кэш API);
  *  - карта занятости зала сеанса, детерминированно посеянная при первом
  *    заходе (в живом стенде места занимают брони в Postgres);
- *  - созданная бронь держит выбранные места; конфликт мест — 409, как
- *    уникальный констрейнт (session_id, seat) в API; одно место в
- *    разных сеансах одного фильма — независимо;
- *  - через 1,2–2,8 с «воркер» (те же тайминги и вероятность успеха, что у
- *    Go ticket-worker) выносит вердикт; при FAILED места освобождаются;
+ *  - созданная бронь рождается в PENDING_PAYMENT и держит выбранные места;
+ *    конфликт мест — 409, как уникальный констрейнт (session_id, seat)
+ *    в API; одно место в разных сеансах одного фильма — независимо;
+ *  - pay() запускает «воркера»: через 1,2–2,8 с (те же тайминги и
+ *    вероятность успеха, что у Go ticket-worker) выносится вердикт;
+ *    при FAILED места освобождаются;
+ *  - неоплаченная за окно оплаты бронь истекает: EXPIRED, места свободны
+ *    (в живом стенде это TTL wait-очереди RabbitMQ → booking.expired);
  *  - сага отмены: CONFIRMED → CANCELLING → возврат 0,8–1,6 с с той же
  *    вероятностью успеха, что у воркера; места освобождаются при успехе.
+ *  - отмена неоплаченной — сразу CANCELLED без воркера.
  */
 
 const SUCCESS_RATE = 0.9;
@@ -39,6 +43,8 @@ const MAX_MS = 2800;
 const REFUND_SUCCESS_RATE = 0.9;
 const REFUND_MIN_MS = 800;
 const REFUND_MAX_MS = 1600;
+/** окно оплаты демо — паритет с PAYMENT_TIMEOUT_MS docker-стенда (2 мин) */
+export const DEMO_PAYMENT_TIMEOUT_MS = 120_000;
 
 function inDays(days: number, hour: number): string {
   const d = new Date();
@@ -169,6 +175,8 @@ class DemoEngine {
   private firstLoad = true;
   /** sessionId → занятые места (посев ленивый, при первом обращении) */
   private occupied = new Map<string, Set<string>>();
+  /** bookingId → таймер экспирации неоплаченной брони (wait-очередь демо) */
+  private expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   onChange(cb: Listener): () => void {
     this.listeners.add(cb);
@@ -181,6 +189,8 @@ class DemoEngine {
 
   /** сброс состояния (тесты) */
   reset(): void {
+    this.expiryTimers.forEach((t) => clearTimeout(t));
+    this.expiryTimers.clear();
     this.bookings = [];
     this.occupied.clear();
     this.firstLoad = true;
@@ -244,9 +254,11 @@ class DemoEngine {
 
   stats(): BookingStats {
     const stats: BookingStats = {
+      PENDING_PAYMENT: 0,
       PENDING: 0,
       CONFIRMED: 0,
       FAILED: 0,
+      EXPIRED: 0,
       CANCELLING: 0,
       CANCELLED: 0,
     };
@@ -295,7 +307,8 @@ class DemoEngine {
       userId: null,
       seats,
       totalRub: movie.priceRub * seats.length,
-      status: 'PENDING',
+      status: 'PENDING_PAYMENT',
+      expiresAt: new Date(Date.now() + DEMO_PAYMENT_TIMEOUT_MS).toISOString(),
       message: null,
       processedBy: null,
       processedAt: null,
@@ -304,7 +317,55 @@ class DemoEngine {
     this.bookings.unshift(booking);
     this.notify();
 
-    // «Go-воркер»: та же задержка и вероятность успеха, что в services/ticket-worker
+    // wait-очередь демо: по истечении окна оплаты неоплаченная бронь гасится
+    this.expiryTimers.set(
+      booking.id,
+      setTimeout(() => {
+        this.expiryTimers.delete(booking.id);
+        if (booking.status !== 'PENDING_PAYMENT') return; // успел заплатить/отменить
+        booking.status = 'EXPIRED';
+        booking.message = 'Время оплаты истекло. Бронь отменена, места снова в продаже.';
+        booking.processedBy = 'go-worker (демо)';
+        booking.processedAt = new Date().toISOString();
+        const occupiedSet = this.occupiedFor(booking.sessionId);
+        booking.seats.forEach((s) => occupiedSet.delete(s));
+        this.notify();
+      }, DEMO_PAYMENT_TIMEOUT_MS),
+    );
+
+    return booking;
+  }
+
+  /**
+   * Оплата: PENDING_PAYMENT → PENDING (условный переход — 409 иначе),
+   * затем «воркер» проводит платёж. Миниатюра POST /bookings/:id/pay.
+   */
+  pay(id: string): Booking {
+    const booking = this.bookings.find((b) => b.id === id);
+    if (!booking) throw new Error('Бронь не найдена');
+    if (booking.status !== 'PENDING_PAYMENT') {
+      // как условный UPDATE … WHERE status='PENDING_PAYMENT' в API
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Оплатить можно только бронь, ждущую оплаты (сейчас: ${booking.status})`,
+        status: booking.status,
+      }));
+    }
+    const timer = this.expiryTimers.get(booking.id);
+    if (timer) {
+      clearTimeout(timer);
+      this.expiryTimers.delete(booking.id);
+    }
+    booking.status = 'PENDING';
+    this.notify();
+
+    this.scheduleVerdict(booking);
+    return booking;
+  }
+
+  /** «Go-воркер»: та же задержка и вероятность успеха, что в services/ticket-worker */
+  private scheduleVerdict(booking: Booking): void {
     const delay = MIN_MS + Math.random() * (MAX_MS - MIN_MS);
     setTimeout(() => {
       const ok = Math.random() < SUCCESS_RATE;
@@ -321,24 +382,37 @@ class DemoEngine {
       }
       this.notify();
     }, delay);
-
-    return booking;
   }
 
   /**
-   * Сага отмены: CONFIRMED → CANCELLING, затем «возврат платежа» —
-   * те же тайминги и вероятность отказа, что у Go-воркера.
+   * Отмена брони. Неоплаченная (PENDING_PAYMENT) закрывается сразу, без
+   * «воркера» — возвращать нечего, места освобождаются немедленно.
+   * Подтверждённая (CONFIRMED) запускает сагу: CANCELLING, затем «возврат
+   * платежа» — те же тайминги и вероятность отказа, что у Go-воркера.
    * Успех освобождает места, отказ откатывает бронь в CONFIRMED.
    */
   cancel(id: string): Booking {
     const booking = this.bookings.find((b) => b.id === id);
     if (!booking) throw new Error('Бронь не найдена');
+    if (booking.status === 'PENDING_PAYMENT') {
+      const timer = this.expiryTimers.get(booking.id);
+      if (timer) {
+        clearTimeout(timer);
+        this.expiryTimers.delete(booking.id);
+      }
+      booking.status = 'CANCELLED';
+      booking.message = 'Бронь отменена до оплаты — места снова в продаже';
+      const occupiedSet = this.occupiedFor(booking.sessionId);
+      booking.seats.forEach((s) => occupiedSet.delete(s));
+      this.notify();
+      return booking;
+    }
     if (booking.status !== 'CONFIRMED') {
       // как условный UPDATE … WHERE status='CONFIRMED' в API
       throw new ApiError('HTTP 409', 409, JSON.stringify({
         statusCode: 409,
         error: 'Conflict',
-        message: `Отменить можно только подтверждённую бронь (сейчас: ${booking.status})`,
+        message: `Отменить можно только неоплаченную или подтверждённую бронь (сейчас: ${booking.status})`,
         status: booking.status,
       }));
     }

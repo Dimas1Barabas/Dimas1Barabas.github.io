@@ -84,7 +84,7 @@ describe('stores: демо-режим целиком (movies + bookings)', () =>
     expect(movies.seatMap!.free).toBeGreaterThan(0);
   });
 
-  it('bookings store: create → PENDING в списке и статистике', async () => {
+  it('bookings store: create → PENDING_PAYMENT в списке и статистике', async () => {
     const movies = useMoviesStore();
     await movies.load();
     const seats = freeSeats(demoEngine.seatMap(movies.movies[0].sessions[0].id), 2);
@@ -96,29 +96,49 @@ describe('stores: демо-режим целиком (movies + bookings)', () =>
       seats,
     });
 
-    expect(booking.status).toBe('PENDING');
+    expect(booking.status).toBe('PENDING_PAYMENT');
     expect(booking.seats).toEqual(seats);
     expect(bookings.bookings[0].id).toBe(booking.id);
-    expect(bookings.stats.PENDING).toBeGreaterThanOrEqual(1);
+    expect(bookings.stats.PENDING_PAYMENT).toBeGreaterThanOrEqual(1);
     expect(bookings.error).toBeNull();
   });
 
-  it('refresh подтягивает вердикт «воркера» после таймера', async () => {
+  it('pay: PENDING_PAYMENT → PENDING, затем вердикт «воркера»', async () => {
     const movies = useMoviesStore();
     await movies.load();
     const [seat] = freeSeats(demoEngine.seatMap(movies.movies[0].sessions[0].id), 1);
     const bookings = useBookingsStore();
-    await bookings.create({
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
+    const created = await bookings.create({
       sessionId: movies.movies[0].sessions[0].id,
-      customerName: 'Таймер',
+      customerName: 'Оплата',
       seats: [seat],
     });
 
+    // до оплаты «воркер» молчит — резервируем место
     await vi.advanceTimersByTimeAsync(3000);
     await bookings.refresh();
+    expect(bookings.bookings[0].status).toBe('PENDING_PAYMENT');
 
-    expect(bookings.bookings[0].status).not.toBe('PENDING');
+    const paid = await bookings.pay(created.id);
+    expect(paid.status).toBe('PENDING');
+    expect(bookings.paying).toEqual([]); // запрос завершён
+
+    await vi.advanceTimersByTimeAsync(3000);
+    randomSpy.mockRestore();
+    await bookings.refresh();
+
+    expect(bookings.bookings[0].status).toBe('CONFIRMED');
     expect(bookings.lastUpdated).not.toBeNull();
+  });
+
+  it('pay: ошибка 409 попадает в error стора и прокидывается', async () => {
+    const bookings = useBookingsStore();
+    // в демо-движке нет такой брони — платёж падает
+    await expect(bookings.pay('нет-такой')).rejects.toThrow();
+
+    expect(bookings.error).toBeTruthy();
+    expect(bookings.paying).toEqual([]);
   });
 
   it('startListening в демо-режиме подписывается на движок, не открывая SSE', async () => {
@@ -153,9 +173,11 @@ describe('stores: демо-режим целиком (movies + bookings)', () =>
     expect(es.url).toBe('/api/bookings/stream');
 
     const stats: BookingStats = {
+      PENDING_PAYMENT: 0,
       PENDING: 0,
       CONFIRMED: 1,
       FAILED: 0,
+      EXPIRED: 0,
       CANCELLING: 0,
       CANCELLED: 0,
     };
@@ -191,11 +213,12 @@ describe('stores: демо-режим целиком (movies + bookings)', () =>
     const [seat] = freeSeats(demoEngine.seatMap(movies.movies[0].sessions[0].id), 1);
     const bookings = useBookingsStore();
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
-    await bookings.create({
+    const created = await bookings.create({
       sessionId: movies.movies[0].sessions[0].id,
       customerName: 'Отмена',
       seats: [seat],
     });
+    await bookings.pay(created.id);
 
     await vi.advanceTimersByTimeAsync(3000);
     await bookings.refresh();
@@ -264,9 +287,11 @@ describe('stores: личный кабинет (bookings.mine)', () => {
       createdAt: new Date().toISOString(),
     });
     const stats: BookingStats = {
+      PENDING_PAYMENT: 1,
       PENDING: 1,
       CONFIRMED: 0,
       FAILED: 0,
+      EXPIRED: 0,
       CANCELLING: 0,
       CANCELLED: 0,
     };

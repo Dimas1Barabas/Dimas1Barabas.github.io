@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { demoEngine } from './demoEngine';
+import { DEMO_PAYMENT_TIMEOUT_MS, demoEngine } from './demoEngine';
 import { ApiError } from './client';
 import { HALL_CAPACITY } from '../utils/hall';
 import type { SeatMap } from './types';
@@ -86,7 +86,7 @@ describe('demoEngine', () => {
     expect(() => demoEngine.seatMap('нет-такого')).toThrow();
   });
 
-  it('create: PENDING с местами, суммой и сеансом, затем вердикт «воркера»', async () => {
+  it('create: PENDING_PAYMENT с местами и дедлайном; pay → вердикт «воркера»', async () => {
     const { movie, session } = firstSession();
     const seats = firstFreeSeats(demoEngine.seatMap(session.id), 3);
     // 0.1 < SUCCESS_RATE → «воркер» подтверждает оплату (и тайминг 1,36 с)
@@ -97,18 +97,25 @@ describe('demoEngine', () => {
       seats,
     });
 
-    expect(booking.status).toBe('PENDING');
+    expect(booking.status).toBe('PENDING_PAYMENT');
     expect(booking.seats).toEqual(seats);
     expect(booking.totalRub).toBe(movie.priceRub * 3);
     expect(booking.sessionId).toBe(session.id);
     expect(booking.sessionAt).toBe(session.startsAt);
     expect(booking.hall).toBe(session.hall);
     expect(booking.message).toBeNull();
+    expect(booking.expiresAt).toBeTruthy(); // дедлайн = окно оплаты демо
 
     const inList = demoEngine.list()[0];
     expect(inList.id).toBe(booking.id);
 
-    // «воркер» срабатывает в окне 1,2–2,8 c
+    // до оплаты вердикта нет — резервируем место, «воркер» молчит
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(demoEngine.list()[0].status).toBe('PENDING_PAYMENT');
+
+    // pay запускает «воркера»: срабатывает в окне 1,2–2,8 c
+    const paid = demoEngine.pay(booking.id);
+    expect(paid.status).toBe('PENDING');
     await vi.advanceTimersByTimeAsync(3000);
     randomSpy.mockRestore();
     const done = demoEngine.list()[0];
@@ -184,7 +191,8 @@ describe('demoEngine', () => {
 
     // вердикт «воркера» зависит от Math.random: 0.95 > SUCCESS_RATE → отказ
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.95);
-    demoEngine.create({ sessionId: session.id, customerName: 'Отказ', seats: [seat] });
+    const created = demoEngine.create({ sessionId: session.id, customerName: 'Отказ', seats: [seat] });
+    demoEngine.pay(created.id);
     await vi.advanceTimersByTimeAsync(3000);
     randomSpy.mockRestore();
 
@@ -197,6 +205,39 @@ describe('demoEngine', () => {
     ).not.toThrow();
   });
 
+  it('неоплаченная за окно брони истекает: EXPIRED, места свободны', async () => {
+    const { session } = firstSession();
+    const seat = freeSeat(demoEngine.seatMap(session.id));
+    demoEngine.create({ sessionId: session.id, customerName: 'Забыл заплатить', seats: [seat] });
+
+    // ждём дедлайн (wait-очередь демо) — вердикт экспирации
+    await vi.advanceTimersByTimeAsync(DEMO_PAYMENT_TIMEOUT_MS + 1000);
+
+    const expired = demoEngine.list()[0];
+    expect(expired.status).toBe('EXPIRED');
+    expect(expired.message).toContain('истекло');
+    expect(expired.processedBy).toBe('go-worker (демо)');
+    expect(demoEngine.seatMap(session.id).occupied).not.toContain(seat);
+
+    // оплачивать больше нечего — 409 с текущим статусом
+    expect(() => demoEngine.pay(expired.id)).toThrow(ApiError);
+  });
+
+  it('pay снимает таймер экспирации: оплаченная бронь не истекает', async () => {
+    const { session } = firstSession();
+    const seat = freeSeat(demoEngine.seatMap(session.id));
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1); // оплата проходит
+    const created = demoEngine.create({ sessionId: session.id, customerName: 'Успел', seats: [seat] });
+    demoEngine.pay(created.id);
+    await vi.advanceTimersByTimeAsync(3000);
+
+    // дедлайн давно прошёл — но бронь уже CONFIRMED, не EXPIRED
+    await vi.advanceTimersByTimeAsync(DEMO_PAYMENT_TIMEOUT_MS);
+    randomSpy.mockRestore();
+    expect(demoEngine.list()[0].status).toBe('CONFIRMED');
+    expect(demoEngine.seatMap(session.id).occupied).toContain(seat);
+  });
+
   it('статистика сходится со списком', async () => {
     const { session } = firstSession();
     const seats = firstFreeSeats(demoEngine.seatMap(session.id), 2);
@@ -204,13 +245,15 @@ describe('demoEngine', () => {
     demoEngine.create({ sessionId: session.id, customerName: 'Стат', seats: [seats[1]] });
 
     let stats = demoEngine.stats();
-    expect(stats.PENDING).toBeGreaterThanOrEqual(2);
+    expect(stats.PENDING_PAYMENT).toBeGreaterThanOrEqual(2);
 
+    for (const b of demoEngine.list()) demoEngine.pay(b.id);
     await vi.advanceTimersByTimeAsync(3000);
 
     const total = demoEngine.list().length;
     stats = demoEngine.stats();
-    expect(stats.PENDING + stats.CONFIRMED + stats.FAILED).toBe(total);
+    expect(stats.PENDING_PAYMENT).toBe(0);
+    expect(stats.CONFIRMED + stats.FAILED).toBe(total);
   });
 
   it('уведомляет подписчиков при изменениях', async () => {
@@ -219,12 +262,15 @@ describe('demoEngine', () => {
 
     const { session } = firstSession();
     const seat = freeSeat(demoEngine.seatMap(session.id));
-    demoEngine.create({ sessionId: session.id, customerName: 'Подписка', seats: [seat] });
+    const created = demoEngine.create({ sessionId: session.id, customerName: 'Подписка', seats: [seat] });
 
-    expect(cb).toHaveBeenCalledTimes(1); // создание PENDING
+    expect(cb).toHaveBeenCalledTimes(1); // создание PENDING_PAYMENT
+
+    demoEngine.pay(created.id);
+    expect(cb).toHaveBeenCalledTimes(2); // переход в PENDING
 
     await vi.advanceTimersByTimeAsync(3000);
-    expect(cb).toHaveBeenCalledTimes(2); // вердикт «воркера»
+    expect(cb).toHaveBeenCalledTimes(3); // вердикт «воркера»
 
     off();
     demoEngine.create({
@@ -232,7 +278,7 @@ describe('demoEngine', () => {
       customerName: 'После отписки',
       seats: [freeSeat(demoEngine.seatMap(session.id))],
     });
-    expect(cb).toHaveBeenCalledTimes(2);
+    expect(cb).toHaveBeenCalledTimes(3);
   });
 
   it('неизвестный сеанс — ошибка', () => {
@@ -246,7 +292,8 @@ describe('demoEngine', () => {
     const seat = freeSeat(demoEngine.seatMap(session.id));
     // 0.1 < SUCCESS_RATE и < REFUND_SUCCESS_RATE: и оплата, и возврат проходят
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
-    demoEngine.create({ sessionId: session.id, customerName: 'Отмена', seats: [seat] });
+    const created = demoEngine.create({ sessionId: session.id, customerName: 'Отмена', seats: [seat] });
+    demoEngine.pay(created.id);
     await vi.advanceTimersByTimeAsync(3000);
     expect(demoEngine.list()[0].status).toBe('CONFIRMED');
 
@@ -270,7 +317,23 @@ describe('demoEngine', () => {
     ).not.toThrow();
   });
 
-  it('cancel: не-CONFIRMED бронь — ApiError 409', () => {
+  it('cancel: неоплаченная (PENDING_PAYMENT) закрывается сразу, место свободно', () => {
+    const { session } = firstSession();
+    const seat = freeSeat(demoEngine.seatMap(session.id));
+    const booking = demoEngine.create({
+      sessionId: session.id,
+      customerName: 'Передумал',
+      seats: [seat],
+    });
+
+    const cancelled = demoEngine.cancel(booking.id);
+
+    expect(cancelled.status).toBe('CANCELLED');
+    expect(cancelled.message).toContain('до оплаты');
+    expect(demoEngine.seatMap(session.id).occupied).not.toContain(seat);
+  });
+
+  it('cancel: PENDING (платёж в полёте) — ApiError 409', () => {
     const { session } = firstSession();
     const seat = freeSeat(demoEngine.seatMap(session.id));
     const booking = demoEngine.create({
@@ -278,6 +341,7 @@ describe('demoEngine', () => {
       customerName: 'Нетерпеливый',
       seats: [seat],
     });
+    demoEngine.pay(booking.id); // PENDING — воркер ещё думает
 
     expect(() => demoEngine.cancel(booking.id)).toThrow(ApiError);
     try {
@@ -288,11 +352,31 @@ describe('demoEngine', () => {
     }
   });
 
+  it('pay: не-PENDING_PAYMENT бронь — ApiError 409 (двойной клик)', () => {
+    const { session } = firstSession();
+    const seat = freeSeat(demoEngine.seatMap(session.id));
+    const booking = demoEngine.create({
+      sessionId: session.id,
+      customerName: 'Двойной клик',
+      seats: [seat],
+    });
+    demoEngine.pay(booking.id);
+
+    expect(() => demoEngine.pay(booking.id)).toThrow(ApiError);
+    try {
+      demoEngine.pay(booking.id);
+    } catch (err) {
+      expect((err as ApiError).status).toBe(409);
+      expect(JSON.parse((err as ApiError).body).status).toBe('PENDING');
+    }
+  });
+
   it('cancel: REFUND_FAILED откатывает в CONFIRMED, место держится', async () => {
     const { session } = firstSession();
     const seat = freeSeat(demoEngine.seatMap(session.id));
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1); // оплата проходит
-    demoEngine.create({ sessionId: session.id, customerName: 'Банк не смог', seats: [seat] });
+    const created = demoEngine.create({ sessionId: session.id, customerName: 'Банк не смог', seats: [seat] });
+    demoEngine.pay(created.id);
     await vi.advanceTimersByTimeAsync(3000);
 
     randomSpy.mockReturnValue(0.95); // 0.95 > REFUND_SUCCESS_RATE → отказ возврата

@@ -4,9 +4,11 @@ import type { BookingStatus } from '../api/types';
 defineProps<{ status: BookingStatus }>();
 
 const labels: Record<BookingStatus, string> = {
-  PENDING: '⏳ в обработке',
+  PENDING_PAYMENT: '💳 ждёт оплаты',
+  PENDING: '⏳ оплата проводится',
   CONFIRMED: '✅ подтверждена',
   FAILED: '✖ отказ',
+  EXPIRED: '⌛ истекла',
   CANCELLING: '↩️ идёт возврат',
   CANCELLED: '🚫 отменена',
 };

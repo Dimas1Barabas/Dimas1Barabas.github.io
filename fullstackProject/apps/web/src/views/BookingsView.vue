@@ -49,9 +49,13 @@ function isCancelling(id: string): boolean {
     </div>
 
     <div class="stat-row">
+      <div class="stat stat--pending_payment">
+        <span class="stat__num">{{ store.stats.PENDING_PAYMENT }}</span>
+        <span class="stat__label">ждут оплаты</span>
+      </div>
       <div class="stat stat--pending">
         <span class="stat__num">{{ store.stats.PENDING }}</span>
-        <span class="stat__label">в обработке</span>
+        <span class="stat__label">оплата проводится</span>
       </div>
       <div class="stat stat--confirmed">
         <span class="stat__num">{{ store.stats.CONFIRMED }}</span>
@@ -60,6 +64,10 @@ function isCancelling(id: string): boolean {
       <div class="stat stat--failed">
         <span class="stat__num">{{ store.stats.FAILED }}</span>
         <span class="stat__label">отказов</span>
+      </div>
+      <div class="stat stat--expired">
+        <span class="stat__num">{{ store.stats.EXPIRED }}</span>
+        <span class="stat__label">истекло</span>
       </div>
       <div class="stat stat--cancelling">
         <span class="stat__num">{{ store.stats.CANCELLING }}</span>
@@ -110,7 +118,7 @@ function isCancelling(id: string): boolean {
 
           <div class="booking-row__side">
             <button
-              v-if="booking.status === 'CONFIRMED'"
+              v-if="booking.status === 'PENDING_PAYMENT' || booking.status === 'CONFIRMED'"
               class="btn btn--danger btn--sm"
               :disabled="isCancelling(booking.id)"
               @click="store.cancel(booking.id)"
