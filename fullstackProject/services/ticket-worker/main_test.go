@@ -1,10 +1,11 @@
 package main
 
-// Тесты retry-механики без живого брокера: счётчик попыток из заголовков
-// и выбор маршрута упавшего сообщения (retry / parking).
+// Тесты без живого брокера: счётчик попыток из заголовков, выбор маршрута
+// упавшего сообщения (retry / parking) и вердикт истечения резерва.
 
 import (
 	"testing"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -52,5 +53,31 @@ func TestRouteFor(t *testing.T) {
 					tc.attempt, max, tc.poison, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestExpiredEvent(t *testing.T) {
+	cfg := loadConfig()
+	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
+	ev := BookingPaymentTimeout{BookingID: "booking-42"}
+
+	got := expiredEvent(cfg, ev, now)
+
+	if got.BookingID != ev.BookingID {
+		t.Fatalf("bookingId = %q, want %q", got.BookingID, ev.BookingID)
+	}
+	if got.ProcessedBy != cfg.WorkerID {
+		t.Fatalf("processedBy = %q, want %q", got.ProcessedBy, cfg.WorkerID)
+	}
+	if got.Message == "" {
+		t.Fatal("message пуст — API покажет его пользователю")
+	}
+	// API читает expiredAt как ISO-дату (new Date(...))
+	parsed, err := time.Parse(time.RFC3339, got.ExpiredAt)
+	if err != nil {
+		t.Fatalf("expiredAt не RFC3339: %v", err)
+	}
+	if !parsed.Equal(now) {
+		t.Fatalf("expiredAt = %v, want %v", parsed, now)
 	}
 }

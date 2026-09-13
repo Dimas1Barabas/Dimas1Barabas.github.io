@@ -3,7 +3,9 @@
 // Подписывается на booking.created (обмен «cinema»), имитирует оплату
 // и публикует результат booking.processed, который NestJS-API применяет к брони.
 // Кроме того, консьюмит booking.cancelled — запросы возврата из компенсирующей
-// саги отмены — и отвечает вердиктом booking.refunded.
+// саги отмены — и отвечает вердиктом booking.refunded. Третий поток —
+// booking.payment.timeout: истёкшие резервы, их присылает dead-letter'ом
+// wait-очередь API, вердикт — booking.expired.
 package main
 
 import (
@@ -32,8 +34,10 @@ type Config struct {
 	Exchange          string        // topic-обмен «cinema»
 	InQueue           string        // очередь оплат
 	CancelQueue       string        // очередь возвратов (сага отмены)
+	ExpireQueue       string        // очередь истёкших резервов (TTL wait-очереди)
 	OutRK             string        // routing key вердикта оплаты
 	RefundRK          string        // routing key вердикта возврата
+	ExpireRK          string        // routing key вердикта истечения
 	HTTPAddr          string        // адрес health/stats-эндпоинтов
 	WorkerID          string        // имя воркера (видно в брони)
 	MinLatency        time.Duration // имитация «оплаты»
@@ -52,8 +56,10 @@ func loadConfig() Config {
 		Exchange:    "cinema",
 		InQueue:     "worker.booking.created",
 		CancelQueue: "worker.booking.cancelled",
+		ExpireQueue: "worker.booking.payment_timeout",
 		OutRK:       "booking.processed",
 		RefundRK:    "booking.refunded",
+		ExpireRK:    "booking.expired",
 		HTTPAddr:    env("HTTP_ADDR", ":8081"),
 		WorkerID:    env("WORKER_ID", "go-worker-1"),
 		MinLatency: time.Duration(envInt("PROCESS_MIN_MS", 1200)) *
@@ -138,12 +144,28 @@ type BookingRefunded struct {
 	ProcessedAt string `json:"processedAt"`
 }
 
+// BookingPaymentTimeout — сообщение из wait-очереди API: TTL окна оплаты
+// истёк, бронь не оплачена. Воркеру нужен только bookingId; totalRub и
+// expiresAt (их шлёт API) игнорируются — как sessionId/hall в других.
+type BookingPaymentTimeout struct {
+	BookingID string `json:"bookingId"`
+}
+
+// BookingExpired — ответ воркера: booking.expired.
+type BookingExpired struct {
+	BookingID   string `json:"bookingId"`
+	Message     string `json:"message"`
+	ProcessedBy string `json:"processedBy"`
+	ExpiredAt   string `json:"expiredAt"`
+}
+
 // ---------- статистика ----------
 
 type Stats struct {
 	Received     atomic.Int64
 	Confirmed    atomic.Int64
 	Failed       atomic.Int64
+	Expired      atomic.Int64
 	Refunds      atomic.Int64
 	RefundFailed atomic.Int64
 	Errors       atomic.Int64
@@ -158,6 +180,7 @@ func (s *Stats) snapshot() map[string]any {
 		"received":     s.Received.Load(),
 		"confirmed":    s.Confirmed.Load(),
 		"failed":       s.Failed.Load(),
+		"expired":      s.Expired.Load(),
 		"refunds":      s.Refunds.Load(),
 		"refundFailed": s.RefundFailed.Load(),
 		"errors":       s.Errors.Load(),
@@ -249,6 +272,17 @@ func refund(cfg Config, ev BookingCancelled) BookingRefunded {
 		Message:     fmt.Sprintf("Банк отклонил возврат (код %02d). Бронь остаётся подтверждённой, места держатся.", rand.IntN(90)+10),
 		ProcessedBy: cfg.WorkerID,
 		ProcessedAt: now,
+	}
+}
+
+// expiredEvent строит вердикт истечения: сообщение уже прождало окно оплаты
+// в wait-очереди API, задержка не нужна. Чистая функция — для тестов.
+func expiredEvent(cfg Config, ev BookingPaymentTimeout, now time.Time) BookingExpired {
+	return BookingExpired{
+		BookingID:   ev.BookingID,
+		Message:     "Время оплаты истекло. Бронь отменена, места снова в продаже.",
+		ProcessedBy: cfg.WorkerID,
+		ExpiredAt:   now.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -347,12 +381,23 @@ func runConsumer(ctx context.Context, cfg Config, stats *Stats) error {
 	if err := ch.QueueBind(cfg.CancelQueue, "booking.cancelled", cfg.Exchange, false, nil); err != nil {
 		return fmt.Errorf("бинд %s: %w", cfg.CancelQueue, err)
 	}
+	// Третья очередь — истёкшие резервы: их присылает dead-letter'ом
+	// wait-очередь API (TTL окна оплаты), сам API её не декларирует.
+	if _, err := ch.QueueDeclare(cfg.ExpireQueue, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("очередь %s: %w", cfg.ExpireQueue, err)
+	}
+	if err := ch.QueueBind(cfg.ExpireQueue, "booking.payment.timeout", cfg.Exchange, false, nil); err != nil {
+		return fmt.Errorf("бинд %s: %w", cfg.ExpireQueue, err)
+	}
 	// Топология надёжности: retry-очереди (TTL + возврат в рабочую) и
 	// parking — зеркально той, что объявляет NestJS API.
 	if err := declareRetryTopology(ch, cfg.Exchange, cfg.InQueue, "booking.created", cfg.RetryTTLMs); err != nil {
 		return err
 	}
 	if err := declareRetryTopology(ch, cfg.Exchange, cfg.CancelQueue, "booking.cancelled", cfg.RetryTTLMs); err != nil {
+		return err
+	}
+	if err := declareRetryTopology(ch, cfg.Exchange, cfg.ExpireQueue, "booking.payment.timeout", cfg.RetryTTLMs); err != nil {
 		return err
 	}
 	// Берём по одному сообщению за раз — «честная» обработка без перегрузки.
@@ -368,8 +413,12 @@ func runConsumer(ctx context.Context, cfg Config, stats *Stats) error {
 	if err != nil {
 		return fmt.Errorf("consume %s: %w", cfg.CancelQueue, err)
 	}
+	expired, err := ch.Consume(cfg.ExpireQueue, "", false, false, false, false, nil)
+	if err != nil {
+		return fmt.Errorf("consume %s: %w", cfg.ExpireQueue, err)
+	}
 
-	log.Printf("воркер %s слушает %s / booking.created + booking.cancelled",
+	log.Printf("воркер %s слушает %s / booking.created + booking.cancelled + booking.payment.timeout",
 		cfg.WorkerID, cfg.InQueue)
 
 	for {
@@ -382,6 +431,11 @@ func runConsumer(ctx context.Context, cfg Config, stats *Stats) error {
 			}
 			handleDelivery(cfg, stats, ch, d)
 		case d, ok := <-refunds:
+			if !ok {
+				return errors.New("канал закрыт, переподключаюсь")
+			}
+			handleDelivery(cfg, stats, ch, d)
+		case d, ok := <-expired:
 			if !ok {
 				return errors.New("канал закрыт, переподключаюсь")
 			}
@@ -424,13 +478,15 @@ func publishJSON(ch *amqp.Channel, exchange, rk string, body []byte) error {
 	})
 }
 
-// handleDelivery разводит потоки по routing key: оплата или возврат.
+// handleDelivery разводит потоки по routing key: оплата, возврат или истечение.
 func handleDelivery(cfg Config, stats *Stats, ch *amqp.Channel, d amqp.Delivery) {
 	switch d.RoutingKey {
 	case "booking.created":
 		handleCreated(cfg, stats, ch, d)
 	case "booking.cancelled":
 		handleCancelled(cfg, stats, ch, d)
+	case "booking.payment.timeout":
+		handlePaymentTimeout(cfg, stats, ch, d)
 	default:
 		log.Printf("неизвестный routing key %q", d.RoutingKey)
 		stats.Errors.Add(1)
@@ -516,6 +572,43 @@ func handleCancelled(cfg Config, stats *Stats, ch *amqp.Channel, d amqp.Delivery
 	log.Printf("→ %s: %s — %s", ev.BookingID, result.Status, result.Message)
 }
 
+// handlePaymentTimeout гасит просроченный резерв: сообщение уже прождало
+// окно оплаты в wait-очереди, вердикт уходит без задержки. Идемпотентность
+// на стороне API: оплаченная/отменённая бронь вердикт молча пропустит.
+func handlePaymentTimeout(cfg Config, stats *Stats, ch *amqp.Channel, d amqp.Delivery) {
+	stats.Received.Add(1)
+
+	var ev BookingPaymentTimeout
+	if err := json.Unmarshal(d.Body, &ev); err != nil {
+		log.Printf("битое сообщение: %v", err)
+		stats.Errors.Add(1)
+		// poison: тело не разбирается, ретраи не помогут — в parking
+		retryOrFail(cfg, ch, d, true, fmt.Sprintf("не разбирается JSON: %v", err))
+		return
+	}
+
+	log.Printf("← таймаут %s: окно оплаты истекло", ev.BookingID)
+
+	result := expiredEvent(cfg, ev, time.Now())
+	body, err := json.Marshal(result)
+	if err != nil {
+		stats.Errors.Add(1)
+		retryOrFail(cfg, ch, d, false, fmt.Sprintf("не сериализуется вердикт: %v", err))
+		return
+	}
+
+	if err := publishJSON(ch, cfg.Exchange, cfg.ExpireRK, body); err != nil {
+		log.Printf("→ ! %s: %v", ev.BookingID, err)
+		stats.Errors.Add(1)
+		retryOrFail(cfg, ch, d, false, fmt.Sprintf("публикация вердикта: %v", err))
+		return
+	}
+
+	_ = d.Ack(false)
+	stats.Expired.Add(1)
+	log.Printf("→ %s: EXPIRED — %s", ev.BookingID, result.Message)
+}
+
 func main() {
 	log.SetFlags(log.Ltime)
 	cfg := loadConfig()
@@ -545,7 +638,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
-	log.Printf("воркер остановлен: обработано %d, подтверждено %d, отказов %d, возвратов %d (неудачных %d)",
+	log.Printf("воркер остановлен: обработано %d, подтверждено %d, отказов %d, истекло %d, возвратов %d (неудачных %d)",
 		stats.Received.Load(), stats.Confirmed.Load(), stats.Failed.Load(),
-		stats.Refunds.Load(), stats.RefundFailed.Load())
+		stats.Expired.Load(), stats.Refunds.Load(), stats.RefundFailed.Load())
 }
