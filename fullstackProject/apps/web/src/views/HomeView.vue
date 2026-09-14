@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import BookingModal from '../components/BookingModal.vue';
 import MovieCard from '../components/MovieCard.vue';
+import ReviewModal from '../components/ReviewModal.vue';
 import type { Booking, Movie } from '../api/types';
 import { useAuthStore } from '../stores/auth';
 import { useMoviesStore } from '../stores/movies';
@@ -12,6 +13,8 @@ const router = useRouter();
 const authStore = useAuthStore();
 const moviesStore = useMoviesStore();
 const selectedMovie = ref<Movie | null>(null);
+/** фильм, чьи отзывы открыты в модалке */
+const reviewMovie = ref<Movie | null>(null);
 /** выбранный жанр афиши; null — показываем все сеансы */
 const selectedGenre = ref<string | null>(null);
 /** фильтр по дню: сегодня / завтра / вся неделя */
@@ -182,6 +185,7 @@ function onCreated(booking: Booking): void {
         :index="index"
         :movie="movie"
         @book="selectedMovie = $event"
+        @reviews="reviewMovie = $event"
       />
     </div>
 
@@ -190,5 +194,7 @@ function onCreated(booking: Booking): void {
       @close="selectedMovie = null"
       @created="onCreated"
     />
+
+    <ReviewModal :movie="reviewMovie" @close="reviewMovie = null" />
   </section>
 </template>

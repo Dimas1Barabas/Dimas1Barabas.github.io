@@ -624,6 +624,149 @@ main.container {
   font-size: 15px;
 }
 
+/* ---------- рейтинг и отзывы ---------- */
+
+/* звёзды: на карточке, в сводке и в пункте отзыва */
+.rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.rating__star {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.55;
+}
+
+.rating__star--filled {
+  color: var(--amber);
+  opacity: 1;
+}
+
+.rating__star--lg {
+  font-size: 18px;
+}
+
+/* ряд рейтинга на карточке — кнопка «открыть отзывы» */
+.movie-card__rating {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  margin: 0 0 6px;
+  padding: 1px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.movie-card__rating:hover,
+.movie-card__rating:hover .rating__star {
+  color: var(--amber);
+  opacity: 1;
+}
+
+.movie-card__rating-count {
+  color: var(--muted);
+}
+
+/* сводка рейтинга в модалке отзывов */
+.review-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.review-summary__text {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.review-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 0;
+}
+
+.review-item {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+
+.review-item__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.review-item__author {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.review-item__date {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.review-item__text {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* форма отзыва */
+.review-form__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.rating-input {
+  display: flex;
+  gap: 4px;
+}
+
+.rating-input__star {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0.55;
+  cursor: pointer;
+  transition:
+    transform 0.1s ease,
+    color 0.1s ease,
+    opacity 0.1s ease;
+}
+
+.rating-input__star--active {
+  color: var(--amber);
+  opacity: 1;
+}
+
+.rating-input__star:hover {
+  transform: scale(1.15);
+  color: var(--amber);
+  opacity: 1;
+}
+
 /* ---------- скелетоны загрузки афиши ---------- */
 
 .skeleton-card {

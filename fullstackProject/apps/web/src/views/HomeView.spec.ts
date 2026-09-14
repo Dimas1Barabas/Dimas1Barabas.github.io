@@ -4,9 +4,11 @@ import { createPinia, setActivePinia } from 'pinia';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Movie, User } from '../api/types';
+import { useAppStore } from '../stores/app';
 import { useAuthStore } from '../stores/auth';
 import { useMoviesStore } from '../stores/movies';
 import BookingModal from '../components/BookingModal.vue';
+import ReviewModal from '../components/ReviewModal.vue';
 import HomeView from './HomeView.vue';
 
 const movie: Movie = {
@@ -134,6 +136,21 @@ describe('HomeView', () => {
 
     expect(router.currentRoute.value.name).toBe('pay');
     expect(router.currentRoute.value.params.bookingId).toBe('b-42');
+  });
+
+  it('клик по рейтингу карточки открывает модалку отзывов', async () => {
+    const { pinia, moviesStore } = setup();
+    const appStore = useAppStore();
+    appStore.mode = 'demo'; // демо-ветка — без сети
+    moviesStore.movies = [movie];
+
+    const wrapper = mountHome(pinia);
+    expect(wrapper.findComponent(ReviewModal).props('movie')).toBeNull();
+
+    wrapper.find('.movie-card__rating').trigger('click');
+    await nextTick();
+
+    expect(wrapper.findComponent(ReviewModal).props('movie')).toEqual(movie);
   });
 
   it('фильтр по жанру оставляет только его сеансы, «Все» возвращает всё', async () => {

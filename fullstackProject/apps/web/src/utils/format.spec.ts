@@ -4,10 +4,12 @@ import {
   formatDayShort,
   formatDuration,
   formatPrice,
+  formatRating,
   formatSeats,
   formatSession,
   formatSessionsLine,
   formatTime,
+  pluralizeReviews,
   timeAgo,
 } from './format';
 
@@ -139,5 +141,31 @@ describe('timeAgo', () => {
     expect(timeAgo(Date.now())).toBe('только что');
     expect(timeAgo(Date.now() - 10_000)).toBe('10 с назад');
     expect(timeAgo(Date.now() - 120_000)).toBe('2 мин назад');
+  });
+});
+
+describe('formatRating', () => {
+  it('запятая как разделитель, один знак после неё', () => {
+    expect(formatRating(4.5)).toBe('4,5');
+    expect(formatRating(4)).toBe('4,0');
+    expect(formatRating(4.6667)).toBe('4,7');
+  });
+
+  it('ноль — прочерк (отзывов нет)', () => {
+    expect(formatRating(0)).toBe('—');
+  });
+});
+
+describe('pluralizeReviews', () => {
+  it.each([
+    [1, '1 отзыв'],
+    [2, '2 отзыва'],
+    [4, '4 отзыва'],
+    [5, '5 отзывов'],
+    [11, '11 отзывов'],
+    [21, '21 отзыв'],
+    [22, '22 отзыва'],
+  ])('%d → «%s»', (n, want) => {
+    expect(pluralizeReviews(n)).toBe(want);
   });
 });

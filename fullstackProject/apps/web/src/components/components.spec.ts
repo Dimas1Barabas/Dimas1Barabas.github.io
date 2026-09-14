@@ -128,4 +128,38 @@ describe('MovieCard', () => {
     expect(wrapper.emitted('book')).toHaveLength(1);
     expect(wrapper.emitted('book')![0][0]).toEqual(movie);
   });
+
+  it('рейтинг: звёзды по округлённой средней и счётчик отзывов', () => {
+    const wrapper = mount(MovieCard, {
+      props: { movie: { ...movie, ratingAvg: 3.6, ratingCount: 2 } },
+    });
+
+    // Math.round(3,6) = 4 заполненные звезды из 5
+    expect(wrapper.findAll('.rating__star--filled')).toHaveLength(4);
+    expect(wrapper.findAll('.rating__star')).toHaveLength(5);
+    expect(wrapper.find('.movie-card__rating').text()).toContain('3,6');
+    expect(wrapper.find('.movie-card__rating').text()).toContain('2');
+  });
+
+  it('без отзывов — «Отзывов ещё нет», ряд кликабелен', async () => {
+    const unrated = { ...movie, ratingAvg: 0, ratingCount: 0 };
+    const wrapper = mount(MovieCard, { props: { movie: unrated } });
+
+    expect(wrapper.find('.movie-card__rating').text()).toContain(
+      'Отзывов ещё нет',
+    );
+    expect(wrapper.findAll('.rating__star--filled')).toHaveLength(0);
+
+    await wrapper.find('.movie-card__rating').trigger('click');
+    expect(wrapper.emitted('reviews')).toHaveLength(1);
+    expect(wrapper.emitted('reviews')![0][0]).toEqual(unrated);
+  });
+
+  it('клик по рейтингу эмитит reviews с фильмом', async () => {
+    const wrapper = mount(MovieCard, { props: { movie } });
+    await wrapper.find('.movie-card__rating').trigger('click');
+
+    expect(wrapper.emitted('reviews')).toHaveLength(1);
+    expect(wrapper.emitted('reviews')![0][0]).toEqual(movie);
+  });
 });
