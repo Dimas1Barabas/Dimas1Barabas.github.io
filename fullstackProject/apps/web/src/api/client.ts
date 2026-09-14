@@ -3,10 +3,12 @@ import type {
   BookingStats,
   CreateBookingPayload,
   CreateMoviePayload,
+  CreateReviewPayload,
   HealthResponse,
   LoginResult,
   Movie,
   RegisterPayload,
+  Review,
   SeatMap,
   User,
 } from './types';
@@ -84,7 +86,9 @@ async function request<T>(
       const body = await res.text().catch(() => '');
       throw new ApiError(`HTTP ${res.status}`, res.status, body);
     }
-    return (await res.json()) as T;
+    // 204 (удаление) приходит без тела — res.json() на нём падает
+    const text = await res.text();
+    return (text ? JSON.parse(text) : undefined) as T;
   } finally {
     clearTimeout(timer);
   }
@@ -137,5 +141,20 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+    }),
+  /** отзывы фильма — публичный список, свежие сверху */
+  movieReviews: (movieId: string) =>
+    request<Review[]>(`/movies/${movieId}/reviews`),
+  /** написать отзыв: право даёт подтверждённая бронь (403 иначе, 409 дубль) */
+  createReview: (movieId: string, payload: CreateReviewPayload) =>
+    request<Review>(`/movies/${movieId}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  /** удалить отзыв — свой или админ; 204 без тела */
+  deleteReview: (movieId: string, id: string) =>
+    request<void>(`/movies/${movieId}/reviews/${id}`, {
+      method: 'DELETE',
     }),
 };

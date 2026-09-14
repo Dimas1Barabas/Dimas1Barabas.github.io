@@ -18,6 +18,8 @@ const movie: Movie = {
   durationMin: 112,
   priceRub: 400,
   hue: 275,
+  ratingAvg: 4.5,
+  ratingCount: 2,
   sessions: [
     // локальные даты далеко в будущем — не зависим от «сейчас»
     { id: 's-1', hall: 'IMAX', startsAt: new Date(2030, 0, 10, 19, 0).toISOString() },

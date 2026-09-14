@@ -14,6 +14,8 @@ const movie: Movie = {
   durationMin: 112,
   priceRub: 400,
   hue: 275,
+  ratingAvg: 4.5,
+  ratingCount: 2,
   sessions: [
     // «завтра» относительно типичной даты запуска — карточка покажет будущее
     { id: 's-1', hall: 'IMAX', startsAt: new Date(2030, 0, 5, 22, 0).toISOString() },

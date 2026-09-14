@@ -17,6 +17,8 @@ const movie: Movie = {
   durationMin: 112,
   priceRub: 400,
   hue: 275,
+  ratingAvg: 4.5,
+  ratingCount: 2,
   sessions: [
     { id: 's-1', hall: 'IMAX', startsAt: new Date(2030, 0, 10, 19, 0).toISOString() },
     { id: 's-2', hall: 'Красный', startsAt: new Date(2030, 0, 11, 21, 0).toISOString() },

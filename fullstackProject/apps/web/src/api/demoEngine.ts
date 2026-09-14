@@ -2,8 +2,10 @@ import type {
   Booking,
   BookingStats,
   CreateBookingPayload,
+  CreateReviewPayload,
   Movie,
   MovieSession,
+  Review,
   SeatMap,
 } from './types';
 import { ApiError } from './client';
@@ -34,6 +36,9 @@ import {
  *  - сага отмены: CONFIRMED → CANCELLING → возврат 0,8–1,6 с с той же
  *    вероятностью успеха, что у воркера; места освобождаются при успехе.
  *  - отмена неоплаченной — сразу CANCELLED без воркера.
+ *  - отзывы: сид-отзывы «других зрителей», право гостя на отзыв — своя
+ *    CONFIRMED-бронь (403 иначе), дубль — 409, агрегат рейтинга на фильме
+ *    пересчитывается сразу; как reviews-модуль API.
  */
 
 const SUCCESS_RATE = 0.9;
@@ -65,7 +70,7 @@ function sessionsOf(
   }));
 }
 
-const DEMO_MOVIES: Movie[] = [
+const DEMO_MOVIE_SEEDS: Omit<Movie, 'ratingAvg' | 'ratingCount'>[] = [
   {
     id: 'demo-milky-way',
     title: 'Млечный Путь: Операция «Туманность»',
@@ -160,6 +165,72 @@ const DEMO_MOVIES: Movie[] = [
   },
 ];
 
+/** демо-афиша; рейтинг пересчитывается из отзывов при инициализации */
+const DEMO_MOVIES: Movie[] = DEMO_MOVIE_SEEDS.map((m) => ({
+  ...m,
+  ratingAvg: 0,
+  ratingCount: 0,
+}));
+
+/** «текущий пользователь» демо: авторизации нет, все его отзывы — гостевые */
+const DEMO_GUEST_ID = 'demo-guest';
+const DEMO_GUEST_NAME = 'Гость';
+
+/** сид-отзывы: у части фильмов, от «других зрителей» */
+const DEMO_REVIEW_SEEDS: {
+  movieId: string;
+  authorName: string;
+  rating: number;
+  text: string;
+  daysAgo: number;
+}[] = [
+  {
+    movieId: 'demo-milky-way',
+    authorName: 'Ольга',
+    rating: 5,
+    text: 'Визуально щедро до неприличия, а финал не стыдный. Идём второй раз.',
+    daysAgo: 3,
+  },
+  {
+    movieId: 'demo-milky-way',
+    authorName: 'Игорь',
+    rating: 4,
+    text: 'Затягивает как чёрная дыра, но темп во второй половине проседает.',
+    daysAgo: 1,
+  },
+  {
+    movieId: 'demo-last-debug',
+    authorName: 'Катя',
+    rating: 5,
+    text: 'Хохотал весь зал, а я узнала свой продакшен в каждом кадре. Больно и точно.',
+    daysAgo: 2,
+  },
+  {
+    movieId: 'demo-recursion',
+    authorName: 'Марк',
+    rating: 4,
+    text: 'Атмосфера давит правильно, но концовку угадал заранее. Всё равно мурашки.',
+    daysAgo: 4,
+  },
+];
+
+/** свежие объекты сид-отзывов (reset возвращает движок к ним) */
+function seedReviews(): Review[] {
+  return DEMO_REVIEW_SEEDS.map((s, i) => {
+    const at = new Date(Date.now() - s.daysAgo * 86_400_000).toISOString();
+    return {
+      id: `demo-seed-r${i + 1}`,
+      movieId: s.movieId,
+      userId: `demo-seed-${i + 1}`,
+      authorName: s.authorName,
+      rating: s.rating,
+      text: s.text,
+      createdAt: at,
+      updatedAt: at,
+    };
+  });
+}
+
 function uuid(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID();
@@ -171,12 +242,19 @@ type Listener = () => void;
 
 class DemoEngine {
   private bookings: Booking[] = [];
+  /** отзывы всех фильмов; «гость демо» — как user из JWT в live-режиме */
+  private reviews: Review[] = seedReviews();
   private listeners = new Set<Listener>();
   private firstLoad = true;
   /** sessionId → занятые места (посев ленивый, при первом обращении) */
   private occupied = new Map<string, Set<string>>();
   /** bookingId → таймер экспирации неоплаченной брони (wait-очередь демо) */
   private expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  constructor() {
+    // стартовые агрегаты рейтинга — из сид-отзывов (как recompute в tx API)
+    DEMO_MOVIES.forEach((m) => this.recomputeMovie(m.id));
+  }
 
   onChange(cb: Listener): () => void {
     this.listeners.add(cb);
@@ -193,13 +271,18 @@ class DemoEngine {
     this.expiryTimers.clear();
     this.bookings = [];
     this.occupied.clear();
+    this.reviews = seedReviews();
+    DEMO_MOVIES.forEach((m) => this.recomputeMovie(m.id));
     this.firstLoad = true;
   }
 
   movies(): { source: 'cache' | 'db'; data: Movie[] } {
     const source = this.firstLoad ? 'db' : 'cache';
     this.firstLoad = false;
-    return { source, data: DEMO_MOVIES };
+    // копии: движок мутирует агрегаты рейтинга на месте — вне реактивности;
+    // свежие идентичности заставляют карточки увидеть новый рейтинг
+    // (сеансы не мутируются, ими можно делиться)
+    return { source, data: DEMO_MOVIES.map((m) => ({ ...m })) };
   }
 
   /** сеанс по id: {фильм, сеанс} или null */
@@ -437,6 +520,108 @@ class DemoEngine {
     }, delay);
 
     return booking;
+  }
+
+  // ── Отзывы и рейтинги ────────────────────────────────────────────────
+
+  /** отзывы фильма, свежие сверху (миниатюра GET /movies/:id/reviews) */
+  reviewsOf(movieId: string): Review[] {
+    return this.reviews
+      .filter((r) => r.movieId === movieId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  /** право на отзыв — подтверждённая бронь (в демо — любая своя) */
+  canReview(movieId: string): boolean {
+    return this.bookings.some(
+      (b) => b.movieId === movieId && b.status === 'CONFIRMED',
+    );
+  }
+
+  /**
+   * Новый отзыв гостя демо. Паритет с API: сначала валидация (400),
+   * затем право по брони (403), дубль ловит «uq (user, movie)» — 409.
+   * Агрегат фильма пересчитывается сразу, слушатели оповещаются.
+   */
+  createReview(movieId: string, payload: CreateReviewPayload): Review {
+    const movie = DEMO_MOVIES.find((m) => m.id === movieId);
+    if (!movie) throw new Error('Фильм не найден');
+
+    const text = (payload.text ?? '').trim();
+    if (
+      !Number.isInteger(payload.rating) ||
+      payload.rating < 1 ||
+      payload.rating > 5
+    ) {
+      throw new ApiError('HTTP 400', 400, JSON.stringify({
+        statusCode: 400,
+        message: 'Оценка — целое число от 1 до 5',
+      }));
+    }
+    if (text.length < 10 || text.length > 1000) {
+      throw new ApiError('HTTP 400', 400, JSON.stringify({
+        statusCode: 400,
+        message: 'Отзыв — от 10 до 1000 символов',
+      }));
+    }
+    if (!this.canReview(movieId)) {
+      throw new ApiError('HTTP 403', 403, JSON.stringify({
+        statusCode: 403,
+        message:
+          'Отзыв можно оставить только о фильме, на который была подтверждённая бронь',
+      }));
+    }
+    if (
+      this.reviews.some(
+        (r) => r.movieId === movieId && r.userId === DEMO_GUEST_ID,
+      )
+    ) {
+      // uq (user_id, movie_id) в миниатюре
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Вы уже оставили отзыв на этот фильм',
+        code: 'reviewExists',
+      }));
+    }
+
+    const now = new Date().toISOString();
+    const review: Review = {
+      id: uuid(),
+      movieId,
+      userId: DEMO_GUEST_ID,
+      authorName: DEMO_GUEST_NAME,
+      rating: payload.rating,
+      text,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.reviews.unshift(review);
+    this.recomputeMovie(movieId);
+    this.notify();
+    return review;
+  }
+
+  /** удаление отзыва (миниатюра DELETE): пересчёт рейтинга + оповещение */
+  deleteReview(movieId: string, id: string): void {
+    const idx = this.reviews.findIndex(
+      (r) => r.id === id && r.movieId === movieId,
+    );
+    if (idx === -1) throw new Error('Отзыв не найден');
+    this.reviews.splice(idx, 1);
+    this.recomputeMovie(movieId);
+    this.notify();
+  }
+
+  /** агрегат фильма: средняя и число отзывов — от источника, как в tx API */
+  private recomputeMovie(movieId: string): void {
+    const movie = DEMO_MOVIES.find((m) => m.id === movieId);
+    if (!movie) return;
+    const mine = this.reviews.filter((r) => r.movieId === movieId);
+    movie.ratingCount = mine.length;
+    movie.ratingAvg = mine.length
+      ? mine.reduce((acc, r) => acc + r.rating, 0) / mine.length
+      : 0;
   }
 }
 

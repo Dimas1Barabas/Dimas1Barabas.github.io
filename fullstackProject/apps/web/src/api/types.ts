@@ -15,6 +15,9 @@ export interface Movie {
   priceRub: number;
   /** оттенок градиентного постера (HSL hue) */
   hue: number;
+  /** средняя оценка отзывов (0 — отзывов ещё нет) */
+  ratingAvg: number;
+  ratingCount: number;
   /** расписание фильма, отсортировано по времени */
   sessions: MovieSession[];
 }
@@ -127,4 +130,23 @@ export interface CreateMoviePayload {
   hue: number;
   /** хотя бы один сеанс */
   sessions: { hall: string; startsAt: string }[];
+}
+
+/** отзыв на фильм — GET /movies/:id/reviews (публично) */
+export interface Review {
+  id: string;
+  movieId: string;
+  userId: string;
+  authorName: string;
+  /** оценка 1–5 */
+  rating: number;
+  text: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /movies/:id/reviews: право на отзыв проверяет бэкенд по брони */
+export interface CreateReviewPayload {
+  rating: number;
+  text: string;
 }
