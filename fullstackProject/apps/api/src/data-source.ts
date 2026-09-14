@@ -6,6 +6,7 @@ import { Booking } from './bookings/booking.entity';
 import { SeatOccupancy } from './bookings/seat-occupancy.entity';
 import { Movie } from './movies/movie.entity';
 import { Session } from './movies/session.entity';
+import { Review } from './reviews/review.entity';
 import { User } from './users/user.entity';
 
 // quiet: dotenv@17 по умолчанию печатает подсказку в stdout при каждом старте
@@ -28,7 +29,7 @@ export const dataSourceOptions: DataSourceOptions = {
   type: 'postgres',
   url: databaseUrl,
   // сущности перечислены явно — надёжнее glob'а; не забывать добавлять новые
-  entities: [Movie, Session, Booking, SeatOccupancy, User],
+  entities: [Movie, Session, Booking, SeatOccupancy, User, Review],
   migrations: [
     isRunningFromTs ? 'src/migrations/*.ts' : 'dist/migrations/*.js',
   ],

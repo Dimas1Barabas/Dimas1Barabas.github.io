@@ -391,7 +391,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
 
       expect(res.status).toBe(200);
       expect(res.body.source).toBe('cache');
-      expect(redisStore.has('movies:all:v2')).toBe(true);
+      expect(redisStore.has('movies:all:v3')).toBe(true);
     });
   });
 

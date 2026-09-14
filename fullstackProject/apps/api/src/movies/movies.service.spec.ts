@@ -22,6 +22,8 @@ function movieFixture(overrides: Partial<Movie> = {}): Movie {
     priceRub: 400,
     hue: 275,
     sessions: [],
+    ratingAvg: 0,
+    ratingCount: 0,
     createdAt: new Date('2026-09-01T00:00:00Z'),
     ...overrides,
   };
@@ -118,13 +120,13 @@ describe('MoviesService (unit)', () => {
     expect(repo.save).not.toHaveBeenCalled();
   });
 
-  it('findAll: промах кэша → грузит из репозитория и кладёт в Redis (ключ v2)', async () => {
+  it('findAll: промах кэша → грузит из репозитория и кладёт в Redis (ключ v3)', async () => {
     const first = await service.findAll();
 
     expect(first.source).toBe('db');
     expect(first.data[0].title).toBe('Рекурсия');
     expect(repo.find).toHaveBeenCalledTimes(1);
-    expect(redisStore.has('movies:all:v2')).toBe(true);
+    expect(redisStore.has('movies:all:v3')).toBe(true);
   });
 
   it('findAll: попадание → отдаёт из кэша без похода в БД', async () => {
@@ -133,7 +135,7 @@ describe('MoviesService (unit)', () => {
 
     expect(second.source).toBe('cache');
     expect(repo.find).toHaveBeenCalledTimes(1); // повторно не ходили
-    expect(redisGet).toHaveBeenCalledWith('movies:all:v2');
+    expect(redisGet).toHaveBeenCalledWith('movies:all:v3');
   });
 
   it('findAll: DTO с сеансами по возрастанию времени, без sessionAt', async () => {
@@ -191,7 +193,7 @@ describe('MoviesService (unit)', () => {
         id: `session-new-${i}`,
       })),
     }));
-    redisStore.set('movies:all:v2', 'stale');
+    redisStore.set('movies:all:v3', 'stale');
 
     const created = await service.create({
       title: 'Новый',
@@ -212,7 +214,7 @@ describe('MoviesService (unit)', () => {
       id: 'session-new-0',
       hall: 'IMAX',
     });
-    expect(redisStore.has('movies:all:v2')).toBe(false);
+    expect(redisStore.has('movies:all:v3')).toBe(false);
   });
 });
 

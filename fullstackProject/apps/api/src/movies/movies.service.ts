@@ -5,9 +5,10 @@ import { RedisService } from '../redis/redis.service';
 import { Movie, MovieDto, toMovieDto } from './movie.entity';
 import { MOVIE_SEEDS } from './movie.seeds';
 
-// v2: форма ответа сменилась (sessions[] вместо sessionAt) — старые значения
-// не должны доживать свой TTL в новом коде
-const MOVIES_KEY = 'movies:all:v2';
+// v3: форма ответа сменилась (ratingAvg/ratingCount у фильмов) — старые
+// значения не должны доживать свой TTL в новом коде
+export const MOVIES_KEY = 'movies:all:v3';
+export const movieKey = (id: string): string => `movie:v3:${id}`;
 const MOVIES_TTL_SEC = 60;
 
 @Injectable()
@@ -55,7 +56,7 @@ export class MoviesService implements OnModuleInit {
 
   async findOne(id: string): Promise<MovieDto> {
     const { value } = await this.redis.withCache<MovieDto>(
-      `movie:v2:${id}`,
+      movieKey(id),
       MOVIES_TTL_SEC,
       async () => {
         const movie = await this.movies.findOneOrFail({
@@ -88,13 +89,17 @@ export class MoviesService implements OnModuleInit {
         })),
       }),
     );
-    await this.invalidate();
+    await this.invalidate(movie.id);
     return toMovieDto(movie);
   }
 
-  /** Сброс кэша (например, после пересева) */
-  async invalidate(): Promise<void> {
-    await this.redis.del(MOVIES_KEY);
+  /**
+   * Сброс кэша (новый фильм, изменение рейтинга). movieId — сбросить
+   * и карточку фильма, иначе она доживёт свой TTL со старым рейтингом.
+   */
+  async invalidate(movieId?: string): Promise<void> {
+    const keys = movieId ? [MOVIES_KEY, movieKey(movieId)] : [MOVIES_KEY];
+    await this.redis.del(...keys);
   }
 }
 

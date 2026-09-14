@@ -10,6 +10,7 @@ import { dataSourceOptions } from './data-source';
 import { HealthController } from './health/health.controller';
 import { MoviesModule } from './movies/movies.module';
 import { rabbitMqModule } from './rabbit/rabbitmq.config';
+import { ReviewsModule } from './reviews/reviews.module';
 import { RedisModule } from './redis/redis.module';
 import { UsersModule } from './users/users.module';
 
@@ -35,6 +36,7 @@ import { UsersModule } from './users/users.module';
     RedisModule,
     MoviesModule,
     BookingsModule,
+    ReviewsModule,
 
     // пользователи и авторизация: регистрация сейчас, логин+JWT дальше
     UsersModule,

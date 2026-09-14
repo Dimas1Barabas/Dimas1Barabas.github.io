@@ -22,6 +22,8 @@ const movieFixture: Movie = {
   priceRub: 400,
   hue: 275,
   sessions: [],
+  ratingAvg: 0,
+  ratingCount: 0,
   createdAt: new Date('2026-09-01T00:00:00Z'),
 };
 

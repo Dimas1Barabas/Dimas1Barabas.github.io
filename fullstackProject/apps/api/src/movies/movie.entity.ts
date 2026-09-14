@@ -41,6 +41,13 @@ export class Movie {
   })
   sessions: Session[];
 
+  /** средняя оценка отзывов (денормализована, пересчитывается в tx отзыва) */
+  @Column({ name: 'rating_avg', type: 'double precision', default: 0 })
+  ratingAvg: number;
+
+  @Column({ name: 'rating_count', type: 'int', default: 0 })
+  ratingCount: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }
@@ -54,6 +61,9 @@ export interface MovieDto {
   durationMin: number;
   priceRub: number;
   hue: number;
+  /** средняя оценка и число отзывов (нет отзывов — нули) */
+  ratingAvg: number;
+  ratingCount: number;
   /** отсортированы по startsAt */
   sessions: SessionDto[];
 }
@@ -68,6 +78,9 @@ export function toMovieDto(movie: Movie): MovieDto {
     durationMin: movie.durationMin,
     priceRub: movie.priceRub,
     hue: movie.hue,
+    // только что созданный фильм ещё не имеет агрегатов
+    ratingAvg: movie.ratingAvg ?? 0,
+    ratingCount: movie.ratingCount ?? 0,
     sessions: toSessionDtos(movie.sessions),
   };
 }
