@@ -1,19 +1,44 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  INestApplication,
+  Req,
+  ValidationPipe,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
+import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { AuthController } from '../src/auth/auth.controller';
+import { AuthUser } from '../src/auth/auth-user';
 import { AuthService } from '../src/auth/auth.service';
+import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
+import { JwtStrategy } from '../src/auth/jwt.strategy';
+import { RolesGuard } from '../src/auth/roles.guard';
 import { UsersService } from '../src/users/users.service';
 import { User } from '../src/users/user.entity';
 
 /**
  * Интеграционный тест авторизации: реальный HTTP-стек Nest
  * (роутинг, ValidationPipe, контроллер → сервис), репозиторий — Map-фейк.
+ *
+ * Глобальные гварды реплицируются как в боевом app.module.ts — раньше их
+ * здесь не было, и это маскировало баг: без @Public() на register/login
+ * живой JwtAuthGuard резал вход 401, а тесты оставались зелёными.
+ * ProbeController (без @Public) доказывает, что гвард в этом стенде живой.
  */
+
+/** «Зонд»: охраняемый маршрут — без токена 401, с токеном пропускает */
+@Controller('probe')
+class ProbeController {
+  @Get()
+  check(@Req() req: { user?: AuthUser }) {
+    return { userId: req.user?.id ?? null };
+  }
+}
 
 class FakeUserRepo {
   rows: User[] = [];
@@ -49,11 +74,21 @@ describe('POST /api/auth/* (integration)', () => {
       imports: [
         JwtModule.register({ secret: TEST_SECRET, signOptions: { expiresIn: '1h' } }),
       ],
-      controllers: [AuthController],
+      controllers: [AuthController, ProbeController],
       providers: [
         UsersService,
         AuthService,
-        { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },
+        JwtStrategy,
+        // как в app.module.ts: всё закрыто JWT по умолчанию, @Public открывает
+        { provide: APP_GUARD, useClass: JwtAuthGuard },
+        { provide: APP_GUARD, useClass: RolesGuard },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string, def?: string) =>
+              key === 'JWT_SECRET' ? TEST_SECRET : def,
+          },
+        },
         { provide: getRepositoryToken(User), useValue: repo },
       ],
     }).compile();
@@ -160,4 +195,32 @@ describe('POST /api/auth/* (integration)', () => {
       expect(res.body.message).toBe('Неверный email или пароль');
     });
   });
+
+  describe('глобальный гвард в этом стенде живой (зонд /api/probe)', () => {
+    it('401: охраняемый маршрут без токена закрыт', async () => {
+      const res = await request(app.getHttpServer()).get('/api/probe');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('200: с валидным токеном — req.user из клеймов', async () => {
+      const alice = repo.rows.find((r) => r.email === 'alice@example.com');
+      const token = await jwt.signAsync({
+        sub: alice?.id,
+        email: 'alice@example.com',
+        name: 'Алиса',
+        role: 'user',
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/probe')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.userId).toBe(alice?.id);
+    });
+  });
+
+  // главная регрессия этого стенда: register/login выше ходят БЕЗ токена —
+  // убери @Public() с них, и эти тесты покраснеют, как живой API
 });
