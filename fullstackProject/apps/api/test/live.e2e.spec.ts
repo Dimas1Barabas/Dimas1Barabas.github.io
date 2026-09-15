@@ -127,6 +127,20 @@ describe('CineBooking e2e: живой docker-стенд', () => {
     });
   });
 
+  it('swagger: /docs отдаёт UI, /docs-json — OpenAPI 3 со всеми маршрутами', async () => {
+    if (!available) return;
+    // UI — открыто и без токена (api() бы прицепил Authorization)
+    const ui = await fetch(`${BASE}/docs`);
+    expect(ui.status).toBe(200);
+    expect(ui.headers.get('content-type')).toContain('text/html');
+
+    const spec = await api<{ openapi: string; paths: Record<string, unknown> }>('/docs-json');
+    expect(spec.openapi).toMatch(/^3\./);
+    expect(Object.keys(spec.paths)).toEqual(
+      expect.arrayContaining(['/api/movies', '/api/bookings', '/api/auth/login']),
+    );
+  });
+
   it('movies: из БД, затем из Redis-кэша; у фильмов — сеансы по времени', async () => {
     if (!available) return;
     const first = await api<{ source: string; data: E2EMovie[] }>('/movies');

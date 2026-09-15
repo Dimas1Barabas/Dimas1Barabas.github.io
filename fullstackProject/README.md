@@ -37,6 +37,7 @@ docker compose up --build
 |---|---|---|
 | web (SPA) | http://localhost:18080 | nginx, /api → api |
 | api (NestJS) | http://localhost:13000/api/health | health-check трёх зависимостей |
+| Swagger UI | http://localhost:13000/api/docs | живая документация API (также через :18080/api/docs) |
 | RabbitMQ UI | http://localhost:15672 | guest / guest |
 | worker (Go) | http://localhost:8081/stats | счётчики оплат и возвратов |
 | PostgreSQL | localhost:15432 | cine / cine, БД cine |
@@ -121,17 +122,19 @@ cd apps/web && npm test
 # JWT-логин, retry/parking, отзывы (право/дубль/агрегаты/удаление)
 cd apps/api && npm test
 
-# API: интеграционные (67) — полный HTTP-стек Nest (роутинг, ValidationPipe,
+# API: интеграционные (76) — полный HTTP-стек Nest (роутинг, ValidationPipe,
 # контроллеры → сервисы → фейковые Postgres/RabbitMQ/Redis на Map),
 # включая 409-конфликт мест, изоляцию мест между сеансами, контракт /pay,
 # экспирацию резерва, сагу отмены, SSE-стрим по живому HTTP,
 # регистрацию/логин и guard'ы (401/403/роли), контракт отзывов
-# (403 без брони, 409 дубль, удаление, агрегаты рейтинга в каталоге)
+# (403 без брони, 409 дубль, удаление, агрегаты рейтинга в каталоге),
+# спецификацию Swagger (маршруты, схемы DTO, bearer-security)
 cd apps/api && npm run test:integration
 
 # API: e2e против живого docker-стенда (health, кэш, полный цикл create →
 # pay → вердикт Go-воркера, EXPIRED по TTL wait-очереди, сага отмены,
-# отзывы: 403 без брони и полный цикл брони → отзыва → дубля → удаления;
+# отзывы: 403 без брони и полный цикл брони → отзыва → дубля → удаления,
+# swagger-документация /docs и /docs-json;
 # если стек не поднят — корректно пропускается с предупреждением)
 cd apps/api && npm run test:e2e
 
@@ -320,6 +323,28 @@ API (`api.booking.*`), и у Go-воркера (`worker.booking.*`) — есть
   звёздным вводом за `v-if` eligibility). Демо-режим зеркалит контракт:
   сид-отзывы «других зрителей», право гостя — своя CONFIRMED-бронь,
   те же 403/409 с теми же телами.
+
+### Документация API (Swagger)
+
+Живая OpenAPI-документация — [Swagger UI](http://localhost:13000/api/docs)
+на стенде (и через nginx: `:18080/api/docs`), спека — `/api/docs-json`:
+
+- Каркас — `apps/api/src/swagger.ts` (`setupSwagger`, вызывается из
+  `main.ts`): заголовок, версия, `addBearerAuth()`. UI регистрируется
+  в обход Nest-роутера, поэтому глобальный `JwtAuthGuard` его не трогает —
+  документация открыта, как витрина (это фиксируется тестом).
+- Схемы запросов описаны `@ApiProperty` в DTO; ответные DTO — классы
+  (не интерфейсы) при сущностях: `MovieDto`, `BookingDto`, `ReviewDto`,
+  `SeatMapDto`, `UserDto`, `LoginResult`. Union-типы (роли, статусы
+  lifecycle) и nullable-поля перечислены явно — `reflect-metadata` их
+  не различает.
+- Контроллеры размечены тегами по доменам, саммари и кодами ответов:
+  409 `seatsTaken`/`reviewExists`/гонки статусов, 403 без прав,
+  SSE-стрим с пояснением, почему он публичен.
+- Try-it-out: нажмите **Authorize** и вставьте `accessToken` из
+  `POST /api/auth/login` — мутации заработают прямо из браузера.
+  Спека при этом не врёт о безопасности: защищённые маршруты помечены
+  `security: bearer`, витрина — нет (проверяется интеграционным тестом).
 
 ### Каталоги
 
