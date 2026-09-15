@@ -121,4 +121,109 @@ describe('Swagger UI /api/docs (integration)', () => {
       bearer: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
     });
   });
+
+  it('схемы запросов: все DTO с required-полями и ограничениями', async () => {
+    const res = await request(app.getHttpServer()).get('/api/docs-json');
+    const schemas = res.body.components.schemas as Record<string, {
+      required?: string[];
+      properties?: Record<string, Record<string, unknown>>;
+    }>;
+
+    expect(Object.keys(schemas)).toEqual(
+      expect.arrayContaining([
+        'RegisterDto',
+        'LoginDto',
+        'CreateMovieDto',
+        'CreateSessionDto',
+        'CreateBookingDto',
+        'CreateReviewDto',
+      ]),
+    );
+
+    // оценка — целое 1..5, обязательна
+    expect(schemas.CreateReviewDto.required).toContain('rating');
+    expect(schemas.CreateReviewDto.properties?.rating).toMatchObject({
+      type: 'number',
+      minimum: 1,
+      maximum: 5,
+    });
+
+    // customerName опционален, места — массив 1..8
+    expect(schemas.CreateBookingDto.required).not.toContain('customerName');
+    expect(schemas.CreateBookingDto.properties?.seats).toMatchObject({
+      type: 'array',
+      minItems: 1,
+      maxItems: 8,
+    });
+
+    // nested-сеансы в фильме — $ref на свою схему
+    expect(schemas.CreateMovieDto.properties?.sessions).toMatchObject({
+      type: 'array',
+      items: { $ref: '#/components/schemas/CreateSessionDto' },
+    });
+  });
+
+  it('ответные схемы: сущности каталога, броней, отзывов и логина', async () => {
+    const res = await request(app.getHttpServer()).get('/api/docs-json');
+    const schemas = res.body.components.schemas as Record<string, unknown>;
+
+    expect(Object.keys(schemas)).toEqual(
+      expect.arrayContaining([
+        'MovieDto',
+        'SessionDto',
+        'UserDto',
+        'BookingDto',
+        'ReviewDto',
+        'SeatMapDto',
+        'LoginResult',
+      ]),
+    );
+
+    // статусная машина — enum в доке
+    const bookingStatus = (schemas.BookingDto as {
+      properties: { status: { enum?: string[] } };
+    }).properties.status.enum;
+    expect(bookingStatus).toEqual(
+      expect.arrayContaining(['PENDING_PAYMENT', 'CONFIRMED', 'CANCELLED']),
+    );
+
+    // nullable-поля брони не потерялись
+    const props = (schemas.BookingDto as {
+      properties: Record<string, { nullable?: boolean }>;
+    }).properties;
+    expect(props.expiresAt.nullable).toBe(true);
+  });
+
+  it('security: мутации за bearer, витрина открыта', async () => {
+    const res = await request(app.getHttpServer()).get('/api/docs-json');
+    const paths = res.body.paths as Record<
+      string,
+      Record<string, {
+        security?: unknown[];
+        responses?: Record<string, unknown>;
+        parameters?: { name: string }[];
+      }>
+    >;
+
+    // закрытое
+    expect(paths['/api/bookings'].post.security).toEqual([{ bearer: [] }]);
+    expect(paths['/api/bookings/my'].get.security).toEqual([{ bearer: [] }]);
+    expect(paths['/api/movies/{movieId}/reviews'].post.security).toEqual([
+      { bearer: [] },
+    ]);
+
+    // открытое — секции security нет вовсе
+    expect(paths['/api/movies'].get.security).toBeUndefined();
+    expect(paths['/api/bookings/stream'].get.security).toBeUndefined();
+    expect(paths['/api/auth/login'].post.security).toBeUndefined();
+
+    // админский эндпоинт документирует 403
+    expect(paths['/api/movies'].post.responses).toHaveProperty('403');
+
+    // limit задокументирован query-параметром
+    const limitParam = paths['/api/bookings'].get.parameters?.find(
+      (p) => p.name === 'limit',
+    );
+    expect(limitParam).toBeTruthy();
+  });
 });

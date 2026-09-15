@@ -1,11 +1,13 @@
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
-import { toUserDto } from '../users/user.entity';
+import { ApiConflictResponse, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { toUserDto, UserDto } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
+import { AuthService, LoginResult } from './auth.service';
 import { Public } from './public.decorator';
-import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
+@ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -21,6 +23,9 @@ export class AuthController {
   @Public()
   @Post('register')
   @HttpCode(201)
+  @ApiOperation({ summary: 'Регистрация', description: 'Пароль хэшируется bcrypt; наружу — UserDto без хэша' })
+  @ApiCreatedResponse({ type: UserDto })
+  @ApiConflictResponse({ description: 'Email уже занят (код emailTaken)' })
   async register(@Body() dto: RegisterDto) {
     return toUserDto(await this.users.register(dto));
   }
@@ -29,6 +34,9 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(200)
+  @ApiOperation({ summary: 'Вход', description: 'Верным ответом на «нет такого» и «не тот пароль» не раскрываем, в чём дело' })
+  @ApiOkResponse({ type: LoginResult })
+  @ApiUnauthorizedResponse({ description: 'Неверный email или пароль' })
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
   }

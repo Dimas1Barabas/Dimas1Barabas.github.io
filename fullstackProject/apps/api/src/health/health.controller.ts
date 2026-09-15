@@ -1,5 +1,6 @@
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { DataSource } from 'typeorm';
 import { Public } from '../auth/public.decorator';
 import { RedisService } from '../redis/redis.service';
@@ -7,6 +8,7 @@ import { RedisService } from '../redis/redis.service';
 type CheckStatus = 'up' | 'down';
 
 @Public()
+@ApiTags('health')
 @Controller('health')
 export class HealthController {
   constructor(
@@ -33,6 +35,11 @@ export class HealthController {
   }
 
   @Get()
+  @ApiOperation({
+    summary: 'Health-check',
+    description: 'Ping трёх зависимостей: `{ status: "ok" | "degraded", checks: { postgres, redis, rabbitmq } }`',
+  })
+  @ApiOkResponse({ description: 'ok — все зависимости up, degraded — что-то лежит' })
   async check() {
     const [postgres, redis, rabbitmq] = await Promise.all([
       this.postgres(),
