@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import {
   Column,
   CreateDateColumn,
@@ -37,10 +38,17 @@ export class Session {
   createdAt: Date;
 }
 
-export interface SessionDto {
-  id: string;
-  hall: string;
-  startsAt: string;
+/** класс (не interface) — чтобы попадать в OpenAPI-схему ответов */
+export class SessionDto {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  /** название зала — подпись в UI */
+  @ApiProperty({ example: 'IMAX' })
+  hall!: string;
+
+  @ApiProperty({ format: 'date-time' })
+  startsAt!: string;
 }
 
 export function toSessionDto(session: Session): SessionDto {

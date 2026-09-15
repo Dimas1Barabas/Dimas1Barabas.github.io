@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import {
   Column,
   CreateDateColumn,
@@ -52,20 +53,41 @@ export class Movie {
   createdAt: Date;
 }
 
-export interface MovieDto {
-  id: string;
-  title: string;
-  description: string;
-  genre: string;
-  genreIcon: string;
-  durationMin: number;
-  priceRub: number;
-  hue: number;
+export class MovieDto {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Дюна: Часть три' })
+  title!: string;
+
+  @ApiProperty({ example: 'Продолжение пустынной саги' })
+  description!: string;
+
+  @ApiProperty({ example: 'фантастика' })
+  genre!: string;
+
+  @ApiProperty({ example: '🏜️', description: 'emoji-иконка жанра для «постера»' })
+  genreIcon!: string;
+
+  @ApiProperty({ example: 155, description: 'минуты' })
+  durationMin!: number;
+
+  @ApiProperty({ example: 500, description: 'цена билета, ₽' })
+  priceRub!: number;
+
+  @ApiProperty({ example: 24, description: 'оттенок градиентного постера (HSL hue)' })
+  hue!: number;
+
   /** средняя оценка и число отзывов (нет отзывов — нули) */
-  ratingAvg: number;
-  ratingCount: number;
+  @ApiProperty({ example: 4.6 })
+  ratingAvg!: number;
+
+  @ApiProperty({ example: 128 })
+  ratingCount!: number;
+
   /** отсортированы по startsAt */
-  sessions: SessionDto[];
+  @ApiProperty({ type: [SessionDto] })
+  sessions!: SessionDto[];
 }
 
 export function toMovieDto(movie: Movie): MovieDto {

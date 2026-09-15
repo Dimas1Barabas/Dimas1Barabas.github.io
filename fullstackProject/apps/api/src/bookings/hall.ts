@@ -1,3 +1,5 @@
+import { ApiProperty } from '@nestjs/swagger';
+
 /**
  * Геометрия зала: в демо-кинотеатре один зал на все сеансы.
  * Место адресуется кодом «ряд-место», например «5-7» — ряд 5, место 7.
@@ -23,11 +25,22 @@ export function compareSeats(a: string, b: string): number {
   return ar - br || an - bn;
 }
 
-/** Ответ GET /api/sessions/:id/seats — всё, что нужно для карты зала */
-export interface SeatMapDto {
-  sessionId: string;
-  layout: { rows: number; seatsPerRow: number };
+/** Ответ GET /api/sessions/:id/seats — всё, что нужно для карты зала.
+ *  Класс (не interface) — чтобы попадать в OpenAPI-схему ответов. */
+export class SeatMapDto {
+  @ApiProperty({ format: 'uuid' })
+  sessionId!: string;
+
+  @ApiProperty({
+    example: { rows: 8, seatsPerRow: 10 },
+    description: 'геометрия зала',
+  })
+  layout!: { rows: number; seatsPerRow: number };
+
   /** занятые места (PENDING держит место, CONFIRMED — тем более) */
-  occupied: string[];
-  free: number;
+  @ApiProperty({ example: ['5-7', '5-8'] })
+  occupied!: string[];
+
+  @ApiProperty({ example: 78 })
+  free!: number;
 }

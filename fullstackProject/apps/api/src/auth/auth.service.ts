@@ -1,12 +1,17 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ApiProperty } from '@nestjs/swagger';
 import * as bcrypt from 'bcryptjs';
 import { toUserDto, UserDto } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
 
-export interface LoginResult {
-  accessToken: string;
-  user: UserDto;
+/** класс (не interface) — чтобы попадать в OpenAPI-схему ответа логина */
+export class LoginResult {
+  @ApiProperty({ description: 'Bearer-JWT, живёт 2 часа' })
+  accessToken!: string;
+
+  @ApiProperty({ type: UserDto })
+  user!: UserDto;
 }
 
 @Injectable()

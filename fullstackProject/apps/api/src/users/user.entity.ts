@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import {
   Column,
   CreateDateColumn,
@@ -8,12 +9,23 @@ import {
 
 export type UserRole = 'user' | 'admin';
 
-export interface UserDto {
-  id: string;
-  email: string;
-  name: string;
-  role: UserRole;
-  createdAt: string;
+/** класс (не interface) — чтобы попадать в OpenAPI-схему ответов */
+export class UserDto {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'alice@example.com' })
+  email!: string;
+
+  @ApiProperty({ example: 'Алиса' })
+  name!: string;
+
+  /** union-тип в reflect-metadata неразличим — перечисляем явно */
+  @ApiProperty({ enum: ['user', 'admin'] })
+  role!: UserRole;
+
+  @ApiProperty({ format: 'date-time' })
+  createdAt!: string;
 }
 
 /** наружу отдаём только DTO — passwordHash остаётся внутри сервиса */

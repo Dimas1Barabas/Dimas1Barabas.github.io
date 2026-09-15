@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import {
   IsEmail,
   IsString,
@@ -6,15 +7,18 @@ import {
 } from 'class-validator';
 
 export class RegisterDto {
+  @ApiProperty({ example: 'alice@example.com', description: 'приводится к нижнему регистру' })
   @IsEmail()
   email!: string;
 
   /** bcrypt использует первые 72 байта — длиннее нет смысла хранить */
+  @ApiProperty({ example: 'secret123', minLength: 6, maxLength: 72 })
   @IsString()
   @MinLength(6, { message: 'Пароль короче 6 символов' })
   @MaxLength(72)
   password!: string;
 
+  @ApiProperty({ example: 'Алиса', minLength: 2, maxLength: 60 })
   @IsString()
   @MinLength(2, { message: 'Имя слишком короткое' })
   @MaxLength(60)

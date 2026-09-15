@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import {
   Column,
   CreateDateColumn,
@@ -54,15 +55,31 @@ export class Review {
   updatedAt: Date;
 }
 
-export interface ReviewDto {
-  id: string;
-  movieId: string;
-  userId: string;
-  authorName: string;
-  rating: number;
-  text: string;
-  createdAt: string;
-  updatedAt: string;
+/** класс (не interface) — чтобы попадать в OpenAPI-схему ответов */
+export class ReviewDto {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  movieId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  userId!: string;
+
+  @ApiProperty({ example: 'Алиса', description: 'имя из профиля автора' })
+  authorName!: string;
+
+  @ApiProperty({ example: 5, minimum: 1, maximum: 5 })
+  rating!: number;
+
+  @ApiProperty({ example: 'Лучший IMAX-опыт года!', maxLength: 1000 })
+  text!: string;
+
+  @ApiProperty({ format: 'date-time' })
+  createdAt!: string;
+
+  @ApiProperty({ format: 'date-time' })
+  updatedAt!: string;
 }
 
 /** authorName — имя из профиля автора; при создании берём его из JWT */

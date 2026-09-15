@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import {
   Column,
   CreateDateColumn,
@@ -78,25 +79,79 @@ export class Booking {
   updatedAt: Date;
 }
 
-export interface BookingDto {
-  id: string;
-  movieId: string;
-  movieTitle: string;
-  movieHue: number;
-  movieGenreIcon: string;
-  sessionId: string;
-  sessionAt: string;
-  hall: string;
-  customerName: string;
-  userId: string | null;
-  seats: string[];
-  totalRub: number;
-  status: BookingStatus;
-  expiresAt: string | null;
-  message: string | null;
-  processedBy: string | null;
-  processedAt: string | null;
-  createdAt: string;
+/** класс (не interface) — чтобы попадать в OpenAPI-схему ответов */
+export class BookingDto {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  movieId!: string;
+
+  @ApiProperty({ example: 'Дюна: Часть три' })
+  movieTitle!: string;
+
+  @ApiProperty({ example: 24, description: 'оттенок постера фильма' })
+  movieHue!: number;
+
+  @ApiProperty({ example: '🏜️' })
+  movieGenreIcon!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  sessionId!: string;
+
+  @ApiProperty({ format: 'date-time' })
+  sessionAt!: string;
+
+  @ApiProperty({ example: 'IMAX' })
+  hall!: string;
+
+  @ApiProperty({ example: 'Алиса' })
+  customerName!: string;
+
+  /** null — брони, созданные до появления авторизации */
+  @ApiProperty({ nullable: true, type: String, format: 'uuid' })
+  userId!: string | null;
+
+  @ApiProperty({ example: ['5-7', '5-8'], description: 'коды «ряд-место»' })
+  seats!: string[];
+
+  @ApiProperty({ example: 1000, description: 'итого, ₽' })
+  totalRub!: number;
+
+  /** union-тип в reflect-metadata неразличим — перечисляем явно */
+  @ApiProperty({
+    enum: [
+      'PENDING_PAYMENT',
+      'PENDING',
+      'CONFIRMED',
+      'FAILED',
+      'EXPIRED',
+      'CANCELLING',
+      'CANCELLED',
+    ],
+    description: 'lifecycle брони: резерв → оплата → вердикт воркера',
+  })
+  status!: BookingStatus;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    format: 'date-time',
+    description: 'дедлайн оплаты (актуален для PENDING_PAYMENT)',
+  })
+  expiresAt!: string | null;
+
+  @ApiProperty({ nullable: true, type: String, description: 'вердикт Go-воркера' })
+  message!: string | null;
+
+  @ApiProperty({ nullable: true, type: String, example: 'ticket-worker-1' })
+  processedBy!: string | null;
+
+  @ApiProperty({ nullable: true, type: String, format: 'date-time' })
+  processedAt!: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  createdAt!: string;
 }
 
 export function toBookingDto(
