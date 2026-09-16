@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
@@ -37,6 +38,7 @@ import { UsersModule } from './users/users.module';
     MoviesModule,
     BookingsModule,
     ReviewsModule,
+    AdminModule,
 
     // пользователи и авторизация: регистрация сейчас, логин+JWT дальше
     UsersModule,

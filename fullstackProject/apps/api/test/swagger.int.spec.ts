@@ -6,6 +6,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import request from 'supertest';
+import { AdminController } from '../src/admin/admin.controller';
+import { AdminStatsService } from '../src/admin/admin-stats.service';
 import { AuthController } from '../src/auth/auth.controller';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
@@ -43,10 +45,12 @@ describe('Swagger UI /api/docs (integration)', () => {
         SeatsController,
         AuthController,
         ReviewsController,
+        AdminController,
         HealthController,
       ],
       providers: [
         { provide: MoviesService, useValue: {} },
+        { provide: AdminStatsService, useValue: {} },
         { provide: BookingsService, useValue: {} },
         { provide: BookingStream, useValue: {} },
         { provide: ReviewsService, useValue: {} },
@@ -109,6 +113,7 @@ describe('Swagger UI /api/docs (integration)', () => {
       '/api/sessions/{sessionId}/seats',
       '/api/auth/register',
       '/api/auth/login',
+      '/api/admin/stats',
       '/api/health',
     ];
     expect(paths).toEqual(expect.arrayContaining(expected));
@@ -176,6 +181,9 @@ describe('Swagger UI /api/docs (integration)', () => {
         'ReviewDto',
         'SeatMapDto',
         'LoginResult',
+        'AdminStatsResultDto',
+        'AdminStatsDto',
+        'AdminTotalsDto',
       ]),
     );
 
@@ -217,8 +225,10 @@ describe('Swagger UI /api/docs (integration)', () => {
     expect(paths['/api/bookings/stream'].get.security).toBeUndefined();
     expect(paths['/api/auth/login'].post.security).toBeUndefined();
 
-    // админский эндпоинт документирует 403
+    // админские эндпоинты за bearer и документируют 403
     expect(paths['/api/movies'].post.responses).toHaveProperty('403');
+    expect(paths['/api/admin/stats'].get.security).toEqual([{ bearer: [] }]);
+    expect(paths['/api/admin/stats'].get.responses).toHaveProperty('403');
 
     // limit задокументирован query-параметром
     const limitParam = paths['/api/bookings'].get.parameters?.find(
