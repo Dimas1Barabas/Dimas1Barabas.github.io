@@ -11,14 +11,18 @@ import {
 import { Movie } from '../movies/movie.entity';
 import { Session } from '../movies/session.entity';
 
-export type BookingStatus =
-  | 'PENDING_PAYMENT'
-  | 'PENDING'
-  | 'CONFIRMED'
-  | 'FAILED'
-  | 'EXPIRED'
-  | 'CANCELLING'
-  | 'CANCELLED';
+/** значения lifecycle-статусов — один источник для типа, DTO и аналитики */
+export const BOOKING_STATUSES = [
+  'PENDING_PAYMENT',
+  'PENDING',
+  'CONFIRMED',
+  'FAILED',
+  'EXPIRED',
+  'CANCELLING',
+  'CANCELLED',
+] as const;
+
+export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 
 @Entity('bookings')
 export class Booking {
@@ -120,15 +124,7 @@ export class BookingDto {
 
   /** union-тип в reflect-metadata неразличим — перечисляем явно */
   @ApiProperty({
-    enum: [
-      'PENDING_PAYMENT',
-      'PENDING',
-      'CONFIRMED',
-      'FAILED',
-      'EXPIRED',
-      'CANCELLING',
-      'CANCELLED',
-    ],
+    enum: BOOKING_STATUSES,
     description: 'lifecycle брони: резерв → оплата → вердикт воркера',
   })
   status!: BookingStatus;
