@@ -32,14 +32,15 @@ const loading = computed(
 
 /**
  * Право на отзыв: подтверждённая бронь на этот фильм. В live — из личного
- * кабинета (mine), в демо — любые свои брони (гость один на всех).
+ * кабинета (mine), в демо — свои брони гостя (userId null; сиды «других
+ * зрителей» права не дают).
  */
 const eligible = computed(() => {
   const movie = props.movie;
   if (!movie) return false;
   if (appStore.mode === 'demo') {
     return bookingsStore.bookings.some(
-      (b) => b.movieId === movie.id && b.status === 'CONFIRMED',
+      (b) => b.movieId === movie.id && b.status === 'CONFIRMED' && !b.userId,
     );
   }
   return (

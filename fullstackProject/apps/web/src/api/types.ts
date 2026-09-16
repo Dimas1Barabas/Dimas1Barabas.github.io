@@ -150,3 +150,59 @@ export interface CreateReviewPayload {
   rating: number;
   text: string;
 }
+
+/** GET /api/admin/stats — агрегаты админ-дашборда (только роль admin) */
+export interface AdminTotals {
+  bookingsTotal: number;
+  confirmed: number;
+  /** выручка по CONFIRMED-броням, ₽ */
+  revenueRub: number;
+  avgTicketRub: number;
+  seatsSold: number;
+  /** средняя заполняемость предстоящих сеансов, % */
+  upcomingOccupancyPct: number;
+  moviesCount: number;
+  reviewsCount: number;
+  avgRating: number;
+}
+
+export type AdminStatusCounts = Record<BookingStatus, number>;
+
+export interface AdminTopMovie {
+  movieId: string;
+  title: string;
+  bookings: number;
+  seats: number;
+  revenueRub: number;
+}
+
+export interface AdminSessionOccupancy {
+  sessionId: string;
+  movieTitle: string;
+  hall: string;
+  startsAt: string;
+  occupied: number;
+  capacity: number;
+  occupancyPct: number;
+}
+
+export interface AdminDayRevenue {
+  /** локальный день YYYY-MM-DD */
+  day: string;
+  bookings: number;
+  revenueRub: number;
+}
+
+export interface AdminStats {
+  totals: AdminTotals;
+  byStatus: AdminStatusCounts;
+  topMovies: AdminTopMovie[];
+  upcomingSessions: AdminSessionOccupancy[];
+  revenueByDay: AdminDayRevenue[];
+}
+
+/** конверт: источник агрегатов виден бейджем «из кэша» (Redis, TTL 30 c) */
+export interface AdminStatsEnvelope {
+  source: 'cache' | 'db';
+  data: AdminStats;
+}

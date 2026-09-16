@@ -1,4 +1,5 @@
 import type {
+  AdminStatsEnvelope,
   Booking,
   BookingStats,
   CreateBookingPayload,
@@ -157,4 +158,6 @@ export const api = {
     request<void>(`/movies/${movieId}/reviews/${id}`, {
       method: 'DELETE',
     }),
+  /** админ-аналитика: агрегаты дашборда (403 без роли admin) */
+  adminStats: () => request<AdminStatsEnvelope>('/admin/stats'),
 };

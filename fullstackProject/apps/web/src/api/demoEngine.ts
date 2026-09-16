@@ -1,4 +1,6 @@
 import type {
+  AdminStats,
+  AdminStatsEnvelope,
   Booking,
   BookingStats,
   CreateBookingPayload,
@@ -17,6 +19,14 @@ import {
   compareSeats,
   isValidSeat,
 } from '../utils/hall';
+import {
+  adminTotals,
+  countByStatus,
+  ratingAgg,
+  revenueByDay,
+  sessionOccupancy,
+  topMovies,
+} from '../utils/adminStats';
 
 /**
  * Демо-режим: браузерная симуляция бэкенда для GitHub Pages.
@@ -38,7 +48,11 @@ import {
  *  - отмена неоплаченной — сразу CANCELLED без воркера.
  *  - отзывы: сид-отзывы «других зрителей», право гостя на отзыв — своя
  *    CONFIRMED-бронь (403 иначе), дубль — 409, агрегат рейтинга на фильме
- *    пересчитывается сразу; как reviews-модуль API.
+ *    пересчитывается сразу; как reviews-модуль API;
+ *  - сид-брони «других зрителей» за последние 2 недели — живое табло
+ *    и данные для аналитики; их места держатся в картах сеансов;
+ *  - админ-аналитика adminStats(): те же агрегаты, что GET /api/admin/stats,
+ *    с «кэшем» на 30 c — миниатюра Redis-кэша боевого эндпоинта.
  */
 
 const SUCCESS_RATE = 0.9;
@@ -238,6 +252,75 @@ function uuid(): string {
   return `b-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * Сид-брони «других зрителей»: история за последние 2 недели, чтобы
+ * демо-табло и админ-аналитика не пустовали (в live эти строки лежат
+ * в Postgres). Статусы — терминальные: таймеров и воркеров у сидов нет.
+ */
+const DEMO_BOOKING_SEEDS: {
+  movieId: string;
+  sessionId: string;
+  seats: string[];
+  customerName: string;
+  status: Booking['status'];
+  daysAgo: number;
+  /** минута вердикта относительно создания */
+  verdictInMin: number;
+  message?: string;
+}[] = [
+  { movieId: 'demo-milky-way', sessionId: 'demo-milky-way-s1', seats: ['4-3', '4-4'], customerName: 'Ольга', status: 'CONFIRMED', daysAgo: 13, verdictInMin: 5 },
+  { movieId: 'demo-last-debug', sessionId: 'demo-last-debug-s1', seats: ['2-5'], customerName: 'Игорь', status: 'CONFIRMED', daysAgo: 12, verdictInMin: 5 },
+  { movieId: 'demo-cache-lady', sessionId: 'demo-cache-lady-s1', seats: ['6-2', '6-3'], customerName: 'Катя', status: 'CONFIRMED', daysAgo: 11, verdictInMin: 5 },
+  { movieId: 'demo-milky-way', sessionId: 'demo-milky-way-s1', seats: ['5-1', '5-2', '5-3'], customerName: 'Пётр', status: 'CONFIRMED', daysAgo: 10, verdictInMin: 5 },
+  { movieId: 'demo-recursion', sessionId: 'demo-recursion-s1', seats: ['3-7'], customerName: 'Аня', status: 'FAILED', daysAgo: 9, verdictInMin: 5, message: 'Платёж отклонён банком (код 42). Бронь отменена, деньги не списаны.' },
+  { movieId: 'demo-old-repo', sessionId: 'demo-old-repo-s1', seats: ['7-4', '7-5'], customerName: 'Сергей', status: 'CONFIRMED', daysAgo: 8, verdictInMin: 5 },
+  { movieId: 'demo-cache-lady', sessionId: 'demo-cache-lady-s2', seats: ['1-6'], customerName: 'Настя', status: 'EXPIRED', daysAgo: 7, verdictInMin: 3, message: 'Время оплаты истекло. Бронь отменена, места снова в продаже.' },
+  { movieId: 'demo-49th-stream', sessionId: 'demo-49th-stream-s1', seats: ['8-1', '8-2', '8-3', '8-4'], customerName: 'Дима', status: 'CONFIRMED', daysAgo: 6, verdictInMin: 5 },
+  { movieId: 'demo-milky-way', sessionId: 'demo-milky-way-s2', seats: ['2-7', '2-8'], customerName: 'Вика', status: 'CONFIRMED', daysAgo: 5, verdictInMin: 5 },
+  { movieId: 'demo-last-debug', sessionId: 'demo-last-debug-s2', seats: ['5-5', '5-6'], customerName: 'Юра', status: 'CANCELLED', daysAgo: 4, verdictInMin: 12, message: 'Возврат 640 ₽ зачислен. Места 5-5, 5-6 снова в продаже.' },
+  { movieId: 'demo-old-repo', sessionId: 'demo-old-repo-s2', seats: ['3-2', '3-3', '3-4'], customerName: 'Марина', status: 'CONFIRMED', daysAgo: 3, verdictInMin: 5 },
+  { movieId: 'demo-recursion', sessionId: 'demo-recursion-s2', seats: ['6-8'], customerName: 'Костя', status: 'CONFIRMED', daysAgo: 2, verdictInMin: 5 },
+  { movieId: 'demo-milky-way', sessionId: 'demo-milky-way-s3', seats: ['7-7', '7-8'], customerName: 'Лена', status: 'CONFIRMED', daysAgo: 1, verdictInMin: 5 },
+  { movieId: 'demo-49th-stream', sessionId: 'demo-49th-stream-s2', seats: ['4-6', '4-7'], customerName: 'Роман', status: 'CONFIRMED', daysAgo: 0, verdictInMin: 5 },
+];
+
+/** свежие объекты сид-броней: заголовки фильма — из афиши, суммы — из цены */
+function seedBookings(): Booking[] {
+  return DEMO_BOOKING_SEEDS.map((s, i) => {
+    const movie = DEMO_MOVIES.find((m) => m.id === s.movieId)!;
+    const session = movie.sessions.find((x) => x.id === s.sessionId)!;
+    const createdAt = new Date(Date.now() - s.daysAgo * 86_400_000);
+    // все сиды — терминальные статусы: вердикт «уже случился»
+    const processedAt = new Date(createdAt.getTime() + s.verdictInMin * 60_000);
+    const verdictMessage =
+      s.message ??
+      (s.status === 'CONFIRMED'
+        ? `Оплата ${movie.priceRub * s.seats.length} ₽ прошла. Места ${s.seats.join(', ')}. Приятного просмотра!`
+        : null);
+    return {
+      id: `demo-seed-b${i + 1}`,
+      movieId: movie.id,
+      movieTitle: movie.title,
+      movieHue: movie.hue,
+      movieGenreIcon: movie.genreIcon,
+      sessionId: session.id,
+      sessionAt: session.startsAt,
+      hall: session.hall,
+      customerName: s.customerName,
+      // сиды — «другие зрители»: гость демо не может их отменить/отозвать
+      userId: `demo-seed-${i + 1}`,
+      seats: [...s.seats],
+      totalRub: movie.priceRub * s.seats.length,
+      status: s.status,
+      expiresAt: null,
+      message: verdictMessage,
+      processedBy: 'go-worker (демо)',
+      processedAt: processedAt ? processedAt.toISOString() : null,
+      createdAt: createdAt.toISOString(),
+    } satisfies Booking;
+  });
+}
+
 type Listener = () => void;
 
 class DemoEngine {
@@ -250,10 +333,14 @@ class DemoEngine {
   private occupied = new Map<string, Set<string>>();
   /** bookingId → таймер экспирации неоплаченной брони (wait-очередь демо) */
   private expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** «Redis-кэш» аналитики: значение + время расчёта (TTL как у API) */
+  private statsCache: AdminStats | null = null;
+  private statsAt = 0;
 
   constructor() {
     // стартовые агрегаты рейтинга — из сид-отзывов (как recompute в tx API)
     DEMO_MOVIES.forEach((m) => this.recomputeMovie(m.id));
+    this.applySeeds();
   }
 
   onChange(cb: Listener): () => void {
@@ -269,11 +356,25 @@ class DemoEngine {
   reset(): void {
     this.expiryTimers.forEach((t) => clearTimeout(t));
     this.expiryTimers.clear();
-    this.bookings = [];
     this.occupied.clear();
     this.reviews = seedReviews();
     DEMO_MOVIES.forEach((m) => this.recomputeMovie(m.id));
     this.firstLoad = true;
+    this.applySeeds();
+  }
+
+  /** сид-брони «других зрителей» + их места в картах сеансов */
+  private applySeeds(): void {
+    this.bookings = seedBookings();
+    this.statsCache = null;
+    this.statsAt = 0;
+    // CONFIRMED-сиды держат места (как seat_occupancy в Postgres);
+    // терминальные FAILED/EXPIRED/CANCELLED — освободили
+    for (const b of this.bookings) {
+      if (b.status === 'CONFIRMED') {
+        b.seats.forEach((s) => this.occupiedFor(b.sessionId).add(s));
+      }
+    }
   }
 
   movies(): { source: 'cache' | 'db'; data: Movie[] } {
@@ -347,6 +448,64 @@ class DemoEngine {
     };
     for (const b of this.bookings) stats[b.status] += 1;
     return stats;
+  }
+
+  // ── Админ-аналитика ─────────────────────────────────────────────────
+
+  /** TTL «кэша» аналитики — как ADMIN_STATS_KEY в API (30 c) */
+  private static STATS_TTL_MS = 30_000;
+
+  /**
+   * Миниатюра GET /api/admin/stats: агрегаты дашборда из состояния движка,
+   * конверт {source, data} с «кэшем» 30 c — как Redis в боевом эндпоинте
+   * (пересчёт и в live, и в демо виден не мгновенно, а по TTL).
+   */
+  adminStats(): AdminStatsEnvelope {
+    const fresh =
+      this.statsCache !== null && Date.now() - this.statsAt < DemoEngine.STATS_TTL_MS;
+    if (this.statsCache && fresh) {
+      return { source: 'cache', data: plainCopy(this.statsCache) };
+    }
+    const data = this.computeAdminStats();
+    this.statsCache = data;
+    this.statsAt = Date.now();
+    return { source: 'db', data: plainCopy(data) };
+  }
+
+  private computeAdminStats(): AdminStats {
+    const now = Date.now();
+    // предстоящие сеансы всех фильмов по возрастанию времени
+    const upcoming = DEMO_MOVIES.flatMap((m) =>
+      m.sessions
+        .filter((s) => Date.parse(s.startsAt) >= now)
+        .map((s) => ({
+          id: s.id,
+          movieTitle: m.title,
+          hall: s.hall,
+          startsAt: new Date(s.startsAt),
+        })),
+    ).sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+
+    // занятость — та же карта, что видит покупатель в seatMap
+    const occupiedBySession = new Map(
+      upcoming.map((s) => [s.id, this.occupiedFor(s.id).size]),
+    );
+    const titles = new Map(DEMO_MOVIES.map((m) => [m.id, m.title]));
+    const ratings = ratingAgg(this.reviews);
+    const occ = sessionOccupancy(upcoming, occupiedBySession);
+
+    return {
+      totals: adminTotals(this.bookings, {
+        moviesCount: DEMO_MOVIES.length,
+        reviewsCount: ratings.count,
+        avgRating: ratings.avg,
+        upcomingAvgPct: occ.avgPct,
+      }),
+      byStatus: countByStatus(this.bookings),
+      topMovies: topMovies(this.bookings, titles),
+      upcomingSessions: occ.list,
+      revenueByDay: revenueByDay(this.bookings),
+    };
   }
 
   create(payload: CreateBookingPayload): Booking {
@@ -531,10 +690,11 @@ class DemoEngine {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  /** право на отзыв — подтверждённая бронь (в демо — любая своя) */
+  /** право на отзыв — своя CONFIRMED-бронь: гость демо без владельца
+   *  (userId null); сиды «других зрителей» права не дают — как в API */
   canReview(movieId: string): boolean {
     return this.bookings.some(
-      (b) => b.movieId === movieId && b.status === 'CONFIRMED',
+      (b) => b.movieId === movieId && b.status === 'CONFIRMED' && !b.userId,
     );
   }
 
@@ -626,3 +786,9 @@ class DemoEngine {
 }
 
 export const demoEngine = new DemoEngine();
+
+/** глубокая копия JSON-данных: движок живёт вне реактивности Vue —
+ *  каждой выдаче нужны свежие идентичности (как JSON по проводам в live) */
+function plainCopy<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
