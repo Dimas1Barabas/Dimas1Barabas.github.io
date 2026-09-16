@@ -24,6 +24,10 @@ const themeStore = useThemeStore();
         </RouterLink>
         <RouterLink to="/architecture">Архитектура</RouterLink>
         <RouterLink v-if="authStore.isAdmin" to="/admin">Новый сеанс</RouterLink>
+        <!-- аналитика: админам в live и всем в демо (витрина Pages) -->
+        <RouterLink v-if="authStore.isAdmin || appStore.mode === 'demo'" to="/admin/stats">
+          Аналитика
+        </RouterLink>
       </nav>
 
       <span

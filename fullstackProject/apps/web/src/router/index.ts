@@ -39,6 +39,12 @@ const router = createRouter({
       name: 'admin',
       component: () => import('../views/AdminView.vue'),
     },
+    {
+      // админ-дашборд аналитики: в live — только админам, в демо — всем
+      path: '/admin/stats',
+      name: 'admin-stats',
+      component: () => import('../views/AdminStatsView.vue'),
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 });

@@ -1845,3 +1845,14 @@ main.container {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------- админ-аналитика: плитки сводки /admin/stats ---------- */
+
+.stat--revenue .stat__num { color: var(--amber); }
+.stat--total .stat__num { color: var(--text); }
+.stat--ticket .stat__num { color: var(--accent); }
+.stat--seats .stat__num { color: var(--cyan); }
+.stat--occupancy .stat__num { color: var(--green); }
+.stat--movies .stat__num { color: var(--accent-2); }
+.stat--reviews .stat__num { color: var(--violet); }
+.stat--rating .stat__num { color: var(--green); }
