@@ -12,6 +12,26 @@ NestJS API ──booking.cancelled─▶ [cinema exchange] ──▶ worker.book
 NestJS API ◀──booking.refunded── [cinema exchange] ◀───────────────────────────────────┘
 ```
 
+## Структура
+
+Стандартная раскладка растущего сервиса: точка входа отдельно,
+внутренности — по пакетам в `internal/` (снаружи не импортируются).
+
+```
+cmd/ticket-worker/    main: сборка зависимостей, сигналы, цикл реконнекта
+internal/
+  config/             конфиг из окружения (env-парсеры, дефолты)
+  events/             контракты событий обмена cinema — общие с NestJS
+  stats/              атомарные счётчики, срез для /stats
+  httpserver/         служебные /health и /stats
+  processing/         «платёжный шлюз»: имитация оплаты/возврата, чистая логика
+  rabbitmq/           консьюмер: топология, разводка потоков, retry/parking
+```
+
+Зависимости текут в одну сторону: `main → rabbitmq → processing → events`,
+конфиг читает только `main` и инфраструктура. Routing keys вердиктов —
+константы `events.Key*`, в конфиге не дублируются.
+
 ## Что делает
 
 1. Слушает очередь `worker.booking.created` (обмен `cinema`, topic, prefetch = 1).
@@ -38,7 +58,7 @@ NestJS API ◀──booking.refunded── [cinema exchange] ◀─────�
 ## Локальный запуск
 
 ```bash
-go run .
+go run ./cmd/ticket-worker
 # или в составе всего стенда, из корня fullstackProject:
 docker compose up --build worker
 ```

@@ -142,8 +142,9 @@ cd apps/api && npm run test:integration
 # если стек не поднят — корректно пропускается с предупреждением)
 cd apps/api && npm run test:e2e
 
-# воркер: go test — retry-механика (счётчик попыток, маршрут retry/parking),
-# вердикт истечения
+# воркер: go test по пакетам — retry-механика (счётчик попыток,
+# маршрут retry/parking), env-парсеры конфига, вердикты
+# оплаты/возврата/истечения «шлюза»
 cd services/ticket-worker && go test ./...
 ```
 
@@ -385,7 +386,9 @@ apps/
   api/            NestJS 11: REST, TypeORM, ioredis, @golevelup/nestjs-rabbitmq
   web/            Vue 3 + Vite + Pinia; nginx для docker; демо-режим
 services/
-  ticket-worker/  Go: консьюмер, реконнекты, ack/nack, /health /stats
+  ticket-worker/  Go: cmd/ + internal/ (config, events, processing,
+                  rabbitmq, stats, httpserver); реконнекты, retry/parking,
+                  /health /stats
 ```
 
 ### Демо-режим на GitHub Pages

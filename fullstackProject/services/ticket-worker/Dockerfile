@@ -3,7 +3,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /ticket-worker .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /ticket-worker ./cmd/ticket-worker
 
 FROM alpine:3.21
 COPY --from=build /ticket-worker /ticket-worker
