@@ -20,7 +20,6 @@
   --bg-glow: #1b2433; /* радиальный подсвет фона страницы */
   --header-bg: rgba(13, 17, 23, 0.85);
   --shimmer-hi: #262e3f; /* блик скелетона */
-  --chip-overlay: rgba(13, 17, 23, 0.45); /* чипы поверх hero */
   --backdrop: rgba(1, 4, 9, 0.7); /* фон под модалкой */
 }
 
@@ -144,49 +143,6 @@ code {
   background: var(--bg-soft);
 }
 
-.mode-pill {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  white-space: nowrap;
-}
-
-.mode-pill--live {
-  color: var(--green);
-  border-color: rgba(63, 185, 80, 0.4);
-  background: rgba(63, 185, 80, 0.08);
-}
-
-.mode-pill--demo {
-  color: var(--amber);
-  border-color: rgba(210, 153, 34, 0.4);
-  background: rgba(210, 153, 34, 0.08);
-}
-
-/* ---------- баннер демо-режима ---------- */
-
-.mode-banner {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  margin: 14px 0 0;
-  padding: 10px 14px;
-  border: 1px solid rgba(210, 153, 34, 0.35);
-  background: rgba(210, 153, 34, 0.07);
-  border-radius: var(--radius);
-  font-size: 14px;
-  color: var(--muted);
-}
-
-.mode-banner strong {
-  color: var(--text);
-}
-
-.mode-banner__icon {
-  font-size: 16px;
-}
-
 /* ---------- каркас страницы ---------- */
 
 main.container {
@@ -282,24 +238,6 @@ main.container {
   font-size: 15px;
 }
 
-.hero__chips {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.hero__chip {
-  font-size: 13px;
-  color: var(--text);
-  border: 1px solid var(--border);
-  background: var(--chip-overlay);
-  backdrop-filter: blur(6px);
-  padding: 6px 13px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
 .page-sub {
   margin: 0;
   color: var(--muted);
@@ -314,16 +252,6 @@ main.container {
   padding: 5px 11px;
   border-radius: 999px;
   white-space: nowrap;
-}
-
-.chip--cache {
-  color: var(--green);
-  border-color: rgba(63, 185, 80, 0.35);
-}
-
-.chip--db {
-  color: var(--accent-2);
-  border-color: rgba(88, 166, 255, 0.35);
 }
 
 .hint {
@@ -1520,163 +1448,6 @@ main.container {
   margin: 0 0 16px;
 }
 
-/* ---------- страница архитектуры ---------- */
-
-.arch__diagram {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 26px 18px;
-  margin-bottom: 30px;
-}
-
-.node {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 16px;
-  text-align: center;
-  min-width: 150px;
-}
-
-.node strong {
-  display: block;
-  font-size: 14px;
-}
-
-.node small {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.node__icon {
-  display: block;
-  font-size: 22px;
-  margin-bottom: 2px;
-}
-
-.node--api {
-  border-color: rgba(63, 185, 80, 0.5);
-}
-
-.node--go {
-  border-color: rgba(121, 192, 255, 0.5);
-}
-
-.arch__stores {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.arrow {
-  color: var(--muted);
-  font-size: 12px;
-  text-align: center;
-}
-
-.flow {
-  list-style: none;
-  margin: 0 0 30px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.flow__item {
-  display: flex;
-  gap: 14px;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-}
-
-.flow__step {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  color: var(--btn-fg);
-  background: linear-gradient(180deg, var(--accent-2), var(--accent));
-}
-
-.flow__code {
-  color: var(--accent-2);
-}
-
-.flow__text {
-  margin: 2px 0 0;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.arch__title {
-  font-size: 18px;
-  margin: 0 0 14px;
-}
-
-.svc-table {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 30px;
-}
-
-.svc-row {
-  display: grid;
-  grid-template-columns: 90px 1fr 1fr 1.2fr;
-  gap: 10px;
-  align-items: baseline;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-size: 13px;
-}
-
-.svc-row__name {
-  color: var(--accent-2);
-}
-
-.svc-row__stack {
-  color: var(--text);
-}
-
-.svc-row__url {
-  color: var(--muted);
-}
-
-.svc-row__note {
-  color: var(--muted);
-}
-
-.code {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px 16px;
-  overflow-x: auto;
-  font-size: 13px;
-  color: var(--accent-2);
-  margin: 0;
-}
-
-.arch__note {
-  color: var(--muted);
-  font-size: 13px;
-}
-
 /* ---------- подвал ---------- */
 
 .footer {
@@ -1711,7 +1482,6 @@ main.container {
   --bg-glow: #dceafb;
   --header-bg: rgba(255, 255, 255, 0.85);
   --shimmer-hi: #e4e9ef;
-  --chip-overlay: rgba(255, 255, 255, 0.6);
   --backdrop: rgba(31, 35, 40, 0.45);
 }
 
@@ -1816,10 +1586,6 @@ main.container {
 
   .toast {
     bottom: 14px;
-  }
-
-  .svc-row {
-    grid-template-columns: 1fr 1fr;
   }
 
   .booking-row {

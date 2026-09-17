@@ -22,28 +22,12 @@ const themeStore = useThemeStore();
         <RouterLink v-if="appStore.mode === 'live' && authStore.isAuthed" to="/my">
           Мои билеты
         </RouterLink>
-        <RouterLink to="/architecture">Архитектура</RouterLink>
         <RouterLink v-if="authStore.isAdmin" to="/admin">Новый сеанс</RouterLink>
         <!-- аналитика: админам в live и всем в демо (витрина Pages) -->
         <RouterLink v-if="authStore.isAdmin || appStore.mode === 'demo'" to="/admin/stats">
           Аналитика
         </RouterLink>
       </nav>
-
-      <span
-        v-if="appStore.mode === 'live'"
-        class="mode-pill mode-pill--live"
-        title="Бэкенд доступен: полная схема с Postgres, Redis и RabbitMQ"
-      >
-        ● live API
-      </span>
-      <span
-        v-else-if="appStore.mode === 'demo'"
-        class="mode-pill mode-pill--demo"
-        title="Бэкенд не отвечает — работает локальная симуляция"
-      >
-        ● демо-режим
-      </span>
 
       <!-- сессия: только при живом API (в демо авторизации нет) -->
       <div v-if="appStore.mode === 'live'" class="header-auth">

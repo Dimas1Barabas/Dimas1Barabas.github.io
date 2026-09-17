@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import AppHeader from './components/AppHeader.vue';
-import ModeBanner from './components/ModeBanner.vue';
 import { useAppStore } from './stores/app';
 import { useThemeStore } from './stores/theme';
 
@@ -17,7 +16,6 @@ onMounted(() => {
 <template>
   <div class="shell">
     <AppHeader />
-    <ModeBanner />
     <main class="container">
       <RouterView />
     </main>

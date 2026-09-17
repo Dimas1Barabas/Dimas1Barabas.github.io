@@ -66,9 +66,6 @@ function tiles(data: AdminStats): { value: string; label: string; cls: string }[
   <section class="container stats">
     <div class="stats__head">
       <h1 class="page-title">Аналитика</h1>
-      <span v-if="app.mode === 'demo'" class="mode-pill mode-pill--demo">
-        демо-данные
-      </span>
       <span
         v-if="stats.admin && stats.source === 'cache'"
         class="stats__badge"

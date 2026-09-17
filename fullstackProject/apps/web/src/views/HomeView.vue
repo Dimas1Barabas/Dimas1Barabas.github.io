@@ -67,32 +67,13 @@ function onCreated(booking: Booking): void {
       <div aria-hidden="true" class="hero__glow hero__glow--2"></div>
       <h1 class="hero__title">Кино начинается с одного клика</h1>
       <p class="hero__sub">
-        CineBooking — учебный фулстек-проект: Vue 3 общается с NestJS API,
-        брони уходят в RabbitMQ и подтверждаются Go-воркером, а афиша
-        кэшируется в Redis.
+        Выбирайте фильм, занимайте лучшие места на схеме зала и оплачивайте
+        онлайн — статус брони обновляется в реальном времени.
       </p>
-      <div class="hero__chips">
-        <span class="hero__chip">🖥️ Vue 3 + Pinia</span>
-        <span class="hero__chip">🧩 NestJS API</span>
-        <span class="hero__chip">🐘 PostgreSQL</span>
-        <span class="hero__chip">⚡ Redis</span>
-        <span class="hero__chip">🐇 RabbitMQ</span>
-        <span class="hero__chip">🐹 Go-воркер</span>
-      </div>
     </div>
 
     <div class="page-head">
       <h2 class="page-title">Сеансы на неделю</h2>
-      <span
-        v-if="!moviesStore.loading && moviesStore.movies.length"
-        class="chip"
-        :class="moviesStore.source === 'cache' ? 'chip--cache' : 'chip--db'"
-      >
-        <template v-if="moviesStore.source === 'cache'">
-          ⚡ из Redis-кэша
-        </template>
-        <template v-else> 🐘 из PostgreSQL </template>
-      </span>
     </div>
 
     <div

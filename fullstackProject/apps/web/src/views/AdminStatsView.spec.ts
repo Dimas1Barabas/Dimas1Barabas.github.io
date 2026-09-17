@@ -136,7 +136,7 @@ describe('AdminStatsView', () => {
     expect(wrapper.find('svg.chart').exists()).toBe(true);
   });
 
-  it('демо: доступно всем, пометка «демо-данные» и бейдж кэша', () => {
+  it('демо: доступно всем, бейдж кэша на месте', () => {
     const { pinia, app, stats } = setup();
     app.mode = 'demo';
     stats.admin = fixture();
@@ -145,7 +145,6 @@ describe('AdminStatsView', () => {
     const wrapper = mountView(pinia);
 
     expect(stats.refresh).toHaveBeenCalledTimes(1);
-    expect(wrapper.text()).toContain('демо-данные');
     expect(wrapper.find('.stats__badge').text()).toBe('из кэша');
     expect(wrapper.findAll('.stat')).toHaveLength(16);
   });
