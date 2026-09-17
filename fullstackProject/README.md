@@ -126,8 +126,10 @@ docker compose exec postgres dropdb -U cine cine_empty
 # фронт: vitest (170 тестов) — форматтеры, зал, демо-движок (включая отзывы
 # и сид-брони аналитики), сторы pinia (auth-сессия, «мои билеты», тема,
 # lifecycle оплаты, отзывы, аналитика), компоненты, экран оплаты /pay/:id,
-# модалка отзывов, дашборд /admin/stats и SVG-график выручки
-cd apps/web && npm test
+# модалка отзывов, дашборд /admin/stats и SVG-график выручки.
+# ESLint держит границы FSD: импорт только из нижележащих слоёв и своего
+# среза (eslint-plugin-boundaries, политика — в eslint.config.js)
+cd apps/web && npm run lint && npm test
 
 # API: юнит (112 тестов) — логика брони, места/конфликт, pay/expire/cancel,
 # SSE, кэш, расписание сеансов, health, пользователи/посев админа,
@@ -406,7 +408,8 @@ API (`api.booking.*`), и у Go-воркера (`worker.booking.*`) — есть
 ```
 apps/
   api/            NestJS 11: REST, TypeORM, ioredis, @golevelup/nestjs-rabbitmq
-  web/            Vue 3 + Vite + Pinia; nginx для docker; демо-режим
+  web/            Vue 3 + Vite + Pinia — FSD (app/pages/widgets/features/
+                  entities/shared); nginx для docker; демо-режим
 services/
   ticket-worker/       Go: cmd/ + internal/ (config, events, processing,
                        rabbitmq, stats, httpserver); реконнекты, retry/parking,
@@ -414,6 +417,22 @@ services/
   notification-service/ Go, гексагональная архитектура: domain + service
                        в центре, адаптеры in (amqp, httpapi) / out (console,
                        memory) за портами; /notifications /stats
+```
+
+### Фронт: Feature-Sliced Design
+
+`apps/web/src` разбит по методологии [FSD](https://feature-sliced.design/ru/) —
+слои строго сверху вниз, импортировать можно только из нижележащих,
+внутри слоя — только из своего среза. Границы проверяет ESLint
+(`eslint-plugin-boundaries`), нарушение валит CI:
+
+```
+app/        корень: main.ts, App.vue, роутер, глобальные стили
+pages/      экраны: home, bookings, my-bookings, payment, login, admin, admin-stats
+widgets/    крупные композиционные блоки: app-header
+features/   сценарии пользователя: booking-flow (модалка + схема зала), review
+entities/   бизнес-сущности: movie (+отзывы и расписание), booking, viewer, stats
+shared/     без бизнес-логики: api-клиент и контракты, демо-движок, lib, config
 ```
 
 ### Демо-режим на GitHub Pages

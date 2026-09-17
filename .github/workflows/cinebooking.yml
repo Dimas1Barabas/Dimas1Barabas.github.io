@@ -1,7 +1,7 @@
 # CI для фулстек-демо CineBooking (fullstackProject/).
 #
 # Герметичные уровни без внешних зависимостей:
-#   web          — typecheck (vue-tsc) + vitest + production-сборка
+#   web          — eslint (границы FSD) + typecheck (vue-tsc) + vitest + production-сборка
 #   api          — jest юнит + интеграционные (фейковые Postgres/RabbitMQ/Redis на Map) + сборка
 #   worker       — go test
 #   notification — go test (гексагональный сервис уведомлений)
@@ -44,6 +44,9 @@ jobs:
           cache-dependency-path: fullstackProject/apps/web/package-lock.json
 
       - run: npm ci
+
+      # границы слоёв FSD: импорт только из нижележащих слоёв и своего среза
+      - run: npm run lint
 
       - run: npm run typecheck
 
