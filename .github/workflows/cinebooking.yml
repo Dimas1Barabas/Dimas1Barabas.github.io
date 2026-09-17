@@ -1,9 +1,10 @@
 # CI для фулстек-демо CineBooking (fullstackProject/).
 #
 # Герметичные уровни без внешних зависимостей:
-#   web    — typecheck (vue-tsc) + vitest + production-сборка
-#   api    — jest юнит + интеграционные (фейковые Postgres/RabbitMQ/Redis на Map) + сборка
-#   worker — go test
+#   web          — typecheck (vue-tsc) + vitest + production-сборка
+#   api          — jest юнит + интеграционные (фейковые Postgres/RabbitMQ/Redis на Map) + сборка
+#   worker       — go test
+#   notification — go test (гексагональный сервис уведомлений)
 #
 # E2E против живого docker-стенда в CI не гоняем: он требует поднятия
 # всего compose-окружения и остаётся локальным (`npm run test:e2e`
@@ -89,5 +90,22 @@ jobs:
         with:
           go-version-file: fullstackProject/services/ticket-worker/go.mod
           cache-dependency-path: fullstackProject/services/ticket-worker/go.sum
+
+      - run: go test ./...
+
+  notification:
+    name: notification — go test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: fullstackProject/services/notification-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: fullstackProject/services/notification-service/go.mod
+          cache-dependency-path: fullstackProject/services/notification-service/go.sum
 
       - run: go test ./...

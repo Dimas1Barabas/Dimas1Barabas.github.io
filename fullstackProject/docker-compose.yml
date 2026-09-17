@@ -75,6 +75,19 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  # гексагональный Go-сервис: вердикты брони → клиентские уведомления;
+  # host-порт 18082 (8080 на хосте занят)
+  notification:
+    build: ./services/notification-service
+    environment:
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+      HTTP_ADDR: :8080
+    ports:
+      - '18082:8080'
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
   web:
     build: ./apps/web
     ports:

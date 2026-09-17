@@ -19,9 +19,15 @@
               └────────┬────────┘
                        │ consume
                        ▼
-              ┌─────────────────┐
+              ┌─────────────────┐   booking.processed/.refunded/.expired
               │ Go ticket-worker│  «платёжный шлюз» + /stats
-              └─────────────────┘
+              └────────┬────────┘
+                       │ вердикты
+                       ▼
+              ┌─────────────────────┐
+              │ Go notification     │  «email-уведомления» + /notifications
+              │ (гексагон)          │
+              └─────────────────────┘
 ```
 
 **Живая демка (демо-режим без бэкенда):**
@@ -40,6 +46,7 @@ docker compose up --build
 | Swagger UI | http://localhost:13000/api/docs | живая документация API (также через :18080/api/docs) |
 | RabbitMQ UI | http://localhost:15672 | guest / guest |
 | worker (Go) | http://localhost:8081/stats | счётчики оплат и возвратов |
+| notification (Go) | http://localhost:18082/notifications | история «email»-уведомлений, гексагон |
 | PostgreSQL | localhost:15432 | cine / cine, БД cine |
 | Redis | localhost:6379 | кэш фильмов, TTL 60 c |
 
@@ -65,9 +72,13 @@ cd apps/web
 npm install
 npm run dev              # http://localhost:5173 (прокси /api → :13000)
 
-# Go-воркер
+# Go-воркер (платёжный шлюз)
 cd services/ticket-worker
-go run .                 # слушает RabbitMQ, /stats на :8081
+go run ./cmd/ticket-worker       # слушает RabbitMQ, /stats на :8081
+
+# Go-уведомления (гексагональный сервис)
+cd services/notification-service
+go run ./cmd/notification        # слушает вердикты, HTTP на :8080
 ```
 
 ### Миграции
@@ -146,6 +157,11 @@ cd apps/api && npm run test:e2e
 # маршрут retry/parking), env-парсеры конфига, вердикты
 # оплаты/возврата/истечения «шлюза»
 cd services/ticket-worker && go test ./...
+
+# уведомления: гексагон — фабрика уведомлений по вердиктам, use-case
+# на стабах портов (сбой шлюза, ядовитое событие), память-репозиторий
+# (порядок/фильтр/вытеснение), маппинг доставок, HTTP на httptest
+cd services/notification-service && go test ./...
 ```
 
 База стенда для e2e переопределяется через `E2E_BASE_URL` (по умолчанию
@@ -209,6 +225,12 @@ worker — go test. E2e остаётся локальным: ему нужен �
    `booking` с самой бронью и свежей статистикой; каждые 25 c идёт
    heartbeat `ping`. При обрыве браузер переподключается сам, а по
    `onopen` фронт делает полный resync через `GET /bookings`. Опроса нет.
+11. Каждый вердикт (`booking.processed`/`.refunded`/`.expired`) дублируется
+   в Go-сервис `notification`: он превращает событие в клиентское
+   «email»-уведомление (в стенде печатается в лог), хранит кольцевую
+   историю в памяти и отдаёт её через `GET /notifications`. Построен
+   гексагонально: домен и use-case в центре, брокер/HTTP/память —
+   адаптеры за портами.
 
 ```
 PENDING_PAYMENT ──pay──▶ PENDING ──воркер──▶ CONFIRMED | FAILED
@@ -386,9 +408,12 @@ apps/
   api/            NestJS 11: REST, TypeORM, ioredis, @golevelup/nestjs-rabbitmq
   web/            Vue 3 + Vite + Pinia; nginx для docker; демо-режим
 services/
-  ticket-worker/  Go: cmd/ + internal/ (config, events, processing,
-                  rabbitmq, stats, httpserver); реконнекты, retry/parking,
-                  /health /stats
+  ticket-worker/       Go: cmd/ + internal/ (config, events, processing,
+                       rabbitmq, stats, httpserver); реконнекты, retry/parking,
+                       /health /stats
+  notification-service/ Go, гексагональная архитектура: domain + service
+                       в центре, адаптеры in (amqp, httpapi) / out (console,
+                       memory) за портами; /notifications /stats
 ```
 
 ### Демо-режим на GitHub Pages
