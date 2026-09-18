@@ -63,11 +63,12 @@ async function submit(): Promise<void> {
     </h1>
 
     <p v-if="appStore.mode === 'demo'" class="auth-note">
-      Демо-режим работает без бэкенда — авторизация доступна только при живом
-      API (<code>docker compose up</code>).
+      Демо-режим: сессия симулируется в браузере и живёт до перезагрузки.
+      Сработает любой email (кроме занятого <code>admin@cine.local</code> —
+      увидите честный 409).
     </p>
 
-    <form v-else class="auth-form" @submit.prevent="submit">
+    <form class="auth-form" @submit.prevent="submit">
       <label class="field">
         <span class="field__label">Email</span>
         <input

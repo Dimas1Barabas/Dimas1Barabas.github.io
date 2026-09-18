@@ -1,6 +1,8 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '@/shared/api/client';
+import { demoEngine } from '@/shared/api/demo-engine';
+import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 
 vi.mock('@/shared/api/client', async (importOriginal) => {
@@ -14,6 +16,7 @@ vi.mock('@/shared/api/client', async (importOriginal) => {
       login: vi.fn(),
       register: vi.fn(),
       logout: vi.fn(),
+      forgotPassword: vi.fn(),
     },
   };
 });
@@ -93,5 +96,54 @@ describe('auth store: сессия', () => {
 
     expect(store.token).toBe('jwt-saved');
     expect(store.user?.email).toBe('anna@example.com');
+  });
+});
+
+describe('auth store: демо-режим (симуляция движком)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+    demoEngine.reset();
+    useAppStore().mode = 'demo';
+  });
+
+  it('login идёт через движок и не пишет localStorage', async () => {
+    const store = useAuthStore();
+
+    await store.login('anna@example.com', 'secret123');
+
+    expect(store.isAuthed).toBe(true);
+    expect(store.user?.name).toBe('Гость');
+    expect(api.login).not.toHaveBeenCalled();
+    expect(localStorage.getItem('cine.token')).toBeNull();
+  });
+
+  it('forgotPassword возвращает токен — ссылку рисует страница', async () => {
+    const store = useAuthStore();
+
+    const token = await store.forgotPassword('anna@example.com');
+
+    expect(token).toBe('demo-reset-token');
+    expect(api.forgotPassword).not.toHaveBeenCalled();
+  });
+
+  it('logout в демо не зовёт API, но чистит состояние', async () => {
+    const store = useAuthStore();
+    await store.login('anna@example.com', 'secret123');
+
+    await store.logout();
+
+    expect(api.logout).not.toHaveBeenCalled();
+    expect(store.isAuthed).toBe(false);
+  });
+
+  it('смена пароля в демо: 403 движка доезжает до страницы', async () => {
+    const store = useAuthStore();
+    await store.login('anna@example.com', 'secret123');
+
+    await expect(
+      store.changePassword({ currentPassword: 'wrong', newPassword: 'new-secret-9' }),
+    ).rejects.toMatchObject({ status: 403 });
   });
 });

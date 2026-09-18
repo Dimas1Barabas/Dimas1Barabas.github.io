@@ -1,21 +1,23 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { api } from '@/shared/api/client';
-import { useAppStore } from '@/shared/api/app-mode';
+import { useAuthStore } from '@/entities/viewer/model/store';
 
-const appStore = useAppStore();
+const authStore = useAuthStore();
 const email = ref('');
 const submitting = ref(false);
 /** письмо «отправлено»: экран одинаков для любого email — не оракул */
 const sent = ref(false);
+/** демо-режим: «письмо» печатается здесь же — покажем ссылку сброса */
+const demoToken = ref<string | null>(null);
 
 async function submit(): Promise<void> {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await api.forgotPassword(email.value.trim());
+    demoToken.value = await authStore.forgotPassword(email.value.trim());
   } catch {
     // даже ошибку не раскрываем: экран успеха одинаков для любого email
+    demoToken.value = null;
   } finally {
     sent.value = true;
     submitting.value = false;
@@ -27,17 +29,20 @@ async function submit(): Promise<void> {
   <section class="container forgot">
     <h1 class="page-title">Восстановление пароля</h1>
 
-    <p v-if="appStore.mode === 'demo'" class="auth-note">
-      Демо-режим работает без бэкенда — восстановление доступно только при
-      живом API (<code>docker compose up</code>).
-    </p>
-
-    <template v-else-if="sent">
+    <template v-if="sent">
       <p class="auth-note">
         Если аккаунт существует, письмо со ссылкой уже отправлено. Ссылка
         действует 30 минут. На стенде письмо печатается в лог
         notification-service (<code>:18082/notifications</code>).
       </p>
+
+      <p v-if="demoToken" class="auth-note">
+        Демо: «письмо» печатается прямо здесь —
+        <RouterLink class="link" :to="`/reset-password?token=${demoToken}`">
+          открыть ссылку сброса
+        </RouterLink>
+      </p>
+
       <RouterLink class="btn" to="/login">Вернуться ко входу</RouterLink>
     </template>
 

@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { ApiError, api } from '@/shared/api/client';
-import { useAppStore } from '@/shared/api/app-mode';
+import { ApiError } from '@/shared/api/client';
 import { useAuthStore } from '@/entities/viewer/model/store';
 
-const appStore = useAppStore();
 const authStore = useAuthStore();
-const allowed = computed(() => appStore.mode === 'live' && authStore.isAuthed);
+const allowed = computed(() => authStore.isAuthed);
 
 const email = ref(authStore.user?.email ?? '');
 const name = ref(authStore.user?.name ?? '');
@@ -47,7 +45,7 @@ async function saveProfile(): Promise<void> {
       profileNote.value = 'Изменений нет';
       return;
     }
-    authStore.apply(await api.updateProfile(payload));
+    await authStore.updateProfile(payload);
     profileNote.value = 'Сохранено';
   } catch (err) {
     profileError.value =
@@ -68,13 +66,11 @@ async function changePassword(): Promise<void> {
   }
   changingPassword.value = true;
   try {
-    // ответ — свежая пара: смена ревокает все сессии, это устройство остаётся
-    authStore.apply(
-      await api.changePassword({
-        currentPassword: currentPassword.value,
-        newPassword: newPassword.value,
-      }),
-    );
+    // смена ревокает все сессии (в live), это устройство остаётся
+    await authStore.changePassword({
+      currentPassword: currentPassword.value,
+      newPassword: newPassword.value,
+    });
     currentPassword.value = '';
     newPassword.value = '';
     newPasswordRepeat.value = '';
@@ -93,12 +89,7 @@ async function changePassword(): Promise<void> {
   <section class="container profile">
     <h1 class="page-title">Профиль</h1>
 
-    <p v-if="appStore.mode === 'demo'" class="auth-note">
-      Демо-режим работает без бэкенда — профиль доступен только при живом API
-      (<code>docker compose up</code>).
-    </p>
-
-    <template v-else-if="!authStore.isAuthed">
+    <template v-if="!allowed">
       <p class="auth-note">Профиль виден только владельцу сессии.</p>
       <RouterLink class="btn" to="/login">Войти</RouterLink>
     </template>

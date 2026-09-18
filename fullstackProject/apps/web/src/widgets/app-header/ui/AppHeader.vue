@@ -37,8 +37,8 @@ async function logout(): Promise<void> {
         </RouterLink>
       </nav>
 
-      <!-- сессия: только при живом API (в демо авторизации нет) -->
-      <div v-if="appStore.mode === 'live'" class="header-auth">
+      <!-- сессия: в live и в демо (там её симулирует движок) -->
+      <div v-if="appStore.mode !== 'loading'" class="header-auth">
         <template v-if="authStore.isAuthed">
           <RouterLink to="/profile" class="user-chip" :title="authStore.user?.email">
             <span class="user-chip__name">{{ authStore.user?.name }}</span>

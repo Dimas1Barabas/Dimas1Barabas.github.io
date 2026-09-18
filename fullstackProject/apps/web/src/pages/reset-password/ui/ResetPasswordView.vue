@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ApiError, api } from '@/shared/api/client';
-import { useAppStore } from '@/shared/api/app-mode';
+import { ApiError } from '@/shared/api/client';
 import { useAuthStore } from '@/entities/viewer/model/store';
 
 const route = useRoute();
 const router = useRouter();
-const appStore = useAppStore();
 const authStore = useAuthStore();
 
 /** токен одноразовой ссылки: /reset-password?token=… */
@@ -34,9 +32,7 @@ async function submit(): Promise<void> {
   submitting.value = true;
   try {
     // сброс сразу логинит это устройство: ответ — свежая пара
-    authStore.apply(
-      await api.resetPassword({ token: token.value, newPassword: newPassword.value }),
-    );
+    await authStore.resetPassword(token.value, newPassword.value);
     void router.push('/');
   } catch (err) {
     if (err instanceof ApiError && err.status === 400) {
@@ -55,12 +51,7 @@ async function submit(): Promise<void> {
   <section class="container reset">
     <h1 class="page-title">Новый пароль</h1>
 
-    <p v-if="appStore.mode === 'demo'" class="auth-note">
-      Демо-режим работает без бэкенда — сброс доступен только при живом API
-      (<code>docker compose up</code>).
-    </p>
-
-    <p v-else-if="!token" class="auth-error">
+    <p v-if="!token" class="auth-error">
       Ссылка неполная — токен сброса не найден. Запросите новое письмо.
     </p>
 

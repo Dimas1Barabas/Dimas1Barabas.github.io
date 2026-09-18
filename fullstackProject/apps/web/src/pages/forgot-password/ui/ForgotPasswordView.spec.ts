@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '@/shared/api/app-mode';
+import { demoEngine } from '@/shared/api/demo-engine';
 import ForgotPasswordView from '@/pages/forgot-password/ui/ForgotPasswordView.vue';
 
 vi.mock('@/shared/api/client', async (importOriginal) => {
@@ -34,6 +35,7 @@ describe('ForgotPasswordView', () => {
     localStorage.clear();
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    demoEngine.reset();
     useAppStore().mode = 'live';
   });
 
@@ -58,5 +60,22 @@ describe('ForgotPasswordView', () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain('письмо со ссылкой');
+  });
+
+  it('в демо «письмо» печатается на экране — ссылка сброса кликабельна', async () => {
+    const wrapper = await mountView();
+    // режим — в pinia компонента (install делает её активной)
+    useAppStore().mode = 'demo';
+
+    await wrapper.find('input[type="email"]').setValue('anna@example.com');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('открыть ссылку сброса');
+    // memory-history в спеке не даёт hash-href — сверяем адрес ссылки по содержимому
+    const hrefs = wrapper.findAll('a').map((a) => a.attributes('href') ?? '');
+    expect(hrefs.some((h) => h.includes('reset-password?token=demo-reset-token'))).toBe(
+      true,
+    );
   });
 });

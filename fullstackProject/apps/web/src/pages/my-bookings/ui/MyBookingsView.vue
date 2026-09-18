@@ -53,7 +53,7 @@ async function cancel(id: string): Promise<void> {
       <p class="empty__icon">🎟️</p>
       <p>Личный кабинет доступен после входа при живом API.</p>
       <p class="page-sub">
-        В демо-режиме авторизации нет — витрина броней открыта всем.
+        В демо-режиме билеты гостевые — смотрите раздел «Бронирования».
       </p>
       <RouterLink to="/login" class="btn">Войти</RouterLink>
     </div>

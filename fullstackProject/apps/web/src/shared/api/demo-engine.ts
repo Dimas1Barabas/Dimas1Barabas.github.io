@@ -5,10 +5,14 @@ import type {
   BookingStats,
   CreateBookingPayload,
   CreateReviewPayload,
+  LoginResult,
   Movie,
   MovieSession,
+  RegisterPayload,
   Review,
   SeatMap,
+  UpdateProfilePayload,
+  User,
 } from '@/shared/api/types';
 import { ApiError } from '@/shared/api/client';
 import {
@@ -52,7 +56,11 @@ import {
  *  - сид-брони «других зрителей» за последние 2 недели — живое табло
  *    и данные для аналитики; их места держатся в картах сеансов;
  *  - админ-аналитика adminStats(): те же агрегаты, что GET /api/admin/stats,
- *    с «кэшем» на 30 c — миниатюра Redis-кэша боевого эндпоинта.
+ *    с «кэшем» на 30 c — миниатюра Redis-кэша боевого эндпоинта;
+ *  - аккаунт: вход/регистрация/профиль/смена пароля/восстановление —
+ *    симуляция auth-модуля с теми же кодами ошибок (401/403/409/400);
+ *    демо-сессия живёт в памяти до перезагрузки, «письмо» сброса
+ *    печатает сама страница (токен одноразовый, как в API).
  */
 
 const SUCCESS_RATE = 0.9;
@@ -336,6 +344,16 @@ class DemoEngine {
   /** «Redis-кэш» аналитики: значение + время расчёта (TTL как у API) */
   private statsCache: AdminStats | null = null;
   private statsAt = 0;
+  /** демо-аккаунт (регистрация/вход) и открытая сессия — только в памяти */
+  private account: { email: string; name: string; password: string } | null = null;
+  private session: User | null = null;
+
+  /** «access-токен» демо-сессии — не JWT, просто маркер для стора */
+  static readonly SESSION_TOKEN = 'demo-session';
+  /** одноразовый токен «письма» сброса: страница показывает ссылку сама */
+  static readonly RESET_TOKEN = 'demo-reset-token';
+  /** «занятый» email — витрина может показать честный 409 emailTaken */
+  static readonly TAKEN_EMAIL = 'admin@cine.local';
 
   constructor() {
     // стартовые агрегаты рейтинга — из сид-отзывов (как recompute в tx API)
@@ -358,9 +376,142 @@ class DemoEngine {
     this.expiryTimers.clear();
     this.occupied.clear();
     this.reviews = seedReviews();
+    this.account = null;
+    this.session = null;
     DEMO_MOVIES.forEach((m) => this.recomputeMovie(m.id));
     this.firstLoad = true;
     this.applySeeds();
+  }
+
+  // ── Аккаунт: симуляция auth-модуля API ────────────────────────────
+  // Сессия живёт в памяти движка: перезагрузка страницы — как протухшая
+  // сессия, выход. localStorage демо не трогает. Ошибки — те же ApiError
+  // с теми же кодами и текстами, что у живого API.
+
+  /** вход: любой email до первой регистрации; после — сверка пароля (401) */
+  login(email: string, password: string): LoginResult {
+    const normalized = email.trim().toLowerCase();
+    if (
+      this.account &&
+      (this.account.email !== normalized || this.account.password !== password)
+    ) {
+      throw new ApiError(
+        'HTTP 401',
+        401,
+        JSON.stringify({ message: 'Неверный email или пароль' }),
+      );
+    }
+    if (!this.account) {
+      this.account = { email: normalized, name: 'Гость', password };
+    }
+    return this.openSession();
+  }
+
+  /** регистрация: занятый email (свой или демо-админ) — 409 emailTaken */
+  register(payload: RegisterPayload): User {
+    const email = payload.email.trim().toLowerCase();
+    if (this.account?.email === email || email === DemoEngine.TAKEN_EMAIL) {
+      throw new ApiError(
+        'HTTP 409',
+        409,
+        JSON.stringify({
+          message: 'Этот email уже зарегистрирован',
+          code: 'emailTaken',
+        }),
+      );
+    }
+    this.account = {
+      email,
+      name: payload.name.trim(),
+      password: payload.password,
+    };
+    return this.userOf();
+  }
+
+  logout(): void {
+    this.session = null;
+  }
+
+  /** профиль: имя/email; ответ — «свежая пара», как PATCH /users/me */
+  updateProfile(payload: UpdateProfilePayload): LoginResult {
+    this.requireSession();
+    const email = payload.email?.trim().toLowerCase();
+    if (
+      email &&
+      email !== this.account?.email &&
+      email === DemoEngine.TAKEN_EMAIL
+    ) {
+      throw new ApiError(
+        'HTTP 409',
+        409,
+        JSON.stringify({
+          message: 'Этот email уже зарегистрирован',
+          code: 'emailTaken',
+        }),
+      );
+    }
+    if (email) this.account!.email = email;
+    if (payload.name?.trim()) this.account!.name = payload.name.trim();
+    this.session = this.userOf();
+    return this.openSession();
+  }
+
+  /** смена пароля: неверный текущий — 403, как PUT /users/me/password */
+  changePassword(currentPassword: string, newPassword: string): LoginResult {
+    this.requireSession();
+    if (currentPassword !== this.account!.password) {
+      throw new ApiError(
+        'HTTP 403',
+        403,
+        JSON.stringify({ message: 'Неверный текущий пароль' }),
+      );
+    }
+    this.account!.password = newPassword;
+    return this.openSession();
+  }
+
+  /** «письмо» сброса: движок отдаёт токен, страницу-письмо рисует фронт */
+  forgotPassword(_email: string): string {
+    return DemoEngine.RESET_TOKEN;
+  }
+
+  /** сброс по ссылке: одноразовый токен, мёртвый — 400 тем же текстом */
+  resetPassword(token: string, newPassword: string): LoginResult {
+    if (!this.account || token !== DemoEngine.RESET_TOKEN) {
+      throw new ApiError(
+        'HTTP 400',
+        400,
+        JSON.stringify({ message: 'Ссылка недействительна или истекла' }),
+      );
+    }
+    this.account.password = newPassword;
+    return this.openSession();
+  }
+
+  private requireSession(): void {
+    if (!this.session || !this.account) {
+      throw new ApiError(
+        'HTTP 401',
+        401,
+        JSON.stringify({ message: 'Не авторизован' }),
+      );
+    }
+  }
+
+  private openSession(): LoginResult {
+    this.session = this.userOf();
+    return { accessToken: DemoEngine.SESSION_TOKEN, user: { ...this.session } };
+  }
+
+  private userOf(): User {
+    const account = this.account!;
+    return {
+      id: DEMO_GUEST_ID,
+      email: account.email,
+      name: account.name,
+      role: 'user',
+      createdAt: new Date().toISOString(),
+    };
   }
 
   /** сид-брони «других зрителей» + их места в картах сеансов */
