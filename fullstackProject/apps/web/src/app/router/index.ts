@@ -30,6 +30,21 @@ const router = createRouter({
       component: () => import('@/pages/login/ui/AuthView.vue'),
     },
     {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: () => import('@/pages/forgot-password/ui/ForgotPasswordView.vue'),
+    },
+    {
+      path: '/reset-password',
+      name: 'reset-password',
+      component: () => import('@/pages/reset-password/ui/ResetPasswordView.vue'),
+    },
+    {
+      path: '/profile',
+      name: 'profile',
+      component: () => import('@/pages/profile/ui/ProfileView.vue'),
+    },
+    {
       path: '/admin',
       name: 'admin',
       component: () => import('@/pages/admin/ui/AdminView.vue'),

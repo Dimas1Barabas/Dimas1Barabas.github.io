@@ -119,6 +119,24 @@ export interface RegisterPayload {
   name: string;
 }
 
+/** PATCH /users/me — оба поля опциональны, но хотя бы одно нужно */
+export interface UpdateProfilePayload {
+  email?: string;
+  name?: string;
+}
+
+/** PUT /users/me/password — старый обязателен, смена ревокает все сессии */
+export interface ChangePasswordPayload {
+  currentPassword: string;
+  newPassword: string;
+}
+
+/** POST /auth/reset-password — одноразовый токен из письма */
+export interface ResetPasswordPayload {
+  token: string;
+  newPassword: string;
+}
+
 /** новый фильм в афишу — POST /api/movies (только админ), сразу с сеансами */
 export interface CreateMoviePayload {
   title: string;

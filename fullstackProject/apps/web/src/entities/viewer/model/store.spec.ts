@@ -9,7 +9,12 @@ vi.mock('@/shared/api/client', async (importOriginal) => {
     await importOriginal<typeof import('@/shared/api/client')>();
   return {
     ...original,
-    api: { ...original.api, login: vi.fn(), register: vi.fn() },
+    api: {
+      ...original.api,
+      login: vi.fn(),
+      register: vi.fn(),
+      logout: vi.fn(),
+    },
   };
 });
 
@@ -42,15 +47,29 @@ describe('auth store: сессия', () => {
     expect(localStorage.getItem('cine.token')).toBe('jwt-1');
   });
 
-  it('logout стирает сессию', async () => {
+  it('logout гасит сессию на сервере и стирает локально', async () => {
     vi.mocked(api.login).mockResolvedValue({ accessToken: 'jwt-1', user });
+    vi.mocked(api.logout).mockResolvedValue(undefined);
     const store = useAuthStore();
     await store.login('anna@example.com', 'secret123');
 
-    store.logout();
+    await store.logout();
 
+    expect(api.logout).toHaveBeenCalled();
     expect(store.isAuthed).toBe(false);
     expect(store.user).toBeNull();
+    expect(localStorage.getItem('cine.token')).toBeNull();
+  });
+
+  it('logout при недоступном API всё равно выходит локально', async () => {
+    vi.mocked(api.login).mockResolvedValue({ accessToken: 'jwt-1', user });
+    vi.mocked(api.logout).mockRejectedValue(new Error('сеть умерла'));
+    const store = useAuthStore();
+    await store.login('anna@example.com', 'secret123');
+
+    await store.logout();
+
+    expect(store.isAuthed).toBe(false);
     expect(localStorage.getItem('cine.token')).toBeNull();
   });
 

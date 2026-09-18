@@ -134,6 +134,10 @@ async function submit(): Promise<void> {
         </template>
       </p>
 
+      <p v-if="mode === 'login'" class="auth-switch">
+        <RouterLink class="link" to="/forgot-password">Забыли пароль?</RouterLink>
+      </p>
+
       <p class="auth-note">
         После входа бронь оформляется на ваше имя из профиля, а отменять можно
         только свои брони. Админ видит форму добавления сеансов.

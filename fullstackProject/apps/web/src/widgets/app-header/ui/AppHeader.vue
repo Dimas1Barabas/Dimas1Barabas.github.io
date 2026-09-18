@@ -1,11 +1,19 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useThemeStore } from '@/shared/lib/theme.store';
 
+const router = useRouter();
 const appStore = useAppStore();
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
+
+/** выход: гасим сессию на сервере и возвращаемся на витрину */
+async function logout(): Promise<void> {
+  await authStore.logout();
+  void router.push('/');
+}
 </script>
 
 <template>
@@ -32,11 +40,11 @@ const themeStore = useThemeStore();
       <!-- сессия: только при живом API (в демо авторизации нет) -->
       <div v-if="appStore.mode === 'live'" class="header-auth">
         <template v-if="authStore.isAuthed">
-          <RouterLink to="/my" class="user-chip" :title="authStore.user?.email">
+          <RouterLink to="/profile" class="user-chip" :title="authStore.user?.email">
             <span class="user-chip__name">{{ authStore.user?.name }}</span>
             <span v-if="authStore.isAdmin" class="user-chip__role">admin</span>
           </RouterLink>
-          <button class="btn btn--ghost btn--compact" type="button" @click="authStore.logout()">
+          <button class="btn btn--ghost btn--compact" type="button" @click="logout()">
             Выйти
           </button>
         </template>

@@ -2,6 +2,7 @@ import type {
   AdminStatsEnvelope,
   Booking,
   BookingStats,
+  ChangePasswordPayload,
   CreateBookingPayload,
   CreateMoviePayload,
   CreateReviewPayload,
@@ -9,8 +10,10 @@ import type {
   LoginResult,
   Movie,
   RegisterPayload,
+  ResetPasswordPayload,
   Review,
   SeatMap,
+  UpdateProfilePayload,
   User,
 } from '@/shared/api/types';
 
@@ -67,7 +70,12 @@ export function clearAuth(): void {
   localStorage.removeItem(USER_KEY);
 }
 
-async function request<T>(
+/**
+ * Транспорт: fetch + Bearer + refresh-кука. Протухший access (TTL 2 ч)
+ * продлевается сам: 401 → один POST /auth/refresh (refresh-токен живёт
+ * в httpOnly-cookie) → повтор исходного запроса ровно один раз.
+ */
+async function rawRequest<T>(
   path: string,
   init?: RequestInit,
   timeoutMs = 6000,
@@ -82,6 +90,9 @@ async function request<T>(
       ...init,
       headers,
       signal: controller.signal,
+      // refresh-кука ездит с каждым запросом (same-origin по умолчанию и так,
+      // но явное include покрывает и VITE_API_URL на другой хост)
+      credentials: 'include',
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
@@ -92,6 +103,45 @@ async function request<T>(
     return (text ? JSON.parse(text) : undefined) as T;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/** refresh в полёте один на всю пачку параллельных 401 (single-flight) */
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshSession(): Promise<boolean> {
+  refreshInFlight ??= (async () => {
+    try {
+      const pair = await rawRequest<LoginResult>('/auth/refresh', {
+        method: 'POST',
+      });
+      saveAuth(pair.accessToken, pair.user);
+      return true;
+    } catch {
+      // refresh мёртв — сессии больше нет, выходим локально
+      clearAuth();
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = 6000,
+): Promise<T> {
+  try {
+    return await rawRequest<T>(path, init, timeoutMs);
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 401) throw err;
+    // auth-роуты не перехватываем: их 401 — приговор (неверный пароль,
+    // дохлая сессия), а не повод обновляться
+    if (path.startsWith('/auth/')) throw err;
+    if (!(await refreshSession())) throw err;
+    return rawRequest<T>(path, init, timeoutMs); // ровно один повтор
   }
 }
 
@@ -160,4 +210,35 @@ export const api = {
     }),
   /** админ-аналитика: агрегаты дашборда (403 без роли admin) */
   adminStats: () => request<AdminStatsEnvelope>('/admin/stats'),
+
+  /** выход: гасит refresh-сессию на сервере (куку снимет API) */
+  logout: () => request<void>('/auth/logout', { method: 'POST' }),
+  /** профиль: имя/email; ответ — свежая пара (в JWT живут клеймы) */
+  updateProfile: (payload: UpdateProfilePayload) =>
+    request<LoginResult>('/users/me', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  /** смена пароля: ревокает все сессии, это устройство получает новую пару */
+  changePassword: (payload: ChangePasswordPayload) =>
+    request<LoginResult>('/users/me/password', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  /** запрос письма сброса — всегда «отправлено», API не оракул */
+  forgotPassword: (email: string) =>
+    request<void>('/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    }),
+  /** сброс по одноразовой ссылке из письма (TTL 30 минут) */
+  resetPassword: (payload: ResetPasswordPayload) =>
+    request<LoginResult>('/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
 };
