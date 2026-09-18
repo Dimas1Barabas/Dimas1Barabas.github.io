@@ -771,6 +771,99 @@ describe('CineBooking e2e: живой docker-стенд', () => {
       expect(second.source).toBe('cache');
     });
   });
+
+  describe('профиль и смена пароля', () => {
+    /** клеймы access-токена без проверки подписи — нам нужен payload */
+    function decodeJwt(t: string): Record<string, string> {
+      return JSON.parse(
+        Buffer.from(t.split('.')[1], 'base64').toString('utf8'),
+      );
+    }
+
+    it('PATCH /users/me: имя обновляется, access несёт новые клеймы', async () => {
+      if (!available) return;
+      const res = await api<{ accessToken: string; user: { name: string } }>(
+        '/users/me',
+        { method: 'PATCH', body: JSON.stringify({ name: 'E2E Переименованный' }) },
+      );
+      expect(res.user.name).toBe('E2E Переименованный');
+
+      const claims = decodeJwt(res.accessToken);
+      expect(claims.name).toBe('E2E Переименованный');
+
+      // новый access работает на авторизованном маршруте
+      const mine = await fetch(`${BASE}/bookings/my`, {
+        headers: { Authorization: `Bearer ${res.accessToken}` },
+      });
+      expect(mine.status).toBe(200);
+    });
+
+    it('смена пароля: все сессии отозваны, вход — только с новым паролем', async () => {
+      if (!available) return;
+      const email = `e2e-pass-${Date.now()}@test.local`;
+      await api('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ email, password: 'e2e-secret-1', name: 'E2E Пароль' }),
+      });
+      const login = await fetch(`${BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: 'e2e-secret-1' }),
+      });
+      const loginBody = (await login.json()) as { accessToken: string };
+      const cookie = refreshCookieOf(login);
+
+      const res = await fetch(`${BASE}/users/me/password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${loginBody.accessToken}`,
+        },
+        body: JSON.stringify({
+          currentPassword: 'e2e-secret-1',
+          newPassword: 'e2e-secret-2',
+        }),
+      });
+      expect(res.status).toBe(200);
+
+      // прежняя refresh-сессия мертва — смена пароля = выход отовсюду
+      const refresh = await fetch(`${BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { Cookie: cookie },
+      });
+      expect(refresh.status).toBe(401);
+
+      // старый пароль больше не пускает, новый — да
+      const oldLogin = await fetch(`${BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: 'e2e-secret-1' }),
+      });
+      expect(oldLogin.status).toBe(401);
+      const newLogin = await fetch(`${BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: 'e2e-secret-2' }),
+      });
+      expect(newLogin.status).toBe(200);
+    });
+
+    it('смена пароля: неверный текущий — 403', async () => {
+      if (!available) return;
+      const res = await fetch(`${BASE}/users/me/password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          currentPassword: 'точно-не-тот',
+          newPassword: 'whatever-9',
+        }),
+      });
+      expect(res.status).toBe(403);
+    });
+  });
 });
 
 interface E2EMovie {

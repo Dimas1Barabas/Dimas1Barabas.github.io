@@ -23,6 +23,8 @@ import { RedisService } from '../src/redis/redis.service';
 import { ReviewsController } from '../src/reviews/reviews.controller';
 import { ReviewsService } from '../src/reviews/reviews.service';
 import { AuthService } from '../src/auth/auth.service';
+import { TokensService } from '../src/tokens/tokens.service';
+import { UsersController } from '../src/users/users.controller';
 import { UsersService } from '../src/users/users.service';
 import { setupSwagger } from '../src/swagger';
 
@@ -44,6 +46,7 @@ describe('Swagger UI /api/docs (integration)', () => {
         BookingsController,
         SeatsController,
         AuthController,
+        UsersController,
         ReviewsController,
         AdminController,
         HealthController,
@@ -56,6 +59,7 @@ describe('Swagger UI /api/docs (integration)', () => {
         { provide: ReviewsService, useValue: {} },
         { provide: UsersService, useValue: {} },
         { provide: AuthService, useValue: {} },
+        { provide: TokensService, useValue: {} },
         { provide: RedisService, useValue: {} },
         { provide: DataSource, useValue: {} },
         { provide: AmqpConnection, useValue: {} },
@@ -115,6 +119,8 @@ describe('Swagger UI /api/docs (integration)', () => {
       '/api/auth/login',
       '/api/auth/refresh',
       '/api/auth/logout',
+      '/api/users/me',
+      '/api/users/me/password',
       '/api/admin/stats',
       '/api/health',
     ];
@@ -144,6 +150,8 @@ describe('Swagger UI /api/docs (integration)', () => {
         'CreateSessionDto',
         'CreateBookingDto',
         'CreateReviewDto',
+        'UpdateProfileDto',
+        'ChangePasswordDto',
       ]),
     );
 
@@ -231,6 +239,12 @@ describe('Swagger UI /api/docs (integration)', () => {
 
     // logout за bearer — гасит refresh-сессию владельца
     expect(paths['/api/auth/logout'].post.security).toEqual([{ bearer: [] }]);
+
+    // личный кабинет — только владелец по клеймам токена
+    expect(paths['/api/users/me'].patch.security).toEqual([{ bearer: [] }]);
+    expect(paths['/api/users/me/password'].put.security).toEqual([
+      { bearer: [] },
+    ]);
 
     // админские эндпоинты за bearer и документируют 403
     expect(paths['/api/movies'].post.responses).toHaveProperty('403');

@@ -1,5 +1,7 @@
 import {
+  BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -87,6 +89,55 @@ export class UsersService implements OnModuleInit {
     const user = await this.users.findOneBy({ id });
     if (!user) throw new NotFoundException('Пользователь не найден');
     return user;
+  }
+
+  /**
+   * Профиль: имя и/или email. Занятый email ловим предпроверкой (читаемое
+   * сообщение), гонку с параллельной регистрацией добивает констрейнт
+   * uq_users_email (23505 → 409 emailTaken) — как в register.
+   */
+  async updateProfile(
+    userId: string,
+    dto: { email?: string; name?: string },
+  ): Promise<User> {
+    if (!dto.email && !dto.name) {
+      throw new BadRequestException('Нечего обновлять: укажите имя или email');
+    }
+    const user = await this.findById(userId);
+    if (dto.email) {
+      const email = dto.email.toLowerCase();
+      if (email !== user.email && (await this.users.findOneBy({ email }))) {
+        throw this.emailTaken();
+      }
+      user.email = email;
+    }
+    if (dto.name) user.name = dto.name;
+    try {
+      return await this.users.save(user);
+    } catch (err) {
+      if (isUniqueViolation(err)) throw this.emailTaken();
+      throw err;
+    }
+  }
+
+  /** смена пароля: старый обязателен; хэш нового — bcrypt, как при регистрации */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<User> {
+    const user = await this.findById(userId);
+    // 403, а не 401: юзер аутентифицирован, ошибся именно в старом пароле
+    if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
+      throw new ForbiddenException('Неверный текущий пароль');
+    }
+    return this.setPassword(user, newPassword);
+  }
+
+  /** установка пароля без проверки старого — для восстановления по токену */
+  async setPassword(user: User, newPassword: string): Promise<User> {
+    user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    return this.users.save(user);
   }
 
   private emailTaken(): ConflictException {

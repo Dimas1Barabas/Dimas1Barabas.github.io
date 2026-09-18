@@ -1,4 +1,8 @@
-import { ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
@@ -142,6 +146,96 @@ describe('UsersService', () => {
       await service.onModuleInit();
 
       expect(repo.rows).toHaveLength(1);
+    });
+  });
+
+  describe('updateProfile', () => {
+    it('меняет имя и email; email — в нижнем регистре', async () => {
+      const alice = await service.register({
+        email: 'alice@example.com',
+        password: 'secret123',
+        name: 'Алиса',
+      });
+
+      const updated = await service.updateProfile(alice.id, {
+        email: 'Alice@New.COM',
+        name: 'Алиса Новая',
+      });
+
+      expect(updated.email).toBe('alice@new.com');
+      expect(updated.name).toBe('Алиса Новая');
+    });
+
+    it('пустой patch → 400 «нечего обновлять»', async () => {
+      const alice = await service.register({
+        email: 'alice@example.com',
+        password: 'secret123',
+        name: 'Алиса',
+      });
+
+      await expect(service.updateProfile(alice.id, {})).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('занятый email → 409 emailTaken', async () => {
+      const alice = await service.register({
+        email: 'alice@example.com',
+        password: 'secret123',
+        name: 'Алиса',
+      });
+      await service.register({
+        email: 'bob@example.com',
+        password: 'secret123',
+        name: 'Боб',
+      });
+
+      let caught: unknown;
+      try {
+        await service.updateProfile(alice.id, { email: 'BOB@example.com' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(ConflictException);
+      expect((caught as ConflictException).getResponse()).toMatchObject({
+        code: 'emailTaken',
+      });
+    });
+  });
+
+  describe('changePassword', () => {
+    it('неверный текущий пароль → 403', async () => {
+      const alice = await service.register({
+        email: 'alice@example.com',
+        password: 'secret123',
+        name: 'Алиса',
+      });
+
+      await expect(
+        service.changePassword(alice.id, 'wrong-pass', 'new-secret-9'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('верный текущий: хэш заменён — новый сверяется, старый нет', async () => {
+      const alice = await service.register({
+        email: 'alice@example.com',
+        password: 'secret123',
+        name: 'Алиса',
+      });
+
+      const updated = await service.changePassword(
+        alice.id,
+        'secret123',
+        'new-secret-9',
+      );
+
+      expect(await bcrypt.compare('new-secret-9', updated.passwordHash)).toBe(
+        true,
+      );
+      expect(await bcrypt.compare('secret123', updated.passwordHash)).toBe(
+        false,
+      );
     });
   });
 });
