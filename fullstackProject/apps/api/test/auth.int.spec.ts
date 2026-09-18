@@ -11,13 +11,17 @@ import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
+import cookieParser from 'cookie-parser';
 import { randomUUID } from 'node:crypto';
+import { FindOperator } from 'typeorm';
 import { AuthController } from '../src/auth/auth.controller';
 import { AuthUser } from '../src/auth/auth-user';
 import { AuthService } from '../src/auth/auth.service';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
+import { RefreshToken } from '../src/tokens/refresh-token.entity';
+import { TokensService } from '../src/tokens/tokens.service';
 import { UsersService } from '../src/users/users.service';
 import { User } from '../src/users/user.entity';
 
@@ -55,8 +59,70 @@ class FakeUserRepo {
     return user;
   }
 
-  async findOneBy(where: { email?: string }): Promise<User | null> {
-    return this.rows.find((r) => r.email === where.email) ?? null;
+  async findOneBy(where: { email?: string; id?: string }): Promise<User | null> {
+    return (
+      this.rows.find(
+        (r) =>
+          (where.email === undefined || r.email === where.email) &&
+          (where.id === undefined || r.id === where.id),
+      ) ?? null
+    );
+  }
+}
+
+/**
+ * Map-фейк refresh-репозитория с семантикой условного UPDATE
+ * (IsNull/LessThan в критериях) — без этого не покрыть ротацию.
+ */
+class FakeTokenRepo {
+  seq = 0;
+  rows: RefreshToken[] = [];
+
+  create(p: Partial<RefreshToken>): RefreshToken {
+    return {
+      id: `rt-${++this.seq}`,
+      createdAt: new Date(),
+      revokedAt: null,
+      ...p,
+    } as RefreshToken;
+  }
+
+  async save(row: RefreshToken): Promise<RefreshToken> {
+    this.rows.push(row);
+    return row;
+  }
+
+  async findOneBy(where: { tokenHash?: string }): Promise<RefreshToken | null> {
+    return this.rows.find((r) => r.tokenHash === where.tokenHash) ?? null;
+  }
+
+  async update(
+    where: Record<string, unknown>,
+    set: Partial<RefreshToken>,
+  ): Promise<{ affected: number }> {
+    const matched = this.rows.filter((r) => this.matches(r, where));
+    matched.forEach((r) => Object.assign(r, set));
+    return { affected: matched.length };
+  }
+
+  async delete(where: Record<string, unknown>): Promise<{ affected: number }> {
+    const matched = this.rows.filter((r) => this.matches(r, where));
+    this.rows = this.rows.filter((r) => !matched.includes(r));
+    return { affected: matched.length };
+  }
+
+  private matches(row: RefreshToken, where: Record<string, unknown>): boolean {
+    return Object.entries(where).every(([key, cond]) => {
+      const value = row[key as keyof RefreshToken];
+      if (cond instanceof FindOperator) {
+        if (cond.type === 'isNull') return value === null;
+        if (cond.type === 'lessThan') {
+          return (value as Date) < (cond.value as Date);
+        }
+        return false;
+      }
+      return value === cond;
+    });
   }
 }
 
@@ -65,10 +131,18 @@ const TEST_SECRET = 'integration-test-secret';
 describe('POST /api/auth/* (integration)', () => {
   let app: INestApplication;
   let repo: FakeUserRepo;
+  let tokenRepo: FakeTokenRepo;
   let jwt: JwtService;
+
+  /** из Set-Cookie в Cookie-заголовок для следующего запроса */
+  const cookieHeader = (res: request.Response): string =>
+    ((res.headers['set-cookie'] as unknown as string[] | undefined) ?? [])
+      .map((c) => c.split(';')[0])
+      .join('; ');
 
   beforeAll(async () => {
     repo = new FakeUserRepo();
+    tokenRepo = new FakeTokenRepo();
 
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -78,6 +152,7 @@ describe('POST /api/auth/* (integration)', () => {
       providers: [
         UsersService,
         AuthService,
+        TokensService,
         JwtStrategy,
         // как в app.module.ts: всё закрыто JWT по умолчанию, @Public открывает
         { provide: APP_GUARD, useClass: JwtAuthGuard },
@@ -90,11 +165,14 @@ describe('POST /api/auth/* (integration)', () => {
           },
         },
         { provide: getRepositoryToken(User), useValue: repo },
+        { provide: getRepositoryToken(RefreshToken), useValue: tokenRepo },
       ],
     }).compile();
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
+    // контроллеры читают req.cookies — как в main.ts
+    app.use(cookieParser());
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -193,6 +271,128 @@ describe('POST /api/auth/* (integration)', () => {
 
       expect(res.status).toBe(401);
       expect(res.body.message).toBe('Неверный email или пароль');
+    });
+
+    it('Set-Cookie: refresh уезжает в httpOnly-cookie, в теле его нет', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'alice@example.com', password: 'secret123' });
+
+      expect(res.status).toBe(200);
+      const cookies = (
+        (res.headers['set-cookie'] as unknown as string[]) ?? []
+      ).join('\n');
+      expect(cookies).toContain('cine.refresh=');
+      expect(cookies).toContain('HttpOnly');
+      expect(cookies).toContain('Path=/api/auth');
+      expect(res.body).not.toHaveProperty('refreshToken');
+      // в «БД» — хэш куки, не сам токен
+      const rawRefresh = cookieHeader(res).split('=')[1] ?? '';
+      const lastRow = tokenRepo.rows[tokenRepo.rows.length - 1];
+      expect(lastRow.tokenHash).not.toBe(rawRefresh);
+    });
+  });
+
+  describe('POST /api/auth/refresh', () => {
+    it('200: ротация — новая пара и новая кука, access работает на зонде', async () => {
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'alice@example.com', password: 'secret123' });
+      const firstCookie = cookieHeader(login);
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', firstCookie);
+
+      expect(res.status).toBe(200);
+      expect(res.body.user).toMatchObject({ email: 'alice@example.com' });
+      expect(res.body).not.toHaveProperty('refreshToken');
+      // кука ротировалась: новое значение, старая строка помечена revoked_at
+      const newCookie = cookieHeader(res);
+      expect(newCookie).toMatch(/^cine\.refresh=/);
+      expect(newCookie).not.toBe(firstCookie);
+      const oldHash = tokenRepo.rows.find(
+        (r) => r.revokedAt !== null,
+      );
+      expect(oldHash).toBeTruthy();
+
+      const probe = await request(app.getHttpServer())
+        .get('/api/probe')
+        .set('Authorization', `Bearer ${res.body.accessToken}`);
+      expect(probe.status).toBe(200);
+      expect(probe.body.userId).toBe(
+        repo.rows.find((r) => r.email === 'alice@example.com')?.id,
+      );
+    });
+
+    it('401: переиспользование ротированной куки убивает и свежую сессию', async () => {
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'alice@example.com', password: 'secret123' });
+      const first = cookieHeader(login);
+
+      const rotated = await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', first);
+      const second = cookieHeader(rotated);
+
+      const reuse = await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', first);
+      expect(reuse.status).toBe(401);
+
+      // reuse — улика компрометации: вторая, ни в чём не виноватая кука, тоже мертва
+      const afterReuse = await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', second);
+      expect(afterReuse.status).toBe(401);
+    });
+
+    it('401: без куки сессии нет', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/refresh');
+
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('POST /api/auth/logout', () => {
+    it('204: гасит сессию — refresh после logout отклоняется', async () => {
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'alice@example.com', password: 'secret123' });
+      const cookie = cookieHeader(login);
+      const alice = repo.rows.find((r) => r.email === 'alice@example.com');
+      const token = await jwt.signAsync({
+        sub: alice?.id,
+        email: alice?.email,
+        name: alice?.name,
+        role: alice?.role,
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/logout')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Cookie', cookie);
+
+      expect(res.status).toBe(204);
+      // кука снята
+      const cleared = (
+        (res.headers['set-cookie'] as unknown as string[]) ?? []
+      ).join('\n');
+      expect(cleared).toContain('cine.refresh=;');
+
+      const refresh = await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', cookie);
+      expect(refresh.status).toBe(401);
+    });
+
+    it('401: logout без access-токена закрыт глобальным гвардом', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/logout');
+
+      expect(res.status).toBe(401);
     });
   });
 

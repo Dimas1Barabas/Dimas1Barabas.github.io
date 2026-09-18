@@ -113,6 +113,8 @@ describe('Swagger UI /api/docs (integration)', () => {
       '/api/sessions/{sessionId}/seats',
       '/api/auth/register',
       '/api/auth/login',
+      '/api/auth/refresh',
+      '/api/auth/logout',
       '/api/admin/stats',
       '/api/health',
     ];
@@ -224,6 +226,11 @@ describe('Swagger UI /api/docs (integration)', () => {
     expect(paths['/api/movies'].get.security).toBeUndefined();
     expect(paths['/api/bookings/stream'].get.security).toBeUndefined();
     expect(paths['/api/auth/login'].post.security).toBeUndefined();
+    // refresh — @Public: протухший access сюда и не доехал бы
+    expect(paths['/api/auth/refresh'].post.security).toBeUndefined();
+
+    // logout за bearer — гасит refresh-сессию владельца
+    expect(paths['/api/auth/logout'].post.security).toEqual([{ bearer: [] }]);
 
     // админские эндпоинты за bearer и документируют 403
     expect(paths['/api/movies'].post.responses).toHaveProperty('403');
