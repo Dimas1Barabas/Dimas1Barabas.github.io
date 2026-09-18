@@ -30,7 +30,10 @@ async function logout(): Promise<void> {
         <RouterLink v-if="appStore.mode === 'live' && authStore.isAuthed" to="/my">
           Мои билеты
         </RouterLink>
-        <RouterLink v-if="authStore.isAdmin" to="/admin">Новый сеанс</RouterLink>
+        <!-- админка: админам в live и всем в демо (промокоды — витрина Pages) -->
+        <RouterLink v-if="authStore.isAdmin || appStore.mode === 'demo'" to="/admin">
+          Админка
+        </RouterLink>
         <!-- аналитика: админам в live и всем в демо (витрина Pages) -->
         <RouterLink v-if="authStore.isAdmin || appStore.mode === 'demo'" to="/admin/stats">
           Аналитика

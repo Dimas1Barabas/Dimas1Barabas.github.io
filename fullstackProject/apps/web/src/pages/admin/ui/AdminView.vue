@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { ApiError } from '@/shared/api/client';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
+import { usePromosStore } from '@/entities/promo/model/promos.store';
+import type { Promo } from '@/shared/api/types';
+import type { PromoKind } from '@/shared/lib/promo';
 
 const appStore = useAppStore();
 const authStore = useAuthStore();
 const moviesStore = useMoviesStore();
+const promosStore = usePromosStore();
 
 const title = ref('');
 const description = ref('');
@@ -28,6 +32,80 @@ const success = ref<string | null>(null);
 const allowed = computed(
   () => appStore.mode === 'live' && authStore.isAdmin,
 );
+
+// ── Промокоды ─────────────────────────────────────────────────────
+// В демо раздел открыт всем (витрина Pages), в live — только админу:
+// как аналитика. Списание активации — в момент оплаты, см. промо-блок
+// на экране /pay/:bookingId.
+
+/** промокоды: как аналитика — админам в live и всем в демо */
+const promosAllowed = computed(
+  () => appStore.mode === 'demo' || (appStore.mode === 'live' && authStore.isAdmin),
+);
+
+const promoCode = ref('');
+const promoKind = ref<PromoKind>('percent');
+const promoValue = ref(10);
+const promoMaxActivations = ref(100);
+const promoSubmitting = ref(false);
+const promoError = ref<string | null>(null);
+const promoSuccess = ref<string | null>(null);
+
+/** datetime-local любит локальное «YYYY-MM-DDTHH:mm» — дефолт +30 дней */
+function defaultExpiry(): string {
+  const d = new Date(Date.now() + 30 * 86_400_000);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+const promoExpiresAt = ref(defaultExpiry());
+
+/** режим мог прийти после монта (демо-детект по /health) — следим */
+watch(
+  promosAllowed,
+  (ok) => {
+    if (ok) void promosStore.refresh();
+  },
+  { immediate: true },
+);
+
+function promoExpired(p: Promo): boolean {
+  return Date.parse(p.expiresAt) <= Date.now();
+}
+
+function promoExpiryLabel(p: Promo): string {
+  return new Date(p.expiresAt).toLocaleDateString('ru-RU');
+}
+
+async function submitPromo(): Promise<void> {
+  if (promoSubmitting.value) return;
+  promoSubmitting.value = true;
+  promoError.value = null;
+  promoSuccess.value = null;
+  try {
+    const promo = await promosStore.create({
+      code: promoCode.value,
+      kind: promoKind.value,
+      value: promoValue.value,
+      maxActivations: promoMaxActivations.value,
+      // datetime-local даёт локальное время без зоны — договоримся, что это МСК
+      expiresAt: new Date(`${promoExpiresAt.value}:00+03:00`).toISOString(),
+    });
+    promoSuccess.value = `Промокод ${promo.code} создан`;
+    promoCode.value = '';
+  } catch (err) {
+    if (err instanceof ApiError) {
+      try {
+        const body = JSON.parse(err.body) as { message?: string };
+        if (body.message) promoError.value = String(body.message);
+      } catch {
+        /* ниже общий текст */
+      }
+    }
+    promoError.value ??= err instanceof Error ? err.message : 'Не удалось создать промокод';
+  } finally {
+    promoSubmitting.value = false;
+  }
+}
 
 function addSession(): void {
   sessions.value.push({ hall: HALLS[0]!, startsAt: '' });
@@ -82,7 +160,116 @@ async function submit(): Promise<void> {
 
 <template>
   <section class="container admin">
-    <h1 class="page-title">Новый фильм</h1>
+    <h1 class="page-title">Админка</h1>
+
+    <!-- промокоды: как аналитика — в демо открыты всем, в live админу -->
+    <section v-if="promosAllowed" class="admin-promos">
+      <div class="admin-promos__head">
+        <h2 class="admin-promos__title">Промокоды</h2>
+        <span v-if="appStore.mode === 'demo'" class="admin-promos__badge">
+          демо-данные
+        </span>
+      </div>
+
+      <form class="admin-form promo-form" @submit.prevent="submitPromo">
+        <div class="admin-row">
+          <label class="field">
+            <span class="field__label">Код</span>
+            <input
+              v-model="promoCode"
+              class="field__input"
+              type="text"
+              required
+              maxlength="32"
+              placeholder="CINE10"
+            />
+          </label>
+          <label class="field">
+            <span class="field__label">Вид скидки</span>
+            <select v-model="promoKind" class="field__input" required>
+              <option value="percent">Процент</option>
+              <option value="fixed">Фикс, ₽</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field__label">
+              {{ promoKind === 'percent' ? 'Размер, %' : 'Размер, ₽' }}
+            </span>
+            <input
+              v-model.number="promoValue"
+              class="field__input"
+              type="number"
+              required
+              min="1"
+              :max="promoKind === 'percent' ? 99 : 1000000"
+            />
+          </label>
+        </div>
+
+        <div class="admin-row">
+          <label class="field">
+            <span class="field__label">Лимит активаций</span>
+            <input
+              v-model.number="promoMaxActivations"
+              class="field__input"
+              type="number"
+              required
+              min="1"
+              max="1000000"
+            />
+          </label>
+          <label class="field">
+            <span class="field__label">Действует до</span>
+            <input
+              v-model="promoExpiresAt"
+              class="field__input"
+              type="datetime-local"
+              required
+            />
+          </label>
+        </div>
+
+        <p v-if="promoError" class="admin-error">{{ promoError }}</p>
+        <p v-if="promoSuccess" class="admin-success">{{ promoSuccess }}</p>
+
+        <button class="btn" type="submit" :disabled="promoSubmitting">
+          {{ promoSubmitting ? 'Создаём…' : 'Создать промокод' }}
+        </button>
+      </form>
+
+      <p v-if="promosStore.loading" class="admin-note">Загружаем промокоды…</p>
+      <p v-else-if="promosStore.error" class="admin-error">
+        {{ promosStore.error }}
+      </p>
+      <ul v-else-if="promosStore.promos.length" class="admin-promo-list">
+        <li v-for="p in promosStore.promos" :key="p.id" class="admin-promo">
+          <span class="admin-promo__code">{{ p.code }}</span>
+          <span class="admin-promo__value">
+            {{ p.kind === 'percent' ? `−${p.value}%` : `−${p.value} ₽` }}
+          </span>
+          <span
+            class="admin-promo__used"
+            :class="{ 'admin-promo__used--done': p.usedCount >= p.maxActivations }"
+          >
+            {{ p.usedCount }}/{{ p.maxActivations }}
+          </span>
+          <span
+            class="admin-promo__expiry"
+            :class="{ 'admin-promo__expiry--old': promoExpired(p) }"
+          >
+            {{ promoExpired(p) ? 'истёк' : `до ${promoExpiryLabel(p)}` }}
+          </span>
+        </li>
+      </ul>
+      <p v-else class="admin-note">Промокодов пока нет — создайте первый.</p>
+
+      <p class="admin-note">
+        Активация списывается атомарно в момент оплаты: гонку за последний
+        код решает БД (POST /bookings/:id/pay с полем promoCode).
+      </p>
+    </section>
+
+    <h2 class="admin-movies-title">Новый фильм</h2>
 
     <p v-if="!allowed" class="admin-note">
       Раздел для администратора: войдите под админом при живом API
@@ -229,6 +416,79 @@ async function submit(): Promise<void> {
 <style scoped>
 .admin {
   max-width: 560px;
+}
+
+.admin-promos {
+  margin-top: 16px;
+}
+
+.admin-promos__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-promos__title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.admin-promos__badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.admin-promo-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.admin-promo {
+  display: grid;
+  grid-template-columns: minmax(90px, 1.2fr) auto auto auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.admin-promo__code {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.admin-promo__value {
+  color: var(--cyan);
+}
+
+.admin-promo__used {
+  color: var(--muted);
+}
+
+.admin-promo__used--done {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.admin-promo__expiry {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.admin-promo__expiry--old {
+  color: #ff8080;
+}
+
+.admin-movies-title {
+  margin: 28px 0 0;
+  font-size: 1.15rem;
 }
 
 .admin-form {
