@@ -55,6 +55,8 @@ function bookingFixture(): Booking {
     userId: 'user-1',
     seats: ['5-7', '5-8', '5-9'],
     totalRub: 1200,
+    promoCode: null,
+    discountRub: null,
     status: 'PENDING',
     expiresAt: new Date('2026-09-03T12:15:00Z'),
     message: null,

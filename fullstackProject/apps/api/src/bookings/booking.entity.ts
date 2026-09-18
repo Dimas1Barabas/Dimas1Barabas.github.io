@@ -58,6 +58,14 @@ export class Booking {
   @Column({ name: 'total_rub', type: 'int' })
   totalRub: number;
 
+  /** промокод, применённый при оплате (активация списывается в pay) */
+  @Column({ name: 'promo_code', length: 32, nullable: true })
+  promoCode: string | null;
+
+  /** скидка применённого промокода, ₽ (null — бронь без промокода) */
+  @Column({ name: 'discount_rub', type: 'int', nullable: true })
+  discountRub: number | null;
+
   /** lifecycle: ждёт оплаты → проводится → вердикт; не оплачена вовремя — истекла */
   @Column({ length: 24, default: 'PENDING_PAYMENT' })
   status: BookingStatus;
@@ -119,8 +127,24 @@ export class BookingDto {
   @ApiProperty({ example: ['5-7', '5-8'], description: 'коды «ряд-место»' })
   seats!: string[];
 
-  @ApiProperty({ example: 1000, description: 'итого, ₽' })
+  @ApiProperty({ example: 1000, description: 'итого, ₽ (после скидки, если есть)' })
   totalRub!: number;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'CINE10',
+    description: 'промокод, применённый при оплате',
+  })
+  promoCode!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    example: 100,
+    description: 'скидка по промокоду, ₽',
+  })
+  discountRub!: number | null;
 
   /** union-тип в reflect-metadata неразличим — перечисляем явно */
   @ApiProperty({
@@ -170,6 +194,8 @@ export function toBookingDto(
     userId: booking.userId ?? null,
     seats: booking.seats,
     totalRub: booking.totalRub,
+    promoCode: booking.promoCode ?? null,
+    discountRub: booking.discountRub ?? null,
     status: booking.status,
     expiresAt: booking.expiresAt?.toISOString() ?? null,
     message: booking.message,
