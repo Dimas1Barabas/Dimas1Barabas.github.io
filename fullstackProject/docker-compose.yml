@@ -53,6 +53,8 @@ services:
       # Меняешь значение — пересоздай очередь: docker compose down
       # (у rabbitmq нет volume, но брокер между рестартами помнит args)
       PAYMENT_TIMEOUT_MS: '120000'
+      # база одноразовой ссылки сброса пароля в «письме» (фронт стенда)
+      RESET_LINK_BASE: http://localhost:18080/#/reset-password
     ports:
       - '13000:3000'
     depends_on:
