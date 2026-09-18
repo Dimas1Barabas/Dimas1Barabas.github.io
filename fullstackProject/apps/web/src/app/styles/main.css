@@ -1209,6 +1209,44 @@ main.container {
   justify-content: center;
 }
 
+/* промокод на экране оплаты: превью пересчитывает сумму */
+.pay-promo {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.pay-promo__input {
+  flex: 1;
+  min-width: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.promo-applied {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.promo-applied__code {
+  font-weight: 600;
+}
+
+.promo-applied__base {
+  color: var(--muted);
+}
+
+.promo-applied__discount {
+  color: var(--cyan);
+  font-weight: 600;
+}
+
 /* ---------- статистика ---------- */
 
 .stat-row {

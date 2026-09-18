@@ -2,16 +2,19 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import StatusBadge from '@/entities/booking/ui/StatusBadge.vue';
-import { ApiError } from '@/shared/api/client';
+import { api, ApiError } from '@/shared/api/client';
+import { demoEngine } from '@/shared/api/demo-engine';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useBookingsStore } from '@/entities/booking/model/store';
+import type { PromoPreview } from '@/shared/api/types';
 import {
   formatCountdown,
   formatPrice,
   formatSeats,
   formatSession,
 } from '@/shared/lib/format';
+import { PROMO_CODE_RE } from '@/shared/lib/promo';
 
 /**
  * Экран оплаты брони: места уже зарезервированы за клиентом на окно оплаты
@@ -36,6 +39,12 @@ const booking = computed(
 const loaded = ref(false);
 const paying = ref(false);
 const error = ref<string | null>(null);
+
+/** промокод: превью без списания — активация уйдёт в момент оплаты */
+const promoInput = ref('');
+const applying = ref(false);
+const applied = ref<PromoPreview | null>(null);
+const promoError = ref<string | null>(null);
 
 const now = ref(Date.now());
 let tick: ReturnType<typeof setInterval> | null = null;
@@ -66,8 +75,60 @@ const overdue = computed(
   () => booking.value?.status === 'PENDING_PAYMENT' && remainingMs.value <= 0,
 );
 
+/** итог с учётом применённого промокода */
+const totalDue = computed(
+  () => (booking.value?.totalRub ?? 0) - (applied.value?.discountRub ?? 0),
+);
+
+const PROMO_HINTS: Record<string, string> = {
+  promoNotFound: 'Промокод не найден',
+  promoExpired: 'Срок действия промокода истёк',
+  promoExhausted: 'Лимит активаций промокода исчерпан',
+};
+
+/** текст-подсказка из кода ошибки API (null — это не про промокод) */
+function promoHintOf(err: ApiError): string | null {
+  try {
+    const code = (JSON.parse(err.body) as { code?: string }).code;
+    return code && PROMO_HINTS[code] ? PROMO_HINTS[code] : null;
+  } catch {
+    return null;
+  }
+}
+
 function isCancelling(id: string): boolean {
   return store.cancelling.includes(id);
+}
+
+async function applyPromo(): Promise<void> {
+  const code = promoInput.value.trim();
+  if (!booking.value || !code || applying.value) return;
+  if (!PROMO_CODE_RE.test(code)) {
+    promoError.value = 'Код: 3–32 символа — латиница, цифры и дефис';
+    return;
+  }
+  applying.value = true;
+  promoError.value = null;
+  try {
+    applied.value =
+      app.mode === 'demo'
+        ? demoEngine.validatePromo({ code, bookingId: booking.value.id })
+        : await api.validatePromo({ code, bookingId: booking.value.id });
+    promoInput.value = '';
+  } catch (err) {
+    if (err instanceof ApiError) {
+      promoError.value = promoHintOf(err) ?? 'Промокод не подошёл';
+    } else {
+      promoError.value = 'Не удалось проверить промокод';
+    }
+  } finally {
+    applying.value = false;
+  }
+}
+
+function removePromo(): void {
+  applied.value = null;
+  promoError.value = null;
 }
 
 async function pay(): Promise<void> {
@@ -75,9 +136,17 @@ async function pay(): Promise<void> {
   paying.value = true;
   error.value = null;
   try {
-    await store.pay(booking.value.id);
+    await store.pay(booking.value.id, applied.value?.code);
   } catch (err) {
     if (err instanceof ApiError) {
+      // код могли исчерпать между превью и оплатой: транзакция откатилась,
+      // бронь всё ещё payable — снимаем промокод и подсказываем
+      const hint = promoHintOf(err);
+      if (hint) {
+        applied.value = null;
+        promoError.value = hint;
+        return;
+      }
       // 409 «уже PENDING» — платёж ушёл с первого клика, ждём вердикт по SSE
       try {
         const body = JSON.parse(err.body) as { status?: string };
@@ -150,8 +219,41 @@ async function cancel(): Promise<void> {
 
       <div class="pay-card__summary">
         <span>К оплате</span>
-        <strong class="pay-card__total">{{ formatPrice(booking.totalRub) }}</strong>
+        <strong class="pay-card__total">{{ formatPrice(totalDue) }}</strong>
       </div>
+
+      <!-- промокод: превью пересчитывает сумму, активация — в момент оплаты -->
+      <div v-if="!applied" class="pay-promo">
+        <input
+          v-model="promoInput"
+          class="field__input pay-promo__input"
+          placeholder="Промокод, например CINE10"
+          :disabled="applying || paying"
+          @keydown.enter.prevent="applyPromo"
+        />
+        <button
+          class="btn btn--ghost"
+          :disabled="applying || paying || !promoInput.trim()"
+          @click="applyPromo"
+        >
+          {{ applying ? 'Проверяем…' : 'Применить' }}
+        </button>
+      </div>
+      <div v-else class="promo-applied">
+        <span class="promo-applied__code">🎟️ {{ applied.code }}</span>
+        <s class="promo-applied__base">{{ formatPrice(booking.totalRub) }}</s>
+        <span class="promo-applied__discount">
+          −{{ formatPrice(applied.discountRub) }}
+        </span>
+        <button
+          class="btn btn--ghost btn--sm"
+          :disabled="paying"
+          @click="removePromo"
+        >
+          Убрать
+        </button>
+      </div>
+      <p v-if="promoError" class="hint hint--error">{{ promoError }}</p>
 
       <p class="pay-timer" :class="{ 'pay-timer--overdue': overdue }">
         <template v-if="overdue">время вышло — проверяем статус…</template>
@@ -170,7 +272,7 @@ async function cancel(): Promise<void> {
           @click="pay"
         >
           <span v-if="paying" class="spinner"></span>
-          {{ paying ? 'Отправляем…' : `Оплатить ${formatPrice(booking.totalRub)}` }}
+          {{ paying ? 'Отправляем…' : `Оплатить ${formatPrice(totalDue)}` }}
         </button>
         <button
           class="btn btn--danger"
