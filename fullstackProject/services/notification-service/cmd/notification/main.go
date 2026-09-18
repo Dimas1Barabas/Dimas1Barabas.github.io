@@ -19,7 +19,9 @@ import (
 	"notification-service/internal/adapter/in/httpapi"
 	"notification-service/internal/adapter/out/console"
 	"notification-service/internal/adapter/out/memory"
+	"notification-service/internal/adapter/out/postgres"
 	"notification-service/internal/config"
+	"notification-service/internal/domain"
 	"notification-service/internal/service"
 )
 
@@ -28,8 +30,25 @@ func main() {
 	cfg := config.Load()
 
 	// wiring: за каждым портом домена стоит конкретный адаптер;
-	// домен и service о них не знают
-	repo := memory.NewRepository(cfg.BufferSize)
+	// домен и service о них не знают. Хранилище выбирает composition
+	// root по STORAGE: память (дефолт — стенд без БД не падает) или
+	// Postgres со своей базой, которую адаптер создаёт сам.
+	var repo domain.Repository
+	switch cfg.Storage {
+	case "memory":
+		repo = memory.NewRepository(cfg.BufferSize)
+	case "postgres":
+		// fail fast: без живого PG сервис не стартует, молчаливый
+		// fallback на память скрыл бы потерю истории
+		pgRepo, err := postgres.NewRepository(context.Background(), cfg.DatabaseURL)
+		if err != nil {
+			log.Fatalf("STORAGE=postgres: %v", err)
+		}
+		defer pgRepo.Close()
+		repo = pgRepo
+	default:
+		log.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
+	}
 	metrics := memory.NewMetrics()
 	notifier := service.NewNotifier(console.NewSender(), repo, metrics)
 	consumer := amqp.New(cfg.AMQPURL, notifier, cfg.MaxAttempts, cfg.RetryTTLMs)
@@ -39,7 +58,7 @@ func main() {
 
 	httpSrv := httpapi.Start(cfg.HTTPAddr, notifier)
 
-	log.Printf("notification-service запущен (RabbitMQ: %s)", cfg.AMQPURL)
+	log.Printf("notification-service запущен (RabbitMQ: %s, storage: %s)", cfg.AMQPURL, cfg.Storage)
 
 	// Реконнект с бэкоффом: брокер может подниматься дольше нас.
 	for attempt := 1; ; attempt++ {
