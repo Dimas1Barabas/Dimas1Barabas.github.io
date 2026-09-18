@@ -21,6 +21,7 @@ func TestNewFromOutcome(t *testing.T) {
 		{"CANCELLED", KindRefunded, "Возврат зачислен"},
 		{"REFUND_FAILED", KindRefundFailed, "Возврат не удался"},
 		{"EXPIRED", KindExpired, "Время оплаты истекло"},
+		{"PASSWORD_RESET", KindPasswordReset, "Сброс пароля"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.verdict, func(t *testing.T) {

@@ -47,6 +47,27 @@ func TestToOutcome(t *testing.T) {
 		}
 	})
 
+	t.Run("password.reset — адресат-email едет в BookingID", func(t *testing.T) {
+		o, err := toOutcome(delivery(keyPasswordReset,
+			`{"email":"anna@example.com","message":"http://localhost:18080/#/reset-password?token=abc"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.Verdict != "PASSWORD_RESET" || o.BookingID != "anna@example.com" {
+			t.Fatalf("outcome = %+v", o)
+		}
+		const wantLink = "http://localhost:18080/#/reset-password?token=abc"
+		if o.Message != wantLink {
+			t.Fatalf("message = %q, want ссылка сброса %q", o.Message, wantLink)
+		}
+	})
+
+	t.Run("password.reset без email — ядовитое", func(t *testing.T) {
+		if _, err := toOutcome(delivery(keyPasswordReset, `{"message":"ссылка без адресата"}`)); err == nil {
+			t.Fatal("ожидали ошибку: письмо без адресата")
+		}
+	})
+
 	t.Run("битый JSON", func(t *testing.T) {
 		if _, err := toOutcome(delivery(keyProcessed, `{не json`)); err == nil {
 			t.Fatal("ожидали ошибку разбора")

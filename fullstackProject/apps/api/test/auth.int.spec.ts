@@ -5,6 +5,7 @@ import {
   Req,
   ValidationPipe,
 } from '@nestjs/common';
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { APP_GUARD } from '@nestjs/core';
@@ -22,6 +23,7 @@ import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { RefreshToken } from '../src/tokens/refresh-token.entity';
 import { TokensService } from '../src/tokens/tokens.service';
+import { PasswordReset } from '../src/auth/password-reset.entity';
 import { UsersService } from '../src/users/users.service';
 import { User } from '../src/users/user.entity';
 
@@ -126,12 +128,67 @@ class FakeTokenRepo {
   }
 }
 
+/** Map-фейк таблицы password_resets (условный UPDATE по used_at IS NULL) */
+class FakeResetRepo {
+  seq = 0;
+  rows: PasswordReset[] = [];
+
+  create(p: Partial<PasswordReset>): PasswordReset {
+    return {
+      id: `pr-${++this.seq}`,
+      createdAt: new Date(),
+      usedAt: null,
+      ...p,
+    } as PasswordReset;
+  }
+
+  async save(row: PasswordReset): Promise<PasswordReset> {
+    this.rows.push(row);
+    return row;
+  }
+
+  async findOneBy(where: { tokenHash?: string }): Promise<PasswordReset | null> {
+    return this.rows.find((r) => r.tokenHash === where.tokenHash) ?? null;
+  }
+
+  async update(
+    where: Record<string, unknown>,
+    set: Partial<PasswordReset>,
+  ): Promise<{ affected: number }> {
+    const matched = this.rows.filter((r) => this.matches(r, where));
+    matched.forEach((r) => Object.assign(r, set));
+    return { affected: matched.length };
+  }
+
+  async delete(where: Record<string, unknown>): Promise<{ affected: number }> {
+    const matched = this.rows.filter((r) => this.matches(r, where));
+    this.rows = this.rows.filter((r) => !matched.includes(r));
+    return { affected: matched.length };
+  }
+
+  private matches(row: PasswordReset, where: Record<string, unknown>): boolean {
+    return Object.entries(where).every(([key, cond]) => {
+      const value = row[key as keyof PasswordReset];
+      if (cond instanceof FindOperator) {
+        if (cond.type === 'isNull') return value === null;
+        if (cond.type === 'lessThan') {
+          return (value as Date) < (cond.value as Date);
+        }
+        return false;
+      }
+      return value === cond;
+    });
+  }
+}
+
 const TEST_SECRET = 'integration-test-secret';
 
 describe('POST /api/auth/* (integration)', () => {
   let app: INestApplication;
   let repo: FakeUserRepo;
   let tokenRepo: FakeTokenRepo;
+  let resetRepo: FakeResetRepo;
+  let rabbit: { publish: jest.Mock };
   let jwt: JwtService;
 
   /** из Set-Cookie в Cookie-заголовок для следующего запроса */
@@ -140,9 +197,19 @@ describe('POST /api/auth/* (integration)', () => {
       .map((c) => c.split(';')[0])
       .join('; ');
 
+  /** «письма», ушедшие указанному адресату (тихо фильтруем моки прошлых тестов) */
+  const publishedFor = (
+    email: string,
+  ): { email: string; message: string }[] =>
+    rabbit.publish.mock.calls
+      .map(([, , payload]: [string, string, { email: string; message: string }]) => payload)
+      .filter((p) => p.email === email);
+
   beforeAll(async () => {
     repo = new FakeUserRepo();
     tokenRepo = new FakeTokenRepo();
+    resetRepo = new FakeResetRepo();
+    rabbit = { publish: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -166,6 +233,8 @@ describe('POST /api/auth/* (integration)', () => {
         },
         { provide: getRepositoryToken(User), useValue: repo },
         { provide: getRepositoryToken(RefreshToken), useValue: tokenRepo },
+        { provide: getRepositoryToken(PasswordReset), useValue: resetRepo },
+        { provide: AmqpConnection, useValue: rabbit },
       ],
     }).compile();
 
@@ -393,6 +462,101 @@ describe('POST /api/auth/* (integration)', () => {
         .post('/api/auth/logout');
 
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe('POST /api/auth/forgot-password', () => {
+    it('200 для существующего email: «письмо» со ссылкой опубликовано в обмен', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/forgot-password')
+        .send({ email: 'alice@example.com' });
+
+      expect(res.status).toBe(200);
+
+      const letters = publishedFor('alice@example.com');
+      expect(letters).toHaveLength(1);
+      expect(letters[0].message).toMatch(/reset-password\?token=/);
+
+      // в «БД» — хэш токена из ссылки, не сам токен
+      const token = letters[0].message.split('token=')[1];
+      const row = resetRepo.rows.find((r) => r.usedAt === null);
+      expect(row).toBeTruthy();
+      expect(row?.tokenHash).not.toBe(token);
+    });
+
+    it('200 для выдуманного email: ответ неотличим, ничего не опубликовано', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/forgot-password')
+        .send({ email: 'ghost@example.com' });
+
+      expect(res.status).toBe(200);
+      expect(publishedFor('ghost@example.com')).toHaveLength(0);
+    });
+
+    it('400: кривой email', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/forgot-password')
+        .send({ email: 'не-почта' });
+
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('POST /api/auth/reset-password', () => {
+    /** регистрирует пользователя и возвращает токен из его «письма» */
+    async function resetTokenFor(email: string): Promise<string> {
+      await request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send({ email, password: 'secret123', name: 'Сбрасываем Пароль' });
+      await request(app.getHttpServer())
+        .post('/api/auth/forgot-password')
+        .send({ email });
+      const [letter] = publishedFor(email);
+      return letter.message.split('token=')[1];
+    }
+
+    it('200: пароль сменён, это устройство сразу залогинено (пара + cookie)', async () => {
+      const token = await resetTokenFor('reset-me@example.com');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/reset-password')
+        .send({ token, newPassword: 'reset-new-9' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.user).toMatchObject({ email: 'reset-me@example.com' });
+      expect(res.body).not.toHaveProperty('refreshToken');
+      expect(
+        ((res.headers['set-cookie'] as unknown as string[]) ?? [])
+          .join('\n'),
+      ).toContain('cine.refresh=');
+
+      // пароль реально новый
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'reset-me@example.com', password: 'reset-new-9' });
+      expect(login.status).toBe(200);
+
+      // ссылка одноразовая
+      const usedRow = resetRepo.rows.at(-1);
+      expect(usedRow?.usedAt).not.toBeNull();
+    });
+
+    it('400: мусорный токен', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/reset-password')
+        .send({ token: 'нет-такой-ссылки-123456', newPassword: 'whatever-9' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toBe('Ссылка недействительна или истекла');
+    });
+
+    it('400: короткий новый пароль', async () => {
+      const token = await resetTokenFor('short-pass@example.com');
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/reset-password')
+        .send({ token, newPassword: '123' });
+
+      expect(res.status).toBe(400);
     });
   });
 

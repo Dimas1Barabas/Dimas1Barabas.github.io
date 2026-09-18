@@ -13,11 +13,12 @@ import (
 type Kind string
 
 const (
-	KindConfirmed    Kind = "booking_confirmed"
-	KindFailed       Kind = "booking_failed"
-	KindRefunded     Kind = "booking_refunded"
-	KindRefundFailed Kind = "refund_failed"
-	KindExpired      Kind = "booking_expired"
+	KindConfirmed     Kind = "booking_confirmed"
+	KindFailed        Kind = "booking_failed"
+	KindRefunded      Kind = "booking_refunded"
+	KindRefundFailed  Kind = "refund_failed"
+	KindExpired       Kind = "booking_expired"
+	KindPasswordReset Kind = "password_reset"
 )
 
 // DeliveryStatus — судьба отправки.
@@ -70,6 +71,8 @@ func NewFromOutcome(o Outcome, now time.Time) (Notification, error) {
 		kind, title = KindRefundFailed, "Возврат не удался"
 	case "EXPIRED":
 		kind, title = KindExpired, "Время оплаты истекло"
+	case "PASSWORD_RESET":
+		kind, title = KindPasswordReset, "Сброс пароля"
 	default:
 		return Notification{}, fmt.Errorf("%w: %q", ErrUnknownVerdict, o.Verdict)
 	}

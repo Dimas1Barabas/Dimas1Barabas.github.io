@@ -25,8 +25,14 @@ func NewSender() *Sender {
 
 func (s *Sender) Send(_ context.Context, n domain.Notification) error {
 	to := pseudoEmail(n.BookingID)
-	s.logger.Printf("╭─ ✉ email → %s\n│ тема: %s\n│ тело: %s\n╰─ бронь %s · %s",
-		to, n.Title, n.Body, n.BookingID, n.CreatedAt.Format("15:04:05"))
+	ref := "бронь " + n.BookingID
+	if n.Kind == domain.KindPasswordReset {
+		// в сбросе пароля адресат — настоящий email из события (в BookingID)
+		to = n.BookingID
+		ref = "сброс пароля"
+	}
+	s.logger.Printf("╭─ ✉ email → %s\n│ тема: %s\n│ тело: %s\n╰─ %s · %s",
+		to, n.Title, n.Body, ref, n.CreatedAt.Format("15:04:05"))
 	return nil
 }
 

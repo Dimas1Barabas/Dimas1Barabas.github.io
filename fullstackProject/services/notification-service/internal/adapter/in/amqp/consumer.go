@@ -17,12 +17,13 @@ import (
 )
 
 // События обмена «cinema», на которые подписан сервис. Контракт общий
-// с NestJS и ticket-worker; сюда приходят только вердикты — то, что
-// клиент должен увидеть.
+// с NestJS и ticket-worker: вердикты брони от воркера и письма сброса
+// пароля от API — всё, что клиент должен увидеть.
 const (
-	keyProcessed = "booking.processed" // воркер: CONFIRMED | FAILED
-	keyRefunded  = "booking.refunded"  // воркер: CANCELLED | REFUND_FAILED
-	keyExpired   = "booking.expired"   // воркер: резерв истёк
+	keyProcessed     = "booking.processed"   // воркер: CONFIRMED | FAILED
+	keyRefunded      = "booking.refunded"    // воркер: CANCELLED | REFUND_FAILED
+	keyExpired       = "booking.expired"     // воркер: резерв истёк
+	keyPasswordReset = "user.password.reset" // NestJS API: письмо сброса пароля
 )
 
 const (
@@ -72,7 +73,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 		return fmt.Errorf("consume: %w", err)
 	}
 
-	log.Printf("notification слушает %s / booking.processed + booking.refunded + booking.expired", queueName)
+	log.Printf("notification слушает %s / booking.processed + booking.refunded + booking.expired + user.password.reset", queueName)
 
 	for {
 		select {
@@ -128,7 +129,7 @@ func (c *Consumer) declareTopology(ch *amqp091.Channel) error {
 		return fmt.Errorf("очередь %s.parking: %w", queueName, err)
 	}
 
-	for _, key := range []string{keyProcessed, keyRefunded, keyExpired} {
+	for _, key := range []string{keyProcessed, keyRefunded, keyExpired, keyPasswordReset} {
 		if err := ch.QueueBind(queueName, key, exchange, false, nil); err != nil {
 			return fmt.Errorf("бинд %s на %s: %w", queueName, key, err)
 		}

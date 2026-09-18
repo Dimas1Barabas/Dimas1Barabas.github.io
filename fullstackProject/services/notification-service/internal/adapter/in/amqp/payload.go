@@ -11,7 +11,8 @@ import (
 
 // toOutcome приводит доставку к доменному вердикту. У событий оплаты и
 // возврата вердикт лежит в поле status, у истечения поля статуса нет —
-// сам routing key означает EXPIRED.
+// сам routing key означает EXPIRED. Письмо сброса пароля приходит от
+// NestJS API: адресат — в поле email, ссылка — в message.
 func toOutcome(d amqp091.Delivery) (domain.Outcome, error) {
 	var p verdictPayload
 	if err := json.Unmarshal(d.Body, &p); err != nil {
@@ -27,17 +28,26 @@ func toOutcome(d amqp091.Delivery) (domain.Outcome, error) {
 		o.Verdict = p.Status
 	case keyExpired:
 		o.Verdict = "EXPIRED"
+	case keyPasswordReset:
+		if p.Email == "" {
+			return domain.Outcome{}, fmt.Errorf("password.reset без адресата (email)")
+		}
+		o.Verdict = "PASSWORD_RESET"
+		// адресат едет в BookingID: поле — «ссылка на сущность», для сброса
+		// пароля это email; хранилища и фильтр /notifications не меняются
+		o.BookingID = p.Email
 	default:
 		return domain.Outcome{}, fmt.Errorf("неизвестный routing key %q", d.RoutingKey)
 	}
 	return o, nil
 }
 
-// verdictPayload — общая форма вердиктов воркера: во всех трёх событиях
-// поля названы одинаково, различается лишь набор статусов.
+// verdictPayload — общая форма событий: у вердиктов воркера поля названы
+// одинаково, письмо сброса добавляет email адресата.
 type verdictPayload struct {
 	BookingID   string `json:"bookingId"`
 	Status      string `json:"status"` // processed | refunded
 	Message     string `json:"message"`
 	ProcessedBy string `json:"processedBy"`
+	Email       string `json:"email,omitempty"` // user.password.reset от NestJS
 }

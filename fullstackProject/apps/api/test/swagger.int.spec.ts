@@ -119,6 +119,8 @@ describe('Swagger UI /api/docs (integration)', () => {
       '/api/auth/login',
       '/api/auth/refresh',
       '/api/auth/logout',
+      '/api/auth/forgot-password',
+      '/api/auth/reset-password',
       '/api/users/me',
       '/api/users/me/password',
       '/api/admin/stats',
@@ -152,6 +154,8 @@ describe('Swagger UI /api/docs (integration)', () => {
         'CreateReviewDto',
         'UpdateProfileDto',
         'ChangePasswordDto',
+        'ForgotPasswordDto',
+        'ResetPasswordDto',
       ]),
     );
 
@@ -236,6 +240,9 @@ describe('Swagger UI /api/docs (integration)', () => {
     expect(paths['/api/auth/login'].post.security).toBeUndefined();
     // refresh — @Public: протухший access сюда и не доехал бы
     expect(paths['/api/auth/refresh'].post.security).toBeUndefined();
+    // восстановление пароля начинается без токена по определению
+    expect(paths['/api/auth/forgot-password'].post.security).toBeUndefined();
+    expect(paths['/api/auth/reset-password'].post.security).toBeUndefined();
 
     // logout за bearer — гасит refresh-сессию владельца
     expect(paths['/api/auth/logout'].post.security).toEqual([{ bearer: [] }]);

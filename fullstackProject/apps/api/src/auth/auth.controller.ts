@@ -1,5 +1,6 @@
 import { Body, Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -19,9 +20,11 @@ import { toUserDto, UserDto } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
 import { AuthUser } from './auth-user';
 import { AuthService, LoginResult } from './auth.service';
-import { Public } from './public.decorator';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { Public } from './public.decorator';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -111,5 +114,48 @@ export class AuthController {
   ): Promise<void> {
     await this.auth.logout(req.cookies?.[REFRESH_COOKIE], req.user.id);
     clearRefreshCookie(res);
+  }
+
+  /**
+   * Запрос ссылки сброса. Ответ всегда одинаковый — эндпоинт не раскрывает,
+   * существует ли email. «Письмо» печатает notification-service (в стенде —
+   * лог + история /notifications).
+   */
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Запрос сброса пароля',
+    description:
+      'Для существующего email публикует событие user.password.reset ' +
+      '(ссылка живёт 30 минут). Ответ не зависит от существования email',
+  })
+  @ApiOkResponse({ description: 'Если аккаунт существует — «письмо» отправлено' })
+  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<void> {
+    await this.auth.forgotPassword(dto.email);
+  }
+
+  /**
+   * Сброс по одноразовой ссылке: новый пароль, выход отовсюду, это
+   * устройство сразу залогинено (свежая пара в ответе + cookie).
+   */
+  @Public()
+  @Post('reset-password')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Сброс пароля по ссылке',
+    description:
+      'Токен одноразовый (использованный/протухший — 400). Отзывает все ' +
+      'refresh-сессии и выдаёт новую пару этому устройству',
+  })
+  @ApiOkResponse({ type: LoginResult })
+  @ApiBadRequestResponse({ description: 'Ссылка недействительна или истекла' })
+  async resetPassword(
+    @Body() dto: ResetPasswordDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<LoginResult> {
+    const pair = await this.auth.resetPassword(dto);
+    setRefreshCookie(res, pair.refreshToken);
+    return { accessToken: pair.accessToken, user: pair.user };
   }
 }
