@@ -10,6 +10,12 @@ import { randomUUID } from 'node:crypto';
 import { DataSource, In, Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { Movie } from '../movies/movie.entity';
+import { Promo, PromoKind } from '../promos/promo.entity';
+import {
+  normalizePromoCode,
+  promoDiscount,
+  promoRefusalError,
+} from '../promos/promo.logic';
 import { Session } from '../movies/session.entity';
 import { BookingStream } from './booking-stream';
 import {
@@ -48,6 +54,18 @@ class SeatsTakenError extends Error {
   }
 }
 
+/**
+ * Сигнал «активация промокода не прошла», проброшенный из транзакции
+ * оплаты — там он обогащается причиной (не найден / истёк / исчерпан)
+ * и превращается в 404/410/409. Транзакция при этом откатывается целиком:
+ * бронь остаётся в PENDING_PAYMENT.
+ */
+class PromoRefusedError extends Error {
+  constructor(readonly code: string) {
+    super('Промокод не подошёл');
+  }
+}
+
 /** unique_violation в Postgres */
 function isUniqueViolation(err: unknown): boolean {
   return (
@@ -72,6 +90,8 @@ export class BookingsService {
     private readonly sessions: Repository<Session>,
     @InjectRepository(SeatOccupancy)
     private readonly occupancy: Repository<SeatOccupancy>,
+    @InjectRepository(Promo)
+    private readonly promos: Repository<Promo>,
     private readonly rabbit: AmqpConnection,
     private readonly stream: BookingStream,
   ) {}
@@ -217,37 +237,98 @@ export class BookingsService {
   /**
    * Оплата брони: PENDING_PAYMENT → PENDING условным UPDATE — гонку с
    * таймаутом резерва и двойным кликом разрешает БД, проигравший получает
-   * 409 с текущим статусом. После переключения публикуется существующее
-   * событие booking.created: Go-воркер «проводит платёж» и отвечает
-   * вердиктом booking.processed (CONFIRMED | FAILED).
+   * 409 с текущим статусом. С промокодом переключение и списание активации
+   * — одна транзакция: инкремент used_count атомарен
+   * (WHERE used_count < max_activations AND expires_at > now), поэтому
+   * гонку за последний код решает БД; проигравшему транзакция откатывает и
+   * переключение брони — она остаётся в PENDING_PAYMENT. Воркеру уходит
+   * событие с уже скидочной суммой: вердикт, возврат и аналитика видят
+   * одно и то же число.
    */
-  async pay(id: string, user: AuthUser): Promise<BookingDto> {
+  async pay(
+    id: string,
+    user: AuthUser,
+    promoCode?: string,
+  ): Promise<BookingDto> {
     const booking = await this.bookings.findOneByOrFail({ id });
     if (booking.userId && booking.userId !== user.id) {
       throw new ForbiddenException('Это не ваша бронь');
     }
     const { movie, session } = await this.contextOf(booking);
+    const code = promoCode ? normalizePromoCode(promoCode) : null;
 
-    const switched = await this.bookings.update(
-      { id, status: 'PENDING_PAYMENT' },
-      { status: 'PENDING' },
-    );
-    if (!switched.affected) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: `Оплатить можно только бронь, ждущую оплаты (сейчас: ${booking.status})`,
-        status: booking.status,
+    let applied: { code: string; discountRub: number } | null = null;
+    try {
+      applied = await this.dataSource.transaction(async (em) => {
+        const switched = await em.update(
+          Booking,
+          { id, status: 'PENDING_PAYMENT' },
+          { status: 'PENDING' },
+        );
+        if (!switched.affected) {
+          throw new ConflictException({
+            statusCode: 409,
+            error: 'Conflict',
+            message: `Оплатить можно только бронь, ждущую оплаты (сейчас: ${booking.status})`,
+            status: booking.status,
+          });
+        }
+
+        if (!code) return null;
+
+        // атомарная активация: инкремент только при запасе и живом сроке.
+        // postgres-драйвер TypeORM для UPDATE возвращает кортеж
+        // [строки RETURNING, число затронутых] — см. PostgresQueryRunner
+        const [activated, activations] = await em.query<
+          [{ code: string; kind: PromoKind; value: number }[], number]
+        >(
+          `UPDATE promos SET used_count = used_count + 1
+             WHERE code = $1 AND used_count < max_activations
+               AND expires_at > now()
+             RETURNING code, kind, value`,
+          [code],
+        );
+        if (!activations) throw new PromoRefusedError(code);
+
+        const discountRub = promoDiscount(
+          booking.totalRub,
+          activated[0].kind,
+          activated[0].value,
+        );
+        await em.update(
+          Booking,
+          { id },
+          {
+            totalRub: booking.totalRub - discountRub,
+            promoCode: activated[0].code,
+            discountRub,
+          },
+        );
+        return { code: activated[0].code, discountRub };
       });
+    } catch (err) {
+      if (err instanceof PromoRefusedError) {
+        // транзакция откатилась — спрашиваем у БД причину отказа
+        const promo = await this.promos.findOneBy({ code: err.code });
+        throw promoRefusalError(promo);
+      }
+      throw err;
     }
 
     booking.status = 'PENDING';
+    if (applied) {
+      booking.promoCode = applied.code;
+      booking.discountRub = applied.discountRub;
+      booking.totalRub -= applied.discountRub;
+    }
     this.rabbit.publish(
       'cinema',
       'booking.created',
       this.createdEventOf(booking, movie, session),
     );
-    this.logger.log(`Оплата брони ${booking.id} (${booking.totalRub} ₽) → в очередь`);
+    this.logger.log(
+      `Оплата брони ${booking.id} (${booking.totalRub} ₽${applied ? `, промокод ${applied.code} −${applied.discountRub} ₽` : ''}) → в очередь`,
+    );
     await this.push(booking, movie, session);
     return toBookingDto(booking, movie, session);
   }

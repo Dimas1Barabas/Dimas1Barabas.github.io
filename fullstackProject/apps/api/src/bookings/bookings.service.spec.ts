@@ -1,10 +1,16 @@
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  GoneException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { Movie } from '../movies/movie.entity';
+import { Promo } from '../promos/promo.entity';
 import { Session } from '../movies/session.entity';
 import { Booking, BookingStatus } from './booking.entity';
 import { BookingStream } from './booking-stream';
@@ -79,11 +85,16 @@ describe('BookingsService (unit)', () => {
   let moviesRepo: { findOneByOrFail: jest.Mock };
   let sessionsRepo: { findOneByOrFail: jest.Mock };
   let occupancyRepo: { find: jest.Mock; delete: jest.Mock };
+  let promosRepo: { findOneBy: jest.Mock };
   let rabbit: { publish: jest.Mock };
   /** SSE-шина: спаем, что после мутаций ушли события */
   let stream: { emit: jest.Mock };
   /** что «INSERT INTO seat_occupancy» сделал внутри транзакции */
   let emInsert: jest.Mock;
+  /** что «UPDATE …» сделал внутри транзакции (pay: статус + скидка) */
+  let emUpdate: jest.Mock;
+  /** что сырой UPDATE promos (активация) вернул внутри транзакции */
+  let emQuery: jest.Mock;
 
   beforeEach(async () => {
     bookingsRepo = {
@@ -104,9 +115,14 @@ describe('BookingsService (unit)', () => {
     moviesRepo = { findOneByOrFail: jest.fn(async () => movieFixture) };
     sessionsRepo = { findOneByOrFail: jest.fn(async () => sessionFixture) };
     occupancyRepo = { find: jest.fn(async () => []), delete: jest.fn() };
+    promosRepo = { findOneBy: jest.fn(async () => null) };
     rabbit = { publish: jest.fn() };
     stream = { emit: jest.fn() };
     emInsert = jest.fn(async () => undefined);
+    // условный UPDATE по умолчанию проходит (affected = 1)
+    emUpdate = jest.fn(async () => ({ affected: 1 }));
+    // UPDATE … RETURNING в postgres-драйвере: [строки, число затронутых]
+    emQuery = jest.fn(async () => [[], 0]);
 
     // «транзакция» сразу выполняет callback с эмуляцией EntityManager:
     // insert может упасть с pg-кодом 23505 — как настоящий констрейнт
@@ -118,6 +134,8 @@ describe('BookingsService (unit)', () => {
       create: (entity: unknown, x: Partial<Booking>) => Partial<Booking>;
       save: (entity: unknown, x: Booking) => Promise<Booking>;
       insert: jest.Mock;
+      update: jest.Mock;
+      query: jest.Mock;
     } = {
       findOneByOrFail: (entity, where) =>
         entity === Session
@@ -126,6 +144,8 @@ describe('BookingsService (unit)', () => {
       create: (_entity, x) => x,
       save: (_entity, x) => bookingsRepo.save(x),
       insert: emInsert,
+      update: emUpdate,
+      query: emQuery,
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -136,6 +156,7 @@ describe('BookingsService (unit)', () => {
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Session), useValue: sessionsRepo },
         { provide: getRepositoryToken(SeatOccupancy), useValue: occupancyRepo },
+        { provide: getRepositoryToken(Promo), useValue: promosRepo },
         { provide: AmqpConnection, useValue: rabbit },
         { provide: BookingStream, useValue: stream },
       ],
@@ -290,7 +311,8 @@ describe('BookingsService (unit)', () => {
       const result = await service.pay('booking-1', authUser);
 
       expect(result.status).toBe('PENDING');
-      expect(bookingsRepo.update).toHaveBeenCalledWith(
+      expect(emUpdate).toHaveBeenCalledWith(
+        Booking,
         { id: 'booking-1', status: 'PENDING_PAYMENT' },
         { status: 'PENDING' },
       );
@@ -315,7 +337,7 @@ describe('BookingsService (unit)', () => {
     });
 
     it('409 с текущим статусом, если бронь уже не ждёт оплаты', async () => {
-      bookingsRepo.update.mockResolvedValue({ affected: 0 });
+      emUpdate.mockResolvedValue({ affected: 0 });
 
       const promise = service.pay('booking-1', authUser);
 
@@ -333,8 +355,107 @@ describe('BookingsService (unit)', () => {
       });
 
       await expect(promise).rejects.toBeInstanceOf(ForbiddenException);
-      expect(bookingsRepo.update).not.toHaveBeenCalled();
+      expect(emUpdate).not.toHaveBeenCalled();
       expect(rabbit.publish).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('pay с промокодом', () => {
+    beforeEach(() => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        status: 'PENDING_PAYMENT',
+      });
+    });
+
+    it('применяет промокод: скидка в totalRub, код и сумма — на брони', async () => {
+      emQuery.mockResolvedValue([
+        [{ code: 'CINE10', kind: 'percent', value: 10 }],
+        1,
+      ]);
+
+      const result = await service.pay('booking-1', authUser, 'cine10');
+
+      // 1200 − 10% = 1080
+      expect(result).toMatchObject({
+        status: 'PENDING',
+        totalRub: 1080,
+        promoCode: 'CINE10',
+        discountRub: 120,
+      });
+      expect(emUpdate).toHaveBeenCalledTimes(2);
+      expect(emUpdate).toHaveBeenLastCalledWith(
+        Booking,
+        { id: 'booking-1' },
+        { totalRub: 1080, promoCode: 'CINE10', discountRub: 120 },
+      );
+    });
+
+    it('воркеру уходит событие со скидочной суммой', async () => {
+      emQuery.mockResolvedValue([
+        [{ code: 'CINE10', kind: 'percent', value: 10 }],
+        1,
+      ]);
+
+      await service.pay('booking-1', authUser, 'CINE10');
+
+      expect(rabbit.publish).toHaveBeenCalledWith(
+        'cinema',
+        'booking.created',
+        expect.objectContaining({ totalRub: 1080 }),
+      );
+    });
+
+    it('гонка за последний код: активация не прошла → 409 promoExhausted, оплата откатилась', async () => {
+      emQuery.mockResolvedValue([[], 0]);
+      promosRepo.findOneBy.mockResolvedValue({
+        id: 'promo-1',
+        code: 'CINE10',
+        kind: 'percent',
+        value: 10,
+        maxActivations: 3,
+        usedCount: 3,
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+
+      const promise = service.pay('booking-1', authUser, 'CINE10');
+
+      await expect(promise).rejects.toBeInstanceOf(ConflictException);
+      const err = (await promise.catch((e: unknown) => e)) as ConflictException;
+      expect(err.getResponse()).toMatchObject({ code: 'promoExhausted' });
+      // скидка не писалась и событие воркеру не ушло — транзакция откатилась
+      expect(emUpdate).toHaveBeenCalledTimes(1);
+      expect(rabbit.publish).not.toHaveBeenCalled();
+    });
+
+    it('неизвестный код → 404 promoNotFound', async () => {
+      emQuery.mockResolvedValue([[], 0]);
+      promosRepo.findOneBy.mockResolvedValue(null);
+
+      const promise = service.pay('booking-1', authUser, 'NOPE');
+
+      await expect(promise).rejects.toBeInstanceOf(NotFoundException);
+      const err = (await promise.catch((e: unknown) => e)) as NotFoundException;
+      expect(err.getResponse()).toMatchObject({ code: 'promoNotFound' });
+    });
+
+    it('просроченный код → 410 promoExpired', async () => {
+      emQuery.mockResolvedValue([[], 0]);
+      promosRepo.findOneBy.mockResolvedValue({
+        id: 'promo-1',
+        code: 'OLD10',
+        kind: 'percent',
+        value: 10,
+        maxActivations: 100,
+        usedCount: 0,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+
+      const promise = service.pay('booking-1', authUser, 'OLD10');
+
+      await expect(promise).rejects.toBeInstanceOf(GoneException);
+      const err = (await promise.catch((e: unknown) => e)) as GoneException;
+      expect(err.getResponse()).toMatchObject({ code: 'promoExpired' });
     });
   });
 

@@ -28,6 +28,7 @@ import { BookingDto } from './booking.entity';
 import { BookingStream } from './booking-stream';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { PayBookingDto } from './dto/pay-booking.dto';
 
 /** период heartbeat-событий: держит соединие живым через прокси */
 const PING_MS = 25_000;
@@ -65,19 +66,30 @@ export class BookingsController {
   @HttpCode(200)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Оплатить бронь',
+    summary: 'Оплатить бронь (опционально с промокодом)',
     description:
       'Условный UPDATE переводит PENDING_PAYMENT → PENDING и публикует ' +
       'booking.created воркеру. Гонку с таймаутом резерва и двойным кликом ' +
-      'решает БД — проигравший получает 409. Вердикт (CONFIRMED/FAILED) ' +
+      'решает БД — проигравший получает 409. Промокод из тела активируется ' +
+      'той же транзакцией: атомарный инкремент used_count при запасе и ' +
+      'живом сроке, скидка уходит в total_rub (воркер списывает уже её). ' +
+      'Проигравший в гонке за последний код получает 409 promoExhausted, ' +
+      'бронь остаётся в PENDING_PAYMENT. Вердикт (CONFIRMED/FAILED) ' +
       'придёт по SSE-стриму.',
   })
   @ApiOkResponse({ type: BookingDto })
   @ApiUnauthorizedResponse({ description: 'Нет JWT' })
   @ApiNotFoundResponse({ description: 'Бронь не найдена' })
-  @ApiConflictResponse({ description: 'Бронь уже оплачена/истекла/отменена' })
-  pay(@Param('id') id: string, @Req() req: { user: AuthUser }) {
-    return this.bookings.pay(id, req.user);
+  @ApiConflictResponse({
+    description:
+      'Бронь уже оплачена/истекла/отменена (status) или промокод исчерпан (promoExhausted)',
+  })
+  pay(
+    @Param('id') id: string,
+    @Body() dto: PayBookingDto,
+    @Req() req: { user: AuthUser },
+  ) {
+    return this.bookings.pay(id, req.user, dto.promoCode);
   }
 
   /** запуск компенсирующей саги: возврат платежа через Go-воркера */

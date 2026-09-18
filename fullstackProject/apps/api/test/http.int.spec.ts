@@ -23,6 +23,7 @@ import { REDIS_CLIENT } from '../src/redis/redis.tokens';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Booking } from '../src/bookings/booking.entity';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
+import { Promo } from '../src/promos/promo.entity';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { sseFrames, waitForSseEvent } from './sse';
@@ -236,6 +237,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
   let sessionsRepo: FakeSessionRepo;
   let bookingsRepo: FakeBookingRepo;
   let occupancyRepo: FakeOccupancyRepo;
+  let promosRepo: { findOneBy: jest.Mock };
   let redisStore: Map<string, string>;
   let rabbitPublish: jest.Mock;
   let bookingsService: BookingsService;
@@ -262,6 +264,8 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     sessionsRepo = new FakeSessionRepo();
     bookingsRepo = new FakeBookingRepo();
     occupancyRepo = new FakeOccupancyRepo();
+    // промокоды: enough для pay — причина отказа после отката транзакции
+    promosRepo = { findOneBy: jest.fn(async () => null) };
     redisStore = new Map();
     rabbitPublish = jest.fn();
 
@@ -281,6 +285,17 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         if (entity === SeatOccupancy) return occupancyRepo.insert(rows);
         throw new Error('unexpected entity');
       },
+      // pay(): условный UPDATE статуса и запись скидки — как реальный em
+      update: (
+        entity: unknown,
+        criteria: { id?: string; status?: string },
+        patch: Partial<Booking>,
+      ) => {
+        if (entity === Booking) return bookingsRepo.update(criteria, patch);
+        throw new Error('unexpected entity');
+      },
+      // сырой UPDATE promos в оплате с промокодом; без промо — не вызывается
+      query: jest.fn(async () => [[], 0]),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -307,6 +322,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
           provide: getRepositoryToken(SeatOccupancy),
           useValue: occupancyRepo,
         },
+        { provide: getRepositoryToken(Promo), useValue: promosRepo },
         { provide: AmqpConnection, useValue: { publish: rabbitPublish, connected: true } },
         {
           provide: DataSource,

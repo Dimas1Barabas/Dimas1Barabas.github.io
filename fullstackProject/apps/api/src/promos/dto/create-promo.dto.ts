@@ -7,7 +7,6 @@ import {
   Matches,
   Max,
   Min,
-  ValidateIf,
 } from 'class-validator';
 import { PROMO_KINDS } from '../promo.entity';
 
@@ -30,14 +29,12 @@ export class CreatePromoDto {
 
   @ApiProperty({
     example: 10,
-    description: 'percent — проценты (1–99), fixed — рубли (до 1 000 000)',
+    description: 'percent — проценты, fixed — рубли; верхнюю границу для ' +
+      'процентов (99) проверяет сервис — вид скидки зависит от kind',
   })
   @IsInt()
   @Min(1)
-  @ValidateIf((o) => o.kind === 'percent')
-  @Max(99, { message: 'Процент скидки — не больше 99' })
-  @ValidateIf((o) => o.kind === 'fixed')
-  @Max(1_000_000, { message: 'Слишком большая скидка' })
+  @Max(1_000_000)
   value!: number;
 
   @ApiProperty({ example: 100, minimum: 1, description: 'лимит активаций' })

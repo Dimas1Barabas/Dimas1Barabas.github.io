@@ -19,6 +19,8 @@ import { SeatsController } from '../src/bookings/seats.controller';
 import { HealthController } from '../src/health/health.controller';
 import { MoviesController } from '../src/movies/movies.controller';
 import { MoviesService } from '../src/movies/movies.service';
+import { PromosController } from '../src/promos/promos.controller';
+import { PromosService } from '../src/promos/promos.service';
 import { RedisService } from '../src/redis/redis.service';
 import { ReviewsController } from '../src/reviews/reviews.controller';
 import { ReviewsService } from '../src/reviews/reviews.service';
@@ -49,6 +51,7 @@ describe('Swagger UI /api/docs (integration)', () => {
         UsersController,
         ReviewsController,
         AdminController,
+        PromosController,
         HealthController,
       ],
       providers: [
@@ -57,6 +60,7 @@ describe('Swagger UI /api/docs (integration)', () => {
         { provide: BookingsService, useValue: {} },
         { provide: BookingStream, useValue: {} },
         { provide: ReviewsService, useValue: {} },
+        { provide: PromosService, useValue: {} },
         { provide: UsersService, useValue: {} },
         { provide: AuthService, useValue: {} },
         { provide: TokensService, useValue: {} },
@@ -124,6 +128,8 @@ describe('Swagger UI /api/docs (integration)', () => {
       '/api/users/me',
       '/api/users/me/password',
       '/api/admin/stats',
+      '/api/promos',
+      '/api/promos/validate',
       '/api/health',
     ];
     expect(paths).toEqual(expect.arrayContaining(expected));
@@ -152,12 +158,23 @@ describe('Swagger UI /api/docs (integration)', () => {
         'CreateSessionDto',
         'CreateBookingDto',
         'CreateReviewDto',
+        'CreatePromoDto',
+        'ValidatePromoDto',
+        'PayBookingDto',
         'UpdateProfileDto',
         'ChangePasswordDto',
         'ForgotPasswordDto',
         'ResetPasswordDto',
       ]),
     );
+
+    // промокод в оплате опционален: required вообще не эмитится, когда
+    // все поля опциональны — поэтому пустой дефолт
+    expect(schemas.PayBookingDto.required ?? []).not.toContain('promoCode');
+    // вид скидки — enum из одного источника
+    expect(schemas.CreatePromoDto.properties?.kind).toMatchObject({
+      enum: ['percent', 'fixed'],
+    });
 
     // оценка — целое 1..5, обязательна
     expect(schemas.CreateReviewDto.required).toContain('rating');
@@ -198,6 +215,8 @@ describe('Swagger UI /api/docs (integration)', () => {
         'AdminStatsResultDto',
         'AdminStatsDto',
         'AdminTotalsDto',
+        'PromoDto',
+        'PromoPreviewDto',
       ]),
     );
 
@@ -257,6 +276,11 @@ describe('Swagger UI /api/docs (integration)', () => {
     expect(paths['/api/movies'].post.responses).toHaveProperty('403');
     expect(paths['/api/admin/stats'].get.security).toEqual([{ bearer: [] }]);
     expect(paths['/api/admin/stats'].get.responses).toHaveProperty('403');
+    expect(paths['/api/promos'].post.security).toEqual([{ bearer: [] }]);
+    expect(paths['/api/promos'].post.responses).toHaveProperty('403');
+
+    // превью промокода — любой авторизованный (не админ)
+    expect(paths['/api/promos/validate'].post.security).toEqual([{ bearer: [] }]);
 
     // limit задокументирован query-параметром
     const limitParam = paths['/api/bookings'].get.parameters?.find(

@@ -141,6 +141,14 @@ describe('PromosService (unit)', () => {
       );
       expect(status).toBe(400);
     });
+
+    it('400 на процент больше 99 — граница зависит от kind', async () => {
+      const { status, body } = await rejection(
+        service.create(createDto({ value: 150 })),
+      );
+      expect(status).toBe(400);
+      expect(String(body.message)).toContain('99');
+    });
   });
 
   describe('list', () => {

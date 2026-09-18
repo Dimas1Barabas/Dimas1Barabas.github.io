@@ -2,10 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  GoneException,
   Injectable,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -13,7 +11,11 @@ import { AuthUser } from '../auth/auth-user';
 import { Booking } from '../bookings/booking.entity';
 import { CreatePromoDto } from './dto/create-promo.dto';
 import { ValidatePromoDto } from './dto/validate-promo.dto';
-import { normalizePromoCode, promoDiscount } from './promo.logic';
+import {
+  normalizePromoCode,
+  promoDiscount,
+  promoRefusalError,
+} from './promo.logic';
 import { Promo, PromoDto, PromoPreviewDto, toPromoDto } from './promo.entity';
 
 /** unique_violation в Postgres */
@@ -42,6 +44,11 @@ export class PromosService {
    * нечего мериться — проигравший получает 409 promoExists.
    */
   async create(dto: CreatePromoDto): Promise<PromoDto> {
+    // граница зависит от kind — это семантика, а не формат поля,
+    // поэтому проверяется здесь, а не декоратором DTO
+    if (dto.kind === 'percent' && dto.value > 99) {
+      throw new BadRequestException('Процент скидки — не больше 99');
+    }
     const expiresAt = new Date(dto.expiresAt);
     if (expiresAt.getTime() <= Date.now()) {
       throw new BadRequestException('Срок действия промокода должен быть в будущем');
@@ -106,29 +113,9 @@ export class PromosService {
     const promo = await this.promos.findOneBy({
       code: normalizePromoCode(dto.code),
     });
-    if (!promo) {
-      throw new NotFoundException({
-        statusCode: 404,
-        error: 'Not Found',
-        message: 'Промокод не найден',
-        code: 'promoNotFound',
-      });
-    }
-    if (promo.expiresAt.getTime() <= Date.now()) {
-      throw new GoneException({
-        statusCode: 410,
-        error: 'Gone',
-        message: `Срок действия промокода ${promo.code} истёк`,
-        code: 'promoExpired',
-      });
-    }
-    if (promo.usedCount >= promo.maxActivations) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: `Лимит активаций промокода ${promo.code} исчерпан`,
-        code: 'promoExhausted',
-      });
+    if (!promo || promo.expiresAt.getTime() <= Date.now() || promo.usedCount >= promo.maxActivations) {
+      // тот же источник причин, что и у оплаты — гонка решается в pay
+      throw promoRefusalError(promo);
     }
 
     const discountRub = promoDiscount(booking.totalRub, promo.kind, promo.value);
