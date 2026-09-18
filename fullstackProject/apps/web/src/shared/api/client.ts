@@ -5,16 +5,20 @@ import type {
   ChangePasswordPayload,
   CreateBookingPayload,
   CreateMoviePayload,
+  CreatePromoPayload,
   CreateReviewPayload,
   HealthResponse,
   LoginResult,
   Movie,
+  Promo,
+  PromoPreview,
   RegisterPayload,
   ResetPasswordPayload,
   Review,
   SeatMap,
   UpdateProfilePayload,
   User,
+  ValidatePromoPayload,
 } from '@/shared/api/types';
 
 /** Базовый URL API. По умолчанию — тот же origin (vite-proxy / nginx) */
@@ -167,10 +171,13 @@ export const api = {
     request<Booking>(`/bookings/${id}/cancel`, {
       method: 'POST',
     }),
-  /** оплата: PENDING_PAYMENT → PENDING, воркер проводит платёж */
-  payBooking: (id: string) =>
+  /** оплата: PENDING_PAYMENT → PENDING, воркер проводит платёж;
+   *  промокод активируется той же транзакцией (409 promoExhausted в гонке) */
+  payBooking: (id: string, promoCode?: string) =>
     request<Booking>(`/bookings/${id}/pay`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(promoCode ? { promoCode } : {}),
     }),
   /** регистрация: пароль хэшируется на бэкенде, вернётся UserDto */
   register: (payload: RegisterPayload) =>
@@ -210,6 +217,22 @@ export const api = {
     }),
   /** админ-аналитика: агрегаты дашборда (403 без роли admin) */
   adminStats: () => request<AdminStatsEnvelope>('/admin/stats'),
+  /** список промокодов для админки (403 без роли admin) */
+  adminPromos: () => request<Promo[]>('/promos'),
+  /** создать промокод: процент или фикс, лимит активаций, срок */
+  createPromo: (payload: CreatePromoPayload) =>
+    request<Promo>('/promos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  /** превью промокода на брони — без списания активации */
+  validatePromo: (payload: ValidatePromoPayload) =>
+    request<PromoPreview>('/promos/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
 
   /** выход: гасит refresh-сессию на сервере (куку снимет API) */
   logout: () => request<void>('/auth/logout', { method: 'POST' }),

@@ -4,15 +4,19 @@ import type {
   Booking,
   BookingStats,
   CreateBookingPayload,
+  CreatePromoPayload,
   CreateReviewPayload,
   LoginResult,
   Movie,
   MovieSession,
+  Promo,
+  PromoPreview,
   RegisterPayload,
   Review,
   SeatMap,
   UpdateProfilePayload,
   User,
+  ValidatePromoPayload,
 } from '@/shared/api/types';
 import { ApiError } from '@/shared/api/client';
 import {
@@ -23,6 +27,11 @@ import {
   compareSeats,
   isValidSeat,
 } from '@/shared/lib/hall';
+import {
+  PROMO_CODE_RE,
+  normalizePromoCode,
+  promoDiscount,
+} from '@/shared/lib/promo';
 import {
   adminTotals,
   countByStatus,
@@ -319,6 +328,8 @@ function seedBookings(): Booking[] {
       userId: `demo-seed-${i + 1}`,
       seats: [...s.seats],
       totalRub: movie.priceRub * s.seats.length,
+      promoCode: null,
+      discountRub: null,
       status: s.status,
       expiresAt: null,
       message: verdictMessage,
@@ -327,6 +338,46 @@ function seedBookings(): Booking[] {
       createdAt: createdAt.toISOString(),
     } satisfies Booking;
   });
+}
+
+/**
+ * Сид-промокоды демо: CINE10 — витринный процент; SUMMER300 — фикс
+ * «почти исчерпан» (2 из 3), честный 409 на витрине; EXPIRED5 —
+ * истёкший вчера, показывает 410. Как строки promos в Postgres.
+ */
+function seedPromos(): Promo[] {
+  return [
+    {
+      id: 'demo-promo-cine10',
+      code: 'CINE10',
+      kind: 'percent',
+      value: 10,
+      maxActivations: 100,
+      usedCount: 0,
+      expiresAt: inDays(30, 12),
+      createdAt: '2026-09-19T00:00:00.000Z',
+    },
+    {
+      id: 'demo-promo-summer300',
+      code: 'SUMMER300',
+      kind: 'fixed',
+      value: 300,
+      maxActivations: 3,
+      usedCount: 2,
+      expiresAt: inDays(30, 12),
+      createdAt: '2026-09-18T00:00:00.000Z',
+    },
+    {
+      id: 'demo-promo-expired5',
+      code: 'EXPIRED5',
+      kind: 'percent',
+      value: 5,
+      maxActivations: 10,
+      usedCount: 0,
+      expiresAt: inDays(-1, 12),
+      createdAt: '2026-08-01T00:00:00.000Z',
+    },
+  ];
 }
 
 type Listener = () => void;
@@ -347,6 +398,8 @@ class DemoEngine {
   /** демо-аккаунт (регистрация/вход) и открытая сессия — только в памяти */
   private account: { email: string; name: string; password: string } | null = null;
   private session: User | null = null;
+  /** промокоды демо: сиды + созданные в админке демо */
+  private promos: Promo[] = seedPromos();
 
   /** «access-токен» демо-сессии — не JWT, просто маркер для стора */
   static readonly SESSION_TOKEN = 'demo-session';
@@ -378,6 +431,7 @@ class DemoEngine {
     this.reviews = seedReviews();
     this.account = null;
     this.session = null;
+    this.promos = seedPromos();
     DEMO_MOVIES.forEach((m) => this.recomputeMovie(m.id));
     this.firstLoad = true;
     this.applySeeds();
@@ -659,6 +713,117 @@ class DemoEngine {
     };
   }
 
+  // ── Промокоды: симуляция promos-модуля API ────────────────────────
+  // Коды ошибок и тексты — те же, что у живого API: превью не списывает
+  // активацию, списание — в pay, гонку за последний код решает счётчик.
+
+  /** список для админки: свежие сверху, копии (движок не реактивен) */
+  listPromos(): Promo[] {
+    return [...this.promos]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((p) => ({ ...p }));
+  }
+
+  createPromo(payload: CreatePromoPayload): Promo {
+    if (!PROMO_CODE_RE.test(payload.code.trim())) {
+      throw new ApiError('HTTP 400', 400, JSON.stringify({
+        message: 'Код: 3–32 символа — латиница, цифры и дефис',
+      }));
+    }
+    if (payload.kind === 'percent' && payload.value > 99) {
+      throw new ApiError('HTTP 400', 400, JSON.stringify({
+        message: 'Процент скидки — не больше 99',
+      }));
+    }
+    const expiresAt = new Date(payload.expiresAt);
+    if (expiresAt.getTime() <= Date.now()) {
+      throw new ApiError('HTTP 400', 400, JSON.stringify({
+        message: 'Срок действия промокода должен быть в будущем',
+      }));
+    }
+    const code = normalizePromoCode(payload.code);
+    if (this.promos.some((p) => p.code === code)) {
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Промокод ${code} уже существует`,
+        code: 'promoExists',
+      }));
+    }
+    const promo: Promo = {
+      id: uuid(),
+      code,
+      kind: payload.kind,
+      value: payload.value,
+      maxActivations: payload.maxActivations,
+      usedCount: 0,
+      expiresAt: expiresAt.toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+    this.promos.push(promo);
+    return { ...promo };
+  }
+
+  /** превью на брони без списания — как POST /promos/validate */
+  validatePromo(payload: ValidatePromoPayload): PromoPreview {
+    const booking = this.bookings.find((b) => b.id === payload.bookingId);
+    if (!booking) {
+      throw new ApiError('HTTP 404', 404, JSON.stringify({
+        statusCode: 404,
+        error: 'Not Found',
+        message: 'Бронь не найдена',
+      }));
+    }
+    if (booking.status !== 'PENDING_PAYMENT') {
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Промокод применяется только к бронь, ждущей оплаты (сейчас: ${booking.status})`,
+        status: booking.status,
+      }));
+    }
+    const promo = this.activePromo(payload.code);
+    const discountRub = promoDiscount(booking.totalRub, promo.kind, promo.value);
+    return {
+      code: promo.code,
+      kind: promo.kind,
+      value: promo.value,
+      discountRub,
+      totalRub: booking.totalRub - discountRub,
+    };
+  }
+
+  /** активный промокод по коду либо ApiError-причина (404/410/409) */
+  private activePromo(raw: string): Promo {
+    const code = normalizePromoCode(raw);
+    const promo = this.promos.find((p) => p.code === code);
+    if (!promo) {
+      throw new ApiError('HTTP 404', 404, JSON.stringify({
+        statusCode: 404,
+        error: 'Not Found',
+        message: 'Промокод не найден',
+        code: 'promoNotFound',
+      }));
+    }
+    if (Date.parse(promo.expiresAt) <= Date.now()) {
+      throw new ApiError('HTTP 410', 410, JSON.stringify({
+        statusCode: 410,
+        error: 'Gone',
+        message: `Срок действия промокода ${promo.code} истёк`,
+        code: 'promoExpired',
+      }));
+    }
+    if (promo.usedCount >= promo.maxActivations) {
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Лимит активаций промокода ${promo.code} исчерпан`,
+        code: 'promoExhausted',
+      }));
+    }
+    return promo;
+  }
+
   create(payload: CreateBookingPayload): Booking {
     const found = this.findSession(payload.sessionId);
     if (!found) throw new Error('Сеанс не найден');
@@ -700,6 +865,8 @@ class DemoEngine {
       userId: null,
       seats,
       totalRub: movie.priceRub * seats.length,
+      promoCode: null,
+      discountRub: null,
       status: 'PENDING_PAYMENT',
       expiresAt: new Date(Date.now() + DEMO_PAYMENT_TIMEOUT_MS).toISOString(),
       message: null,
@@ -732,8 +899,11 @@ class DemoEngine {
   /**
    * Оплата: PENDING_PAYMENT → PENDING (условный переход — 409 иначе),
    * затем «воркер» проводит платёж. Миниатюра POST /bookings/:id/pay.
+   * С промокодом — как в транзакции API: активация списывается до
+   * переключения статуса, отказ откатывает оплату целиком (бронь
+   * остаётся payable), вердикт приходит со скидочной суммой.
    */
-  pay(id: string): Booking {
+  pay(id: string, promoCode?: string): Booking {
     const booking = this.bookings.find((b) => b.id === id);
     if (!booking) throw new Error('Бронь не найдена');
     if (booking.status !== 'PENDING_PAYMENT') {
@@ -745,12 +915,24 @@ class DemoEngine {
         status: booking.status,
       }));
     }
+    let applied: { code: string; discountRub: number } | null = null;
+    if (promoCode) {
+      const promo = this.activePromo(promoCode);
+      promo.usedCount += 1; // атомарный инкремент в миниатюре
+      const discountRub = promoDiscount(booking.totalRub, promo.kind, promo.value);
+      applied = { code: promo.code, discountRub };
+    }
     const timer = this.expiryTimers.get(booking.id);
     if (timer) {
       clearTimeout(timer);
       this.expiryTimers.delete(booking.id);
     }
     booking.status = 'PENDING';
+    if (applied) {
+      booking.promoCode = applied.code;
+      booking.discountRub = applied.discountRub;
+      booking.totalRub -= applied.discountRub;
+    }
     this.notify();
 
     this.scheduleVerdict(booking);

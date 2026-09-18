@@ -1,3 +1,5 @@
+import type { PromoKind } from '../lib/promo';
+
 /** сеанс фильма: зал + время (у фильма их много) */
 export interface MovieSession {
   id: string;
@@ -56,6 +58,10 @@ export interface Booking {
   /** коды мест «ряд-место», например ["5-7", "5-8"] */
   seats: string[];
   totalRub: number;
+  /** промокод, применённый при оплате (null — без промокода) */
+  promoCode: string | null;
+  /** скидка применённого промокода, ₽ (null — без промокода) */
+  discountRub: number | null;
   status: BookingStatus;
   /** дедлайн оплаты (актуален для PENDING_PAYMENT), ISO */
   expiresAt: string | null;
@@ -223,4 +229,41 @@ export interface AdminStats {
 export interface AdminStatsEnvelope {
   source: 'cache' | 'db';
   data: AdminStats;
+}
+
+/** промокод — GET/POST /api/promos (админ) */
+export interface Promo {
+  id: string;
+  code: string;
+  kind: PromoKind;
+  /** проценты (1–99) или рубли — по kind */
+  value: number;
+  maxActivations: number;
+  usedCount: number;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface CreatePromoPayload {
+  code: string;
+  kind: PromoKind;
+  value: number;
+  maxActivations: number;
+  expiresAt: string;
+}
+
+export interface ValidatePromoPayload {
+  code: string;
+  bookingId: string;
+}
+
+/** превью промокода на брони — POST /api/promos/validate (без списания) */
+export interface PromoPreview {
+  code: string;
+  kind: PromoKind;
+  value: number;
+  /** скидка, ₽ */
+  discountRub: number;
+  /** итог после скидки, ₽ */
+  totalRub: number;
 }

@@ -117,14 +117,14 @@ export const useBookingsStore = defineStore('bookings', {
      * 409 «уже не ждёт» (двойной клик, гонка с таймаутом) — как ошибка списка.
      * Возвращает обновлённую бронь (экрану оплаты нужен её статус).
      */
-    async pay(id: string): Promise<Booking> {
+    async pay(id: string, promoCode?: string): Promise<Booking> {
       const app = useAppStore();
       this.paying.push(id);
       try {
         const booking =
           app.mode === 'demo'
-            ? demoEngine.pay(id)
-            : await api.payBooking(id);
+            ? demoEngine.pay(id, promoCode)
+            : await api.payBooking(id, promoCode);
         this.error = null;
         return booking;
       } catch (err) {
