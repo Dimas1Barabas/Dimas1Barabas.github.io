@@ -82,10 +82,17 @@ services:
     environment:
       AMQP_URL: amqp://guest:guest@rabbitmq:5672/
       HTTP_ADDR: :8080
+      # история уведомлений — в собственной БД cine_notifications того же
+      # кластера; базу и схему сервис создаёт сам при старте
+      # (initdb-скрипты на уже инициализированном volume не сработают)
+      STORAGE: postgres
+      DATABASE_URL: postgres://cine:cine@postgres:5432/cine_notifications
     ports:
       - '18082:8080'
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   web:

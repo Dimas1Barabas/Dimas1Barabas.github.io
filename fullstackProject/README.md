@@ -47,7 +47,7 @@ docker compose up --build
 | RabbitMQ UI | http://localhost:15672 | guest / guest |
 | worker (Go) | http://localhost:8081/stats | счётчики оплат и возвратов |
 | notification (Go) | http://localhost:18082/notifications | история «email»-уведомлений, гексагон |
-| PostgreSQL | localhost:15432 | cine / cine, БД cine |
+| PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications |
 | Redis | localhost:6379 | кэш фильмов, TTL 60 c |
 
 Host-порты 13000/15432/18080 выбраны, чтобы не конфликтовать
@@ -79,6 +79,8 @@ go run ./cmd/ticket-worker       # слушает RabbitMQ, /stats на :8081
 # Go-уведомления (гексагональный сервис)
 cd services/notification-service
 go run ./cmd/notification        # слушает вердикты, HTTP на :8080
+# персистентная история вместо кольцевой памяти:
+STORAGE=postgres go run ./cmd/notification
 ```
 
 ### Миграции
@@ -162,7 +164,9 @@ cd services/ticket-worker && go test ./...
 
 # уведомления: гексагон — фабрика уведомлений по вердиктам, use-case
 # на стабах портов (сбой шлюза, ядовитое событие), память-репозиторий
-# (порядок/фильтр/вытеснение), маппинг доставок, HTTP на httptest
+# (порядок/фильтр/вытеснение), postgres-репозиторий (roundtrip, порядок/
+# фильтр/лимит, статус FAILED, идемпотентность схемы — против живого PG,
+# без стенда скипается), маппинг доставок, HTTP на httptest, env-конфиг
 cd services/notification-service && go test ./...
 ```
 
@@ -172,7 +176,9 @@ cd services/notification-service && go test ./...
 CI (GitHub Actions, workflow в корне репо `.github/workflows/cinebooking.yml`)
 на пуш/PR по `fullstackProject/` гоняет герметичные уровни: web —
 typecheck + vitest + build, api — юнит + интеграционные + build,
-worker — go test. E2e остаётся локальным: ему нужен живой docker-стенд.
+worker и notification — go test (live-тесты уведомлений скипаются:
+в раннере нет Postgres). E2e остаётся локальным: ему нужен живой
+docker-стенд.
 
 Письменная тест-документация «как у QA» — в [docs/qa/](docs/qa/):
 [тест-план](docs/qa/test-plan.md), [чек-листы](docs/qa/checklists.md),
@@ -229,10 +235,12 @@ worker — go test. E2e остаётся локальным: ему нужен �
    `onopen` фронт делает полный resync через `GET /bookings`. Опроса нет.
 11. Каждый вердикт (`booking.processed`/`.refunded`/`.expired`) дублируется
    в Go-сервис `notification`: он превращает событие в клиентское
-   «email»-уведомление (в стенде печатается в лог), хранит кольцевую
-   историю в памяти и отдаёт её через `GET /notifications`. Построен
-   гексагонально: домен и use-case в центре, брокер/HTTP/память —
-   адаптеры за портами.
+   «email»-уведомление (в стенде печатается в лог), хранит историю
+   в собственной БД `cine_notifications` того же кластера (переживает
+   рестарт; базу и схему сервис создаёт сам) и отдаёт её через
+   `GET /notifications`. Построен гексагонально: домен и use-case
+   в центре, брокер/HTTP/память/Postgres — заменяемые адаптеры за
+   портами (`STORAGE=memory|postgres` переключает их строкой в main).
 
 ```
 PENDING_PAYMENT ──pay──▶ PENDING ──воркер──▶ CONFIRMED | FAILED
@@ -416,7 +424,7 @@ services/
                        /health /stats
   notification-service/ Go, гексагональная архитектура: domain + service
                        в центре, адаптеры in (amqp, httpapi) / out (console,
-                       memory) за портами; /notifications /stats
+                       memory, postgres) за портами; /notifications /stats
 ```
 
 ### Фронт: Feature-Sliced Design
@@ -461,8 +469,10 @@ rm -rf "$root/CineBooking" && cp -r dist "$root/CineBooking"
 ## Переменные окружения
 
 См. [.env.example](.env.example). В docker compose всё уже настроено.
-Дефолт `DATABASE_URL` в коде — `postgres://cine:cine@localhost:15432/cine`
-(порт compose-стенда).
+Дефолт `DATABASE_URL` API в коде — `postgres://cine:cine@localhost:15432/cine`
+(порт compose-стенда). У notification-service своя пара: `STORAGE=memory|postgres`
+(дефолт `memory` — стенд без БД не падает) и собственный `DATABASE_URL`
+на базу `cine_notifications`.
 
 `PAYMENT_TIMEOUT_MS` (только API) — окно оплаты брони: TTL wait-очереди
 RabbitMQ и дедлайн `expires_at`. Дефолт в коде — 15 минут, compose-стенд
