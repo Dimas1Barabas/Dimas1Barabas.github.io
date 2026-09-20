@@ -43,6 +43,14 @@ import {
 } from './hall';
 import { SeatOccupancy } from './seat-occupancy.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import {
+  TicketDto,
+  TicketVerifyResultDto,
+  parseTicketQr,
+  ticketCanonical,
+  ticketSignatureMatches,
+  toTicketDto,
+} from './ticket.logic';
 
 /**
  * Сигнал «место уже занято», проброшенный из транзакции наружу —
@@ -351,6 +359,72 @@ export class BookingsService {
       relations: { movie: true, session: true },
     });
     return rows.map((row) => toBookingDto(row));
+  }
+
+  /**
+   * Билеты CONFIRMED-брони: по одному на место, с HMAC-подписью для QR.
+   * Билет — производная брони: подпись детерминирована (бронь + место +
+   * сеанс), ничего не хранится. Отмена гасит билеты сама (статус уходит
+   * из CONFIRMED → 409 bookingNotConfirmed), неудавшийся возврат
+   * (REFUND_FAILED → снова CONFIRMED) оживляет их без нашего участия.
+   */
+  async tickets(id: string, user: AuthUser): Promise<TicketDto[]> {
+    const booking = await this.bookings.findOneByOrFail({ id });
+    if (booking.userId && booking.userId !== user.id) {
+      throw new ForbiddenException('Это не ваша бронь');
+    }
+    if (booking.status !== 'CONFIRMED') {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Билеты выдаются только по подтверждённой брони (сейчас: ${booking.status})`,
+        code: 'bookingNotConfirmed',
+        status: booking.status,
+      });
+    }
+    const { movie, session } = await this.contextOf(booking);
+    return booking.seats.map((seat) =>
+      toTicketDto(booking, movie, session, seat),
+    );
+  }
+
+  /**
+   * Сканер на входе в зал: проверяет QR-строку билета против БД.
+   * Подпись отсеивает подделку (badSignature), статус брони — отменённые
+   * и незавершённые (bookingNotConfirmed), состав мест — чужое место
+   * (seatMismatch), время сеанса — просроченные (sessionPassed).
+   * Отказ — не ошибка, а вердикт с причиной: контролёру нужен экран, а не 4xx.
+   */
+  async verifyTicket(payload: string): Promise<TicketVerifyResultDto> {
+    const parsed = parseTicketQr(payload);
+    if (!parsed) {
+      return { valid: false, reason: 'malformedPayload', bookingId: null, seat: null, movieTitle: null, sessionAt: null, hall: null, customerName: null };
+    }
+    const scanned = { bookingId: parsed.bookingId, seat: parsed.seat };
+    if (!ticketSignatureMatches(parsed.canonical, parsed.signature)) {
+      return { valid: false, reason: 'badSignature', ...scanned, movieTitle: null, sessionAt: null, hall: null, customerName: null };
+    }
+    const booking = await this.bookings.findOneBy({ id: parsed.bookingId });
+    if (!booking) {
+      return { valid: false, reason: 'bookingNotFound', ...scanned, movieTitle: null, sessionAt: null, hall: null, customerName: null };
+    }
+    if (booking.status !== 'CONFIRMED') {
+      return { valid: false, reason: 'bookingNotConfirmed', ...scanned, movieTitle: null, sessionAt: null, hall: null, customerName: null };
+    }
+    if (!booking.seats.includes(parsed.seat)) {
+      return { valid: false, reason: 'seatMismatch', ...scanned, movieTitle: null, sessionAt: null, hall: null, customerName: null };
+    }
+    const { movie, session } = await this.contextOf(booking);
+    const context = {
+      ...scanned,
+      movieTitle: movie.title,
+      sessionAt: session.startsAt.toISOString(),
+      hall: session.hall,
+    };
+    if (session.startsAt.getTime() < Date.now()) {
+      return { valid: false, reason: 'sessionPassed', ...context, customerName: null };
+    }
+    return { valid: true, reason: null, ...context, customerName: booking.customerName };
   }
 
   /**

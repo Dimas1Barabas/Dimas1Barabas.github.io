@@ -14,6 +14,7 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -24,11 +25,14 @@ import {
 import { interval, merge, map, Observable } from 'rxjs';
 import { AuthUser } from '../auth/auth-user';
 import { Public } from '../auth/public.decorator';
+import { Roles } from '../auth/roles.decorator';
 import { BookingDto } from './booking.entity';
 import { BookingStream } from './booking-stream';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { PayBookingDto } from './dto/pay-booking.dto';
+import { VerifyTicketDto } from './dto/verify-ticket.dto';
+import { TicketDto, TicketVerifyResultDto } from './ticket.logic';
 
 /** период heartbeat-событий: держит соединие живым через прокси */
 const PING_MS = 25_000;
@@ -110,6 +114,48 @@ export class BookingsController {
   @ApiConflictResponse({ description: 'Бронь не в отменяемом статусе (решает условный UPDATE)' })
   cancel(@Param('id') id: string, @Req() req: { user: AuthUser }) {
     return this.bookings.cancel(id, req.user);
+  }
+
+  /** билеты CONFIRMED-брони: по одному на место, с подписью для QR-кода */
+  @Get(':id/tickets')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Билеты брони (по одному на место)',
+    description:
+      'Билет — производная брони, а не отдельная сущность: выдаётся ' +
+      'только по CONFIRMED и умирает вместе с бронью. Подпись HMAC-SHA256 ' +
+      'детерминирована (бронь + место + сеанс), поэтому пересчитывается ' +
+      'на каждый запрос и переживает рестарты API. QR-строку ' +
+      '`CINE1|bookingId|seat|epoch|sig` фронт собирает из этих полей сам.',
+  })
+  @ApiOkResponse({ type: [TicketDto] })
+  @ApiUnauthorizedResponse({ description: 'Нет JWT' })
+  @ApiNotFoundResponse({ description: 'Бронь не найдена' })
+  @ApiForbiddenResponse({ description: 'Чужая бронь' })
+  @ApiConflictResponse({
+    description: 'Бронь не подтверждена — код bookingNotConfirmed',
+  })
+  tickets(@Param('id') id: string, @Req() req: { user: AuthUser }) {
+    return this.bookings.tickets(id, req.user);
+  }
+
+  /** сканер на входе в зал: контролёр предъявляет QR-строку билета */
+  @Post('tickets/verify')
+  @HttpCode(200)
+  @Roles('admin')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Проверить QR-билета (сканер на входе)',
+    description:
+      'Вердикт, а не ошибка: 200 всегда, валидность — в `valid`, причина ' +
+      'отказа — в `reason` (подделка подписи, бронь не подтверждена, ' +
+      'чужое место, сеанс уже прошёл). Контролёру нужен экран, а не 4xx.',
+  })
+  @ApiOkResponse({ type: TicketVerifyResultDto })
+  @ApiUnauthorizedResponse({ description: 'Нет JWT' })
+  @ApiForbiddenResponse({ description: 'Нужна роль admin' })
+  verify(@Body() dto: VerifyTicketDto) {
+    return this.bookings.verifyTicket(dto.payload);
   }
 
   /**
