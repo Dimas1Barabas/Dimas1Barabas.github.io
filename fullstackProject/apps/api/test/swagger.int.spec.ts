@@ -118,6 +118,8 @@ describe('Swagger UI /api/docs (integration)', () => {
       '/api/bookings/stream',
       '/api/bookings/{id}/pay',
       '/api/bookings/{id}/cancel',
+      '/api/bookings/{id}/tickets',
+      '/api/bookings/tickets/verify',
       '/api/sessions/{sessionId}/seats',
       '/api/auth/register',
       '/api/auth/login',
@@ -278,6 +280,17 @@ describe('Swagger UI /api/docs (integration)', () => {
     expect(paths['/api/admin/stats'].get.responses).toHaveProperty('403');
     expect(paths['/api/promos'].post.security).toEqual([{ bearer: [] }]);
     expect(paths['/api/promos'].post.responses).toHaveProperty('403');
+
+    // билеты: владельцу по JWT, сканер — только admin
+    expect(paths['/api/bookings/{id}/tickets'].get.security).toEqual([
+      { bearer: [] },
+    ]);
+    expect(paths['/api/bookings/tickets/verify'].post.security).toEqual([
+      { bearer: [] },
+    ]);
+    expect(paths['/api/bookings/tickets/verify'].post.responses).toHaveProperty(
+      '403',
+    );
 
     // превью промокода — любой авторизованный (не админ)
     expect(paths['/api/promos/validate'].post.security).toEqual([{ bearer: [] }]);
