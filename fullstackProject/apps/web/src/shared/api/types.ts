@@ -267,3 +267,44 @@ export interface PromoPreview {
   /** итог после скидки, ₽ */
   totalRub: number;
 }
+
+/**
+ * Билет на место — GET /api/bookings/:id/tickets. Производная брони:
+ * выдаётся только по CONFIRMED, живёт, пока бронь жива. QR-строку
+ * «на вход в зал» фронт собирает из полей сам (shared/lib/ticket).
+ */
+export interface Ticket {
+  bookingId: string;
+  /** код «ряд-место» */
+  seat: string;
+  /** номер билета — детерминирован (бронь + место + сеанс) */
+  ticketNo: string;
+  /** HMAC-SHA256 канонической строки, первые 128 бит (hex) */
+  signature: string;
+  movieTitle: string;
+  movieHue: number;
+  movieGenreIcon: string;
+  sessionAt: string;
+  hall: string;
+  customerName: string;
+}
+
+export type TicketRefusalReason =
+  | 'malformedPayload'
+  | 'badSignature'
+  | 'bookingNotFound'
+  | 'bookingNotConfirmed'
+  | 'seatMismatch'
+  | 'sessionPassed';
+
+/** вердикт сканера на входе — POST /api/bookings/tickets/verify (admin) */
+export interface TicketVerifyResult {
+  valid: boolean;
+  reason: TicketRefusalReason | null;
+  bookingId: string | null;
+  seat: string | null;
+  movieTitle: string | null;
+  sessionAt: string | null;
+  hall: string | null;
+  customerName: string | null;
+}

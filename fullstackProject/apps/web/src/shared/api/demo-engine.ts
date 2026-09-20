@@ -14,6 +14,8 @@ import type {
   RegisterPayload,
   Review,
   SeatMap,
+  Ticket,
+  TicketVerifyResult,
   UpdateProfilePayload,
   User,
   ValidatePromoPayload,
@@ -32,6 +34,13 @@ import {
   normalizePromoCode,
   promoDiscount,
 } from '@/shared/lib/promo';
+import {
+  parseTicketQr,
+  signTicket,
+  ticketCanonical,
+  ticketNoOf,
+  ticketSignatureMatches,
+} from '@/shared/lib/ticket';
 import {
   adminTotals,
   countByStatus,
@@ -1012,6 +1021,86 @@ class DemoEngine {
     }, delay);
 
     return booking;
+  }
+
+  // ── QR-билеты: симуляция производной брони ─────────────────────────
+  // Как GET /bookings/:id/tickets в API, движок ничего не хранит: билеты
+  // выводятся из статуса брони и подписываются DEMO_TICKETS_SECRET
+  // (не dev-секрет стенда — подписи демо и live не взаимозаменяемы).
+
+  /** билеты брони: по одному на место; всё, что не CONFIRMED — 409 */
+  tickets(bookingId: string): Ticket[] {
+    const booking = this.bookings.find((b) => b.id === bookingId);
+    if (!booking) {
+      throw new ApiError('HTTP 404', 404, JSON.stringify({
+        statusCode: 404,
+        error: 'Not Found',
+        message: 'Бронь не найдена',
+      }));
+    }
+    if (booking.status !== 'CONFIRMED') {
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Билеты выдаются только по подтверждённой брони (сейчас: ${booking.status})`,
+        code: 'bookingNotConfirmed',
+        status: booking.status,
+      }));
+    }
+    return booking.seats.map((seat) => {
+      const canonical = ticketCanonical(booking.id, seat, booking.sessionAt);
+      return {
+        bookingId: booking.id,
+        seat,
+        ticketNo: ticketNoOf(canonical),
+        signature: signTicket(canonical),
+        movieTitle: booking.movieTitle,
+        movieHue: booking.movieHue,
+        movieGenreIcon: booking.movieGenreIcon,
+        sessionAt: booking.sessionAt,
+        hall: booking.hall,
+        customerName: booking.customerName,
+      };
+    });
+  }
+
+  /** сканер на входе: тот же вердикт с причиной, что POST /bookings/tickets/verify */
+  verifyTicket(payload: string): TicketVerifyResult {
+    const none = {
+      reason: null,
+      bookingId: null,
+      seat: null,
+      movieTitle: null,
+      sessionAt: null,
+      hall: null,
+      customerName: null,
+    } satisfies Omit<TicketVerifyResult, 'valid'>;
+    const parsed = parseTicketQr(payload);
+    if (!parsed) return { valid: false, ...none, reason: 'malformedPayload' };
+    if (!ticketSignatureMatches(parsed.canonical, parsed.signature)) {
+      return { valid: false, ...none, reason: 'badSignature', bookingId: parsed.bookingId, seat: parsed.seat };
+    }
+    const booking = this.bookings.find((b) => b.id === parsed.bookingId);
+    if (!booking) {
+      return { valid: false, ...none, reason: 'bookingNotFound', bookingId: parsed.bookingId, seat: parsed.seat };
+    }
+    if (booking.status !== 'CONFIRMED') {
+      return { valid: false, ...none, reason: 'bookingNotConfirmed', bookingId: booking.id, seat: parsed.seat };
+    }
+    if (!booking.seats.includes(parsed.seat)) {
+      return { valid: false, ...none, reason: 'seatMismatch', bookingId: booking.id, seat: parsed.seat };
+    }
+    const context = {
+      bookingId: booking.id,
+      seat: parsed.seat,
+      movieTitle: booking.movieTitle,
+      sessionAt: booking.sessionAt,
+      hall: booking.hall,
+    };
+    if (Date.parse(booking.sessionAt) < Date.now()) {
+      return { valid: false, ...none, reason: 'sessionPassed', ...context };
+    }
+    return { valid: true, ...none, ...context, customerName: booking.customerName };
   }
 
   // ── Отзывы и рейтинги ────────────────────────────────────────────────

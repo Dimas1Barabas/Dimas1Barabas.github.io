@@ -16,6 +16,7 @@ import type {
   ResetPasswordPayload,
   Review,
   SeatMap,
+  Ticket,
   UpdateProfilePayload,
   User,
   ValidatePromoPayload,
@@ -179,6 +180,9 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(promoCode ? { promoCode } : {}),
     }),
+  /** билеты брони: по одному на место (409 bookingNotConfirmed без CONFIRMED) */
+  bookingTickets: (id: string) =>
+    request<Ticket[]>(`/bookings/${id}/tickets`),
   /** регистрация: пароль хэшируется на бэкенде, вернётся UserDto */
   register: (payload: RegisterPayload) =>
     request<User>('/auth/register', {
