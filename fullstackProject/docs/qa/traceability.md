@@ -42,15 +42,21 @@
 | FR-34 | Активация списывается атомарно в транзакции оплаты; скидка — в total_rub, воркеру и возврату | High | TC-PRM-006 | ✅ unit, int, e2e, web |
 | FR-35 | Гонка за последний код: транзакция откатывается, бронь остаётся payable | High | TC-PRM-007 | ✅ unit, int, e2e, web |
 | FR-36 | Демо-паритет: сиды промокодов с честными 409/410, промо-админка открыта в демо | Medium | TC-PRM-008 | ✅ web + ✋ витрина Pages |
+| FR-37 | Билеты — производная CONFIRMED-брони: по одному на место, подпись hex-128 и TK-номер детерминированы, повторная выдача идентична | High | TC-QR-001 | ✅ unit, int, e2e, web |
+| FR-38 | Всё, что не CONFIRMED — 409 bookingNotConfirmed: до оплаты, после отмены; REFUND_FAILED оживляет билеты | High | TC-QR-002 | ✅ unit, int, e2e, web |
+| FR-39 | Билеты видит только владелец: 403 чужому JWT | High | TC-QR-003 | ✅ unit, int, e2e |
+| FR-40 | Подпись: канон CINE1\|bookingId\|seat\|epoch, HMAC-SHA256 усечён до 128 бит, сравнение timingSafeEqual; web-зеркало синхронным sha256 сверяется с node:crypto | High | TC-QR-004 | ✅ unit (api + web) |
+| FR-41 | Сканер verify (только admin): вердикт с причиной — badSignature/malformedPayload без обращения к БД, bookingNotFound/bookingNotConfirmed/seatMismatch/sessionPassed по данным | High | TC-QR-005, TC-QR-006, TC-QR-007 | ✅ unit, int, e2e, web |
+| FR-42 | Экран /ticket/:id и демо-паритет: карточки по местам, полноэкранный QR «у входа в зал», CTA с оплаты/моих билет/табло | Medium | TC-QR-008 | ✅ web + ✋ витрина Pages |
 
 ## Покрытие по уровням
 
 | Уровень | Покрывает требования |
 |---|---|
-| Юнит (api + web) | FR-2, FR-5, FR-8, FR-10, FR-11, FR-12 (шина), FR-13 (ping), FR-15, FR-16, FR-19, FR-20, FR-21, FR-23, FR-24, FR-25, FR-27, FR-28, FR-30, FR-31, FR-32, FR-33, FR-34, FR-35 |
-| Интеграционные | FR-1…FR-6, FR-8…FR-12, FR-18…FR-25, FR-27…FR-35 |
-| E2E (стенд) | FR-4, FR-7, FR-9, FR-10, FR-12, FR-18, FR-19, FR-20, FR-22, FR-23, FR-24, FR-25, FR-27…FR-30, FR-32, FR-34, FR-35 |
-| Ручные (стенд/UX) | FR-13 (reconnect глазами), FR-14, FR-17, FR-26 (дашборд глазами), FR-30 (письмо глазами), FR-36 (витрина демо) |
+| Юнит (api + web) | FR-2, FR-5, FR-8, FR-10, FR-11, FR-12 (шина), FR-13 (ping), FR-15, FR-16, FR-19, FR-20, FR-21, FR-23, FR-24, FR-25, FR-27, FR-28, FR-30, FR-31, FR-32, FR-33, FR-34, FR-35, FR-37…FR-41 |
+| Интеграционные | FR-1…FR-6, FR-8…FR-12, FR-18…FR-25, FR-27…FR-35, FR-37…FR-39, FR-41 |
+| E2E (стенд) | FR-4, FR-7, FR-9, FR-10, FR-12, FR-18, FR-19, FR-20, FR-22, FR-23, FR-24, FR-25, FR-27…FR-30, FR-32, FR-34, FR-35, FR-37, FR-38, FR-39, FR-41 |
+| Ручные (стенд/UX) | FR-13 (reconnect глазами), FR-14, FR-17, FR-26 (дашборд глазами), FR-30 (письмо глазами), FR-36 (витрина демо), FR-42 (витрина демо) |
 
 Вывод: все High-требования покрыты хотя бы одним уровнем; ручные проверки
 (FR-14, FR-17) обязательны в предрелизной проходке по чек-листам CL-6/CL-8.
