@@ -296,7 +296,10 @@ async function cancel(): Promise<void> {
       <p class="empty__icon">✅</p>
       <p>Оплата прошла — билеты ваши!</p>
       <p v-if="booking.message" class="page-sub">{{ booking.message }}</p>
-      <RouterLink to="/my" class="btn">Мои билеты</RouterLink>
+      <RouterLink :to="`/ticket/${booking.id}`" class="btn">
+        Показать QR-билеты
+      </RouterLink>
+      <RouterLink to="/my" class="btn btn--ghost">Мои билеты</RouterLink>
     </div>
 
     <div v-else-if="booking.status === 'FAILED'" class="empty">

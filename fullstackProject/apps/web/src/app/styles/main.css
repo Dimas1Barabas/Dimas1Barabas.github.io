@@ -1660,3 +1660,143 @@ main.container {
 .stat--movies .stat__num { color: var(--accent-2); }
 .stat--reviews .stat__num { color: var(--violet); }
 .stat--rating .stat__num { color: var(--green); }
+
+/* ---------- QR-билеты: карточки и полноэкранный «вход в зал» ---------- */
+
+.ticket-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+}
+
+.ticket-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.ticket-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+}
+
+.ticket-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  color: #fff;
+}
+
+.ticket-card__icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.ticket-card__head-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ticket-card__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-card__meta {
+  margin: 2px 0 0;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.ticket-card__no {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  opacity: 0.9;
+  white-space: nowrap;
+}
+
+/* белое поле обязательно: контраст QR важнее темы интерфейса */
+.ticket-card__qr {
+  display: flex;
+  justify-content: center;
+  padding: 16px 16px 8px;
+  background: #fff;
+  border: 0;
+  cursor: zoom-in;
+  width: 100%;
+}
+
+.ticket-card__qr svg {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+}
+
+.ticket-card__foot {
+  padding: 8px 14px 14px;
+  text-align: center;
+}
+
+.ticket-card__seat {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--text);
+}
+
+.ticket-card__guest {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* один QR почти на весь экран телефона — режим «у входа в зал» */
+.ticket-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--backdrop);
+  backdrop-filter: blur(3px);
+  padding: 20px;
+}
+
+.ticket-fullscreen__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  outline: none;
+}
+
+.ticket-fullscreen__qr {
+  width: min(82vw, 78dvh, 420px);
+  height: auto;
+}
+
+.ticket-fullscreen__seat {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: var(--text);
+  text-align: center;
+}
+
+.ticket-fullscreen__meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}

@@ -25,6 +25,12 @@ const router = createRouter({
       component: () => import('@/pages/payment/ui/PaymentView.vue'),
     },
     {
+      // QR-билеты брони «на вход в зал»: по одному на место
+      path: '/ticket/:bookingId',
+      name: 'ticket',
+      component: () => import('@/pages/ticket/ui/TicketView.vue'),
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('@/pages/login/ui/AuthView.vue'),

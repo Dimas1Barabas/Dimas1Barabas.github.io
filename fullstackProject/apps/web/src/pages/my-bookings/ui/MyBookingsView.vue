@@ -103,6 +103,13 @@ async function cancel(id: string): Promise<void> {
               >
                 Оплатить
               </RouterLink>
+              <RouterLink
+                v-if="booking.status === 'CONFIRMED'"
+                class="btn btn--sm"
+                :to="`/ticket/${booking.id}`"
+              >
+                QR-билеты
+              </RouterLink>
               <button
                 v-if="booking.status === 'PENDING_PAYMENT' || booking.status === 'CONFIRMED'"
                 class="btn btn--danger btn--sm"
