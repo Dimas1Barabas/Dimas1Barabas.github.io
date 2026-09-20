@@ -14,11 +14,12 @@ describe('QrCode', () => {
     expect(svg.attributes('aria-label')).toBe('QR-код билета');
     expect(svg.attributes('shape-rendering')).toBe('crispEdges');
     // тихая зона: viewBox на 2 модуля больше матрицы
-    const [, , w] = svg.attributes('viewBox')!.split(' ').map(Number);
+    const parts = svg.attributes('viewBox')!.split(' ').map(Number);
+    const w = parts[2]!;
     expect(w).toBeGreaterThanOrEqual(23); // минимум версия 2 (25×25) для такого payload
     expect(svg.findAll('rect')).toHaveLength(1); // белая подложка
     expect(svg.find('path')).toBeTruthy();
-    expect(svg.find('path')!.attributes('d').length).toBeGreaterThan(100);
+    expect(svg.find('path')!.attributes('d')!.length).toBeGreaterThan(100);
   });
 
   it('длинный payload — матрица крупнее (версия подбирается автоматически)', () => {
