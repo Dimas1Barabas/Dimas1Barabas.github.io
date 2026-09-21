@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import BookingModal from '@/features/booking-flow/ui/BookingModal.vue';
 import MovieCard from '@/entities/movie/ui/MovieCard.vue';
 import ReviewModal from '@/features/review/ui/ReviewModal.vue';
@@ -10,6 +10,7 @@ import { useMoviesStore } from '@/entities/movie/model/movies.store';
 import { hasSessionOnDate } from '@/entities/movie/lib/sessions';
 
 const router = useRouter();
+const route = useRoute();
 const authStore = useAuthStore();
 const moviesStore = useMoviesStore();
 const selectedMovie = ref<Movie | null>(null);
@@ -50,8 +51,22 @@ const filteredMovies = computed<Movie[]>(() =>
 );
 
 onMounted(() => {
-  void moviesStore.load();
+  // Promise.resolve: и живой промис, и мок без возврата — оба подходят
+  void Promise.resolve(moviesStore.load()).then(openFromQuery);
 });
+
+/** ?movie=<id> — глубокая ссылка из письма/уведомления листа ожидания:
+ *  афиша загружена → сразу открываем модалку выбора мест */
+function openFromQuery(): void {
+  const wanted = route.query.movie;
+  if (typeof wanted !== 'string' || selectedMovie.value) return;
+  const movie = moviesStore.movies.find((m) => m.id === wanted);
+  if (movie) {
+    selectedMovie.value = movie;
+    // ссылка одноразовая: после закрытия модалки не открываем снова
+    void router.replace({ query: { ...route.query, movie: undefined } });
+  }
+}
 
 /** бронь создана — ведём клиента оплачивать, окно резерва уже тикает */
 function onCreated(booking: Booking): void {

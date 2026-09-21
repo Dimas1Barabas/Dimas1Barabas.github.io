@@ -4,6 +4,7 @@ import StatusBadge from '@/entities/booking/ui/StatusBadge.vue';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useBookingsStore } from '@/entities/booking/model/store';
+import { useWaitlistStore } from '@/entities/waitlist/model/store';
 import {
   formatPrice,
   formatSeats,
@@ -13,6 +14,7 @@ import {
 const app = useAppStore();
 const auth = useAuthStore();
 const store = useBookingsStore();
+const waitlist = useWaitlistStore();
 
 /** кабинет живёт только при живом API и вошедшем пользователе */
 const allowed = computed(() => app.mode === 'live' && auth.isAuthed);
@@ -22,10 +24,16 @@ onMounted(() => {
   // тот же SSE-стрим: свои брони обновляются мгновенно, как на табло
   store.startListening();
   void store.refreshMine();
+  // лист ожидания: событие `waitlist` того же стрима + свежие записи
+  waitlist.startListening();
+  void waitlist.refresh();
 });
 
 onUnmounted(() => {
-  if (allowed.value) store.stopListening();
+  if (allowed.value) {
+    store.stopListening();
+    waitlist.stopListening();
+  }
 });
 
 function isCancelling(id: string): boolean {
@@ -59,6 +67,72 @@ async function cancel(id: string): Promise<void> {
     </div>
 
     <template v-else>
+      <!-- «место освободилось» голове очереди: место не резерв — успей! -->
+      <div v-if="waitlist.lastNotified" class="waitlist-banner" role="status">
+        <span class="waitlist-banner__icon" aria-hidden="true">🔔</span>
+        <p class="waitlist-banner__text">
+          Место освободилось:
+          <strong>{{ waitlist.lastNotified.movieTitle }}</strong>,
+          {{ waitlist.lastNotified.hall }},
+          {{ formatSession(waitlist.lastNotified.sessionAt) }} — успей забронировать!
+        </p>
+        <div class="waitlist-banner__actions">
+          <RouterLink
+            class="btn btn--sm"
+            :to="{ path: '/', query: { movie: waitlist.lastNotified.movieId } }"
+            @click="waitlist.dismissNotified()"
+          >
+            Выбрать места
+          </RouterLink>
+          <button
+            class="btn btn--ghost btn--sm"
+            type="button"
+            @click="waitlist.dismissNotified()"
+          >
+            Позже
+          </button>
+        </div>
+      </div>
+
+      <div v-if="waitlist.entries.length" class="waitlist-list">
+        <h2 class="waitlist-list__title">Лист ожидания</h2>
+        <article
+          v-for="entry in waitlist.entries"
+          :key="entry.id"
+          class="waitlist-row"
+        >
+          <div class="waitlist-row__main">
+            <h3 class="waitlist-row__title">{{ entry.movieTitle }}</h3>
+            <p class="waitlist-row__meta">
+              {{ entry.hall }}, {{ formatSession(entry.startsAt) }} ·
+              <template v-if="entry.status === 'WAITING'">
+                в очереди<template v-if="entry.position">
+                  , позиция {{ entry.position }}</template
+                >
+              </template>
+              <template v-else>
+                место освобождалось — вы в честной гонке
+              </template>
+            </p>
+          </div>
+          <div class="waitlist-row__side">
+            <RouterLink
+              class="btn btn--sm"
+              :to="{ path: '/', query: { movie: entry.movieId } }"
+            >
+              Выбрать места
+            </RouterLink>
+            <button
+              class="btn btn--danger btn--sm"
+              type="button"
+              @click="waitlist.leave(entry.sessionId)"
+            >
+              Выйти
+            </button>
+          </div>
+        </article>
+      </div>
+
       <p v-if="store.mineError" class="hint hint--error">{{ store.mineError }}</p>
 
       <div v-if="store.mine.length" class="booking-list">
@@ -132,3 +206,71 @@ async function cancel(id: string): Promise<void> {
     </template>
   </section>
 </template>
+
+<style scoped>
+/* «место освободилось» — честная гонка, место не зарезервировано */
+.waitlist-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border: 1px solid hsl(190 80% 50% / 0.45);
+  border-radius: 12px;
+  background: hsl(190 80% 50% / 0.12);
+}
+
+.waitlist-banner__icon {
+  font-size: 1.2rem;
+}
+
+.waitlist-banner__text {
+  margin: 0;
+  flex: 1 1 260px;
+  line-height: 1.45;
+}
+
+.waitlist-banner__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.waitlist-list {
+  margin-bottom: 26px;
+}
+
+.waitlist-list__title {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+  color: var(--text-muted, #9aa4b2);
+}
+
+.waitlist-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--chip-overlay, rgba(148, 163, 184, 0.25));
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+
+.waitlist-row__title {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.waitlist-row__meta {
+  margin: 0;
+  color: var(--text-muted, #9aa4b2);
+  font-size: 0.9rem;
+}
+
+.waitlist-row__side {
+  display: flex;
+  gap: 8px;
+}
+</style>

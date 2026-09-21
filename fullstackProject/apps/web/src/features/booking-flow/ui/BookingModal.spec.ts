@@ -6,6 +6,8 @@ import type { Booking, Movie, SeatMap } from '@/shared/api/types';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useBookingsStore } from '@/entities/booking/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
+import { useWaitlistStore } from '@/entities/waitlist/model/store';
+import type { MyWaitlistEntry } from '@/shared/api/types';
 import BookingModal from '@/features/booking-flow/ui/BookingModal.vue';
 
 const movie: Movie = {
@@ -50,6 +52,53 @@ function mountModal() {
     global: { plugins: [pinia], stubs: { Teleport: true } },
   });
   return { wrapper, moviesStore };
+}
+
+/** аншлаг: зал 3×4 полон, вместо карты мест — CTA листа ожидания */
+function mountFullModal(entry?: Partial<MyWaitlistEntry>) {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const appStore = useAppStore();
+  const moviesStore = useMoviesStore();
+  const waitlistStore = useWaitlistStore();
+  appStore.mode = 'demo';
+  moviesStore.loadSeats = vi.fn();
+  moviesStore.seatMap = {
+    ...seatMap,
+    occupied: [
+      '1-1', '1-2', '1-3', '1-4',
+      '2-1', '2-2', '2-3', '2-4',
+      '3-1', '3-2', '3-3', '3-4',
+    ],
+    free: 0,
+  };
+  waitlistStore.join = vi.fn(async () => true);
+  waitlistStore.leave = vi.fn(async () => undefined);
+  if (entry) {
+    waitlistStore.entries = [
+      {
+        id: 'w-1',
+        sessionId: 's-1',
+        userId: 'demo-guest',
+        status: 'WAITING',
+        position: 1,
+        queuedAt: '2026-09-21T10:00:00Z',
+        notifiedAt: null,
+        createdAt: '2026-09-21T10:00:00Z',
+        movieId: 'm-1',
+        movieTitle: 'Рекурсия',
+        hall: 'IMAX',
+        startsAt: new Date(2030, 0, 10, 19, 0).toISOString(),
+        ...entry,
+      },
+    ];
+  }
+
+  const wrapper = mount(BookingModal, {
+    props: { movie },
+    global: { plugins: [pinia], stubs: { Teleport: true } },
+  });
+  return { wrapper, moviesStore, waitlistStore };
 }
 
 beforeEach(() => {
@@ -189,5 +238,59 @@ describe('BookingModal', () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 's-1', seats: ['1-2'] }),
     );
+  });
+});
+
+describe('BookingModal: аншлаг — лист ожидания', () => {
+  it('полный зал: карты мест нет, вместо неё CTA «Сообщить о свободном месте»', () => {
+    const { wrapper } = mountFullModal();
+
+    expect(wrapper.findAll('button.hall__seat')).toHaveLength(0);
+    expect(wrapper.text()).toContain('занято 12 из 12');
+    const cta = wrapper.find('.waitlist-cta');
+    expect(cta.text()).toContain('Все места заняты');
+    expect(cta.find('.btn').text()).toContain('Сообщить о свободном месте');
+  });
+
+  it('клик по CTA — join с id выбранного сеанса', async () => {
+    const { wrapper, waitlistStore } = mountFullModal();
+
+    await wrapper.find('.waitlist-cta .btn').trigger('click');
+
+    expect(waitlistStore.join).toHaveBeenCalledWith('s-1');
+  });
+
+  it('в очереди: позиция и выход из очереди', async () => {
+    const { wrapper, waitlistStore } = mountFullModal({
+      status: 'WAITING',
+      position: 2,
+    });
+
+    const cta = wrapper.find('.waitlist-cta');
+    expect(cta.text()).toContain('Вы в очереди');
+    expect(cta.text()).toContain('позиция 2');
+    expect(cta.text()).not.toContain('Сообщить о свободном месте');
+
+    await cta.find('.btn').trigger('click');
+    expect(waitlistStore.leave).toHaveBeenCalledWith('s-1');
+  });
+
+  it('NOTIFIED: «Место освобождалось», повторный join и обновление карты', async () => {
+    const { wrapper, moviesStore, waitlistStore } = mountFullModal({
+      status: 'NOTIFIED',
+      position: null,
+      notifiedAt: '2026-09-21T10:05:00Z',
+    });
+
+    const cta = wrapper.find('.waitlist-cta');
+    expect(cta.text()).toContain('Место освобождалось — успей!');
+    expect(cta.text()).toContain('честной гонке');
+
+    const buttons = cta.findAll('.btn');
+    await buttons[0].trigger('click'); // «Сообщить…» = встать заново
+    expect(waitlistStore.join).toHaveBeenCalledWith('s-1');
+
+    await buttons[1].trigger('click'); // «Обновить карту»
+    expect(moviesStore.loadSeats).toHaveBeenCalledWith('s-1');
   });
 });

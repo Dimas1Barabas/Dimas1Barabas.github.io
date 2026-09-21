@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import StatusBadge from '@/entities/booking/ui/StatusBadge.vue';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useBookingsStore } from '@/entities/booking/model/store';
+import { useWaitlistStore } from '@/entities/waitlist/model/store';
 import {
   formatPrice,
   formatSeats,
@@ -11,17 +12,24 @@ import {
 } from '@/shared/lib/format';
 
 const store = useBookingsStore();
+const waitlist = useWaitlistStore();
 const app = useAppStore();
 const now = ref(Date.now());
 let tick: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
   store.startListening();
+  // демо-гость: его лист ожидания живёт здесь (в live — в «Моих билетах»)
+  if (app.mode === 'demo') {
+    waitlist.startListening();
+    void waitlist.refresh();
+  }
   tick = setInterval(() => (now.value = Date.now()), 1000);
 });
 
 onUnmounted(() => {
   store.stopListening();
+  if (app.mode === 'demo') waitlist.stopListening();
   if (tick) clearInterval(tick);
 });
 
@@ -80,6 +88,39 @@ function isCancelling(id: string): boolean {
     </div>
 
     <p v-if="store.error" class="hint hint--error">{{ store.error }}</p>
+
+    <!-- демо-гость: лист ожидания показываем здесь, своего кабинета нет -->
+    <div v-if="app.mode === 'demo' && waitlist.lastNotified" class="waitlist-banner" role="status">
+      <span class="waitlist-banner__icon" aria-hidden="true">🔔</span>
+      <p class="waitlist-banner__text">
+        Место освободилось:
+        <strong>{{ waitlist.lastNotified.movieTitle }}</strong>,
+        {{ waitlist.lastNotified.hall }},
+        {{ formatSession(waitlist.lastNotified.sessionAt) }} — успей забронировать!
+      </p>
+      <RouterLink
+        class="btn btn--sm"
+        :to="{ path: '/', query: { movie: waitlist.lastNotified.movieId } }"
+        @click="waitlist.dismissNotified()"
+      >
+        Выбрать места
+      </RouterLink>
+    </div>
+
+    <div v-if="app.mode === 'demo' && waitlist.entries.length" class="waitlist-strip">
+      <span class="page-sub">Лист ожидания (демо):</span>
+      <span
+        v-for="entry in waitlist.entries"
+        :key="entry.id"
+        class="chip"
+      >
+        {{ entry.movieTitle }} ·
+        <template v-if="entry.status === 'WAITING'">
+          в очереди<template v-if="entry.position">, {{ entry.position }}-й</template>
+        </template>
+        <template v-else>место освобождалось!</template>
+      </span>
+    </div>
 
     <div v-if="store.bookings.length" class="booking-list">
       <TransitionGroup name="list">
@@ -145,3 +186,35 @@ function isCancelling(id: string): boolean {
     </div>
   </section>
 </template>
+
+<style scoped>
+.waitlist-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0 0 14px;
+  padding: 12px 16px;
+  border: 1px solid hsl(190 80% 50% / 0.45);
+  border-radius: 12px;
+  background: hsl(190 80% 50% / 0.12);
+}
+
+.waitlist-banner__icon {
+  font-size: 1.2rem;
+}
+
+.waitlist-banner__text {
+  margin: 0;
+  flex: 1 1 260px;
+  line-height: 1.45;
+}
+
+.waitlist-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+</style>

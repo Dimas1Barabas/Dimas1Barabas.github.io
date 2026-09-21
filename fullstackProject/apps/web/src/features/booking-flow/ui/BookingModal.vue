@@ -14,6 +14,7 @@ import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useBookingsStore } from '@/entities/booking/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
+import { useWaitlistStore } from '@/entities/waitlist/model/store';
 import SeatPicker from '@/features/booking-flow/ui/SeatPicker.vue';
 
 const props = defineProps<{ movie: Movie | null }>();
@@ -23,6 +24,7 @@ const appStore = useAppStore();
 const authStore = useAuthStore();
 const bookingsStore = useBookingsStore();
 const moviesStore = useMoviesStore();
+const waitlistStore = useWaitlistStore();
 
 const customerName = ref('');
 const selected = ref<string[]>([]);
@@ -66,6 +68,17 @@ const occupancyPct = computed(() =>
     : 0,
 );
 
+/** аншлаг: свободных мест нет — вместо карты мест CTA листа ожидания */
+const sessionFull = computed(
+  () => seatMap.value !== null && seatMap.value.free === 0,
+);
+/** своя запись в очереди этого сеанса (WAITING/NOTIFIED) или null */
+const myEntry = computed(() =>
+  selectedSessionId.value
+    ? waitlistStore.entryFor(selectedSessionId.value)
+    : null,
+);
+
 /** снимаем место чипом под картой — как клик по сиденью, только нагляднее */
 function dropSeat(code: string): void {
   selected.value = selected.value.filter((seat) => seat !== code);
@@ -82,6 +95,24 @@ function seatsTakenFrom(err: unknown): string[] {
     }
   }
   return [];
+}
+
+/** встать в лист ожидания полного сеанса (или заново — после проигранной гонки) */
+async function joinQueue(): Promise<void> {
+  if (!selectedSessionId.value || waitlistStore.joining) return;
+  if (needLogin.value) {
+    error.value = 'Войдите, чтобы встать в лист ожидания';
+    return;
+  }
+  error.value = null;
+  const ok = await waitlistStore.join(selectedSessionId.value);
+  if (!ok && waitlistStore.error) error.value = waitlistStore.error;
+}
+
+/** выйти из очереди (запись гасится и в /my) */
+async function leaveQueue(): Promise<void> {
+  if (!selectedSessionId.value) return;
+  await waitlistStore.leave(selectedSessionId.value);
 }
 
 async function submit(): Promise<void> {
@@ -272,13 +303,14 @@ watch(selectedSessionId, (sessionId) => {
                   </span>
                 </div>
                 <SeatPicker
+                  v-if="!sessionFull"
                   v-model="selected"
                   :rows="seatMap.layout.rows"
                   :seats-per-row="seatMap.layout.seatsPerRow"
                   :occupied="seatMap.occupied"
                   :max="8"
                 />
-                <div v-if="selected.length" class="modal__seats">
+                <div v-if="!sessionFull && selected.length" class="modal__seats">
                   <button
                     v-for="seat in selected"
                     :key="seat"
@@ -290,8 +322,69 @@ watch(selectedSessionId, (sessionId) => {
                     {{ seat }} <span aria-hidden="true">✕</span>
                   </button>
                 </div>
+                <div v-if="sessionFull" class="waitlist-cta">
+                <p class="waitlist-cta__title">
+                  <template v-if="myEntry?.status === 'WAITING'">
+                    Вы в очереди<template v-if="myEntry.position">
+                      · позиция {{ myEntry.position }}</template
+                    >
+                  </template>
+                  <template v-else-if="myEntry?.status === 'NOTIFIED'">
+                    Место освобождалось — успей!
+                  </template>
+                  <template v-else>Все места заняты</template>
+                </p>
+                <p class="waitlist-cta__note">
+                  <template v-if="myEntry?.status === 'WAITING'">
+                    Как только место освободится (бронь истечёт, платёж не
+                    пройдёт или кто-то отменит) — первый в очереде получит
+                    уведомление в «Моих билетах» и письмом.
+                  </template>
+                  <template v-else-if="myEntry?.status === 'NOTIFIED'">
+                    Место не резервируется — в честной гонке его могли успеть
+                    занять. Проверьте карту или встаньте в очередь заново.
+                  </template>
+                  <template v-else>
+                    Место может освободиться: бронь истечёт, платёж не пройдёт
+                    или кто-то отменит. Встаньте в лист ожидания — первый в
+                    очереди узнает об освобождении первым.
+                  </template>
+                </p>
+                <div class="waitlist-cta__actions">
+                  <button
+                    v-if="myEntry?.status === 'WAITING'"
+                    class="btn btn--ghost"
+                    type="button"
+                    @click="leaveQueue"
+                  >
+                    Выйти из очереди
+                  </button>
+                  <template v-else>
+                    <button
+                      class="btn"
+                      type="button"
+                      :class="{ 'btn--loading': waitlistStore.joining }"
+                      :disabled="waitlistStore.joining"
+                      :aria-busy="waitlistStore.joining || undefined"
+                      @click="joinQueue"
+                    >
+                      {{ waitlistStore.joining ? 'Записываем…' : 'Сообщить о свободном месте' }}
+                    </button>
+                    <button
+                      v-if="myEntry?.status === 'NOTIFIED'"
+                      class="btn btn--ghost"
+                      type="button"
+                      @click="
+                        selectedSessionId && moviesStore.loadSeats(selectedSessionId)
+                      "
+                    >
+                      Обновить карту
+                    </button>
+                  </template>
+                </div>
+              </div>
               </template>
-              <p v-else-if="error !== null" class="hint hint--error">
+              <p v-if="seatMap === null && error !== null" class="hint hint--error">
                 Карта зала недоступна
               </p>
             </div>
@@ -359,5 +452,32 @@ watch(selectedSessionId, (sessionId) => {
 
 .modal__login-hint a {
   color: inherit;
+}
+
+/* аншлаг: вместо карты мест — CTA листа ожидания */
+.waitlist-cta {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--chip-overlay, rgba(148, 163, 184, 0.25));
+  border-radius: 12px;
+  background: var(--chip-overlay, rgba(148, 163, 184, 0.12));
+}
+
+.waitlist-cta__title {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+
+.waitlist-cta__note {
+  margin: 0 0 12px;
+  color: var(--text-muted, #9aa4b2);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.waitlist-cta__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 </style>
