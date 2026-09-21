@@ -9,6 +9,7 @@ import { Session } from './movies/session.entity';
 import { Review } from './reviews/review.entity';
 import { PasswordReset } from './auth/password-reset.entity';
 import { Promo } from './promos/promo.entity';
+import { WaitlistEntry } from './waitlist/waitlist.entity';
 import { RefreshToken } from './tokens/refresh-token.entity';
 import { User } from './users/user.entity';
 
@@ -42,6 +43,7 @@ export const dataSourceOptions: DataSourceOptions = {
     RefreshToken,
     PasswordReset,
     Promo,
+    WaitlistEntry,
   ],
   migrations: [
     isRunningFromTs ? 'src/migrations/*.ts' : 'dist/migrations/*.js',
