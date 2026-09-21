@@ -89,6 +89,7 @@ describe('BookingsService (unit)', () => {
   let sessionsRepo: { findOneByOrFail: jest.Mock };
   let occupancyRepo: { find: jest.Mock; delete: jest.Mock };
   let promosRepo: { findOneBy: jest.Mock };
+  let waitlistRepo: { update: jest.Mock };
   let rabbit: { publish: jest.Mock };
   /** SSE-шина: спаем, что после мутаций ушли события */
   let stream: { emit: jest.Mock };
@@ -121,6 +122,7 @@ describe('BookingsService (unit)', () => {
     sessionsRepo = { findOneByOrFail: jest.fn(async () => sessionFixture) };
     occupancyRepo = { find: jest.fn(async () => []), delete: jest.fn() };
     promosRepo = { findOneBy: jest.fn(async () => null) };
+    waitlistRepo = { update: jest.fn(async () => ({ affected: 0 })) };
     rabbit = { publish: jest.fn() };
     stream = { emit: jest.fn() };
     emInsert = jest.fn(async () => undefined);
@@ -163,7 +165,7 @@ describe('BookingsService (unit)', () => {
         { provide: getRepositoryToken(SeatOccupancy), useValue: occupancyRepo },
         { provide: getRepositoryToken(Promo), useValue: promosRepo },
         // create() гасит запись листа ожидания — фейку достаточно update
-        { provide: getRepositoryToken(WaitlistEntry), useValue: { update: jest.fn(async () => ({ affected: 0 })) } },
+        { provide: getRepositoryToken(WaitlistEntry), useValue: waitlistRepo },
         { provide: AmqpConnection, useValue: rabbit },
         { provide: BookingStream, useValue: stream },
       ],
@@ -195,6 +197,21 @@ describe('BookingsService (unit)', () => {
       expect(result.hall).toBe('IMAX');
       expect(result.sessionAt).toBe('2026-09-05T19:00:00.000Z');
       expect(result.seats).toEqual(['5-7', '5-8', '5-9']);
+    });
+
+    it('гасит запись в листе ожидания этого сеанса — create → LEFT', async () => {
+      const dto: CreateBookingDto = {
+        sessionId: 'session-1',
+        customerName: 'Дмитрий',
+        seats: ['5-7'],
+      };
+
+      await service.create(dto, authUser);
+
+      expect(waitlistRepo.update).toHaveBeenCalledWith(
+        { sessionId: 'session-1', userId: authUser.id },
+        { status: 'LEFT' },
+      );
     });
 
     it('фильм выводит из сеанса — бронь привязана к обоим', async () => {

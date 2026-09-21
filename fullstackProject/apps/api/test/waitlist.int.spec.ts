@@ -109,6 +109,12 @@ describe('Лист ожидания: HTTP-интеграция (фейковые
 
   let app: INestApplication;
   let entriesRepo: FakeWaitlistRepo;
+  let waitlistService: WaitlistService;
+  let moviesRepo: { findOneByOrFail: jest.Mock };
+  let usersRepo: { findOneByOrFail: jest.Mock };
+  let emitWaitlist: jest.Mock;
+  /** опубликованные в RabbitMQ события */
+  let published: { routingKey: string; payload: Record<string, unknown> }[];
 
   /** сеансы фикстуры: id → строка; join/my по ним */
   const sessions = new Map<string, Session>();
@@ -158,6 +164,23 @@ describe('Лист ожидания: HTTP-интеграция (фейковые
   beforeAll(async () => {
     entriesRepo = new FakeWaitlistRepo((id) => sessions.get(id));
     occupiedCount = HALL_CAPACITY;
+    published = [];
+    emitWaitlist = jest.fn();
+
+    // контекст уведомления при освобождении места (handleSeatReleased)
+    moviesRepo = {
+      findOneByOrFail: jest.fn(async (where: { id: string }) => ({
+        id: where.id,
+        title: 'Дюна: Часть третья',
+      })),
+    };
+    usersRepo = {
+      findOneByOrFail: jest.fn(async (where: { id: string }) => ({
+        id: where.id,
+        email: `${where.id}@test.local`,
+        name: 'Гонец Очереди',
+      })),
+    };
 
     const sessionsRepo = {
       findOneByOrFail: jest.fn(async (where: { id: string }) => {
@@ -184,10 +207,16 @@ describe('Лист ожидания: HTTP-интеграция (фейковые
         { provide: getRepositoryToken(Session), useValue: sessionsRepo },
         { provide: getRepositoryToken(SeatOccupancy), useValue: occupancyRepo },
         // для handleSeatReleased (контекст письма/уведомления)
-        { provide: getRepositoryToken(Movie), useValue: { findOneByOrFail: jest.fn() } },
-        { provide: getRepositoryToken(User), useValue: { findOneByOrFail: jest.fn() } },
-        { provide: AmqpConnection, useValue: { publish: jest.fn() } },
-        { provide: BookingStream, useValue: { emitWaitlist: jest.fn() } },
+        { provide: getRepositoryToken(Movie), useValue: moviesRepo },
+        { provide: getRepositoryToken(User), useValue: usersRepo },
+        {
+          provide: AmqpConnection,
+          useValue: {
+            publish: (_ex: string, routingKey: string, payload: unknown) =>
+              published.push({ routingKey, payload: payload as Record<string, unknown> }),
+          },
+        },
+        { provide: BookingStream, useValue: { emitWaitlist } },
         { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },
         JwtStrategy,
         { provide: APP_GUARD, useClass: JwtAuthGuard },
@@ -201,6 +230,8 @@ describe('Лист ожидания: HTTP-интеграция (фейковые
       new ValidationPipe({ whitelist: true, transform: true }),
     );
     await app.init();
+
+    waitlistService = moduleRef.get(WaitlistService);
 
     const jwt = moduleRef.get(JwtService);
     const sign = (sub: string, name: string, role: 'user' | 'admin') =>
@@ -407,6 +438,108 @@ describe('Лист ожидания: HTTP-интеграция (фейковые
 
       expect(mine.status).toBe(200);
       expect(mine.body).toEqual([]);
+    });
+  });
+
+  describe('честная гонка: handleSeatReleased (консьюмер api.waitlist.released)', () => {
+    const release = (sessionId: string, seats: string[] = ['5-7']) =>
+      waitlistService.handleSeatReleased({
+        sessionId,
+        bookingId: randomUUID(),
+        seats,
+        reason: 'EXPIRED',
+        releasedAt: new Date().toISOString(),
+      });
+
+    it('пустая очередь — письмо и SSE не уходят', async () => {
+      const session = seedSession();
+      published.length = 0;
+      emitWaitlist.mockClear();
+
+      await release(session.id);
+
+      expect(published).toEqual([]);
+      expect(emitWaitlist).not.toHaveBeenCalled();
+    });
+
+    it('голова WAITING → NOTIFIED: письмо с email и ссылкой, SSE с userId', async () => {
+      const session = seedSession();
+      const head = seedEntry({ sessionId: session.id, userId: 'user-a' });
+      seedEntry({
+        sessionId: session.id,
+        userId: 'user-b',
+        queuedAt: new Date(Date.now() - 30_000),
+      });
+      published.length = 0;
+      emitWaitlist.mockClear();
+
+      await release(session.id, ['3-4', '3-5']);
+
+      const row = entriesRepo.rows.find((r) => r.id === head.id);
+      expect(row?.status).toBe('NOTIFIED');
+      expect(row?.notifiedAt).toBeInstanceOf(Date);
+
+      expect(published).toEqual([
+        expect.objectContaining({
+          routingKey: 'user.waitlist.seat',
+          payload: expect.objectContaining({
+            email: 'user-a@test.local',
+            userId: 'user-a',
+            sessionId: session.id,
+            movieTitle: 'Дюна: Часть третья',
+          }),
+        }),
+      ]);
+      expect((published[0].payload as { message: string }).message).toContain(
+        '?movie=',
+      );
+
+      expect(emitWaitlist).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-a',
+          sessionId: session.id,
+          seats: ['3-4', '3-5'],
+        }),
+      );
+    });
+
+    it('второе освобождение — уведомлена следующая запись, не та же', async () => {
+      const session = seedSession();
+      const first = seedEntry({ sessionId: session.id, userId: 'user-a' });
+      const second = seedEntry({
+        sessionId: session.id,
+        userId: 'user-b',
+        queuedAt: new Date(Date.now() - 30_000),
+      });
+
+      await release(session.id);
+      expect(entriesRepo.rows.find((r) => r.id === first.id)?.status).toBe('NOTIFIED');
+      expect(entriesRepo.rows.find((r) => r.id === second.id)?.status).toBe('WAITING');
+
+      published.length = 0;
+      emitWaitlist.mockClear();
+      await release(session.id);
+
+      expect(entriesRepo.rows.find((r) => r.id === second.id)?.status).toBe('NOTIFIED');
+      expect(published[0]?.payload).toMatchObject({ userId: 'user-b' });
+      expect(emitWaitlist).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-b' }),
+      );
+    });
+
+    it('все уведомлены — новых писем нет', async () => {
+      const session = seedSession();
+      const only = seedEntry({ sessionId: session.id, userId: 'user-a' });
+
+      await release(session.id);
+      published.length = 0;
+      emitWaitlist.mockClear();
+
+      await release(session.id);
+
+      expect(entriesRepo.rows.find((r) => r.id === only.id)?.status).toBe('NOTIFIED');
+      expect(published).toEqual([]);
+      expect(emitWaitlist).not.toHaveBeenCalled();
     });
   });
 });
