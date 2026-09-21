@@ -308,3 +308,39 @@ export interface TicketVerifyResult {
   hall: string | null;
   customerName: string | null;
 }
+
+/** статусы записи в листе ожидания полного сеанса */
+export type WaitlistStatus = 'WAITING' | 'NOTIFIED' | 'LEFT';
+
+/** запись в листе ожидания — ответ POST /api/waitlist/:sessionId */
+export interface WaitlistEntry {
+  id: string;
+  sessionId: string;
+  userId: string;
+  status: WaitlistStatus;
+  /** позиция среди WAITING (1 — голова); null, если уже не в очереди */
+  position: number | null;
+  queuedAt: string;
+  notifiedAt: string | null;
+  createdAt: string;
+}
+
+/** запись с контекстом сеанса — элемент GET /api/waitlist/my */
+export interface MyWaitlistEntry extends WaitlistEntry {
+  movieId: string;
+  movieTitle: string;
+  hall: string;
+  startsAt: string;
+}
+
+/** «место освободилось» — SSE-событие waitlist (фильтрация «моё» на клиенте) */
+export interface WaitlistStreamEvent {
+  userId: string;
+  sessionId: string;
+  movieId: string;
+  movieTitle: string;
+  hall: string;
+  sessionAt: string;
+  seats: string[];
+  notifiedAt: string;
+}

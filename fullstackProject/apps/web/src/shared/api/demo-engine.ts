@@ -19,6 +19,9 @@ import type {
   UpdateProfilePayload,
   User,
   ValidatePromoPayload,
+  MyWaitlistEntry,
+  WaitlistEntry,
+  WaitlistStatus,
 } from '@/shared/api/types';
 import { ApiError } from '@/shared/api/client';
 import {
@@ -308,6 +311,9 @@ const DEMO_BOOKING_SEEDS: {
   { movieId: 'demo-recursion', sessionId: 'demo-recursion-s2', seats: ['6-8'], customerName: 'Костя', status: 'CONFIRMED', daysAgo: 2, verdictInMin: 5 },
   { movieId: 'demo-milky-way', sessionId: 'demo-milky-way-s3', seats: ['7-7', '7-8'], customerName: 'Лена', status: 'CONFIRMED', daysAgo: 1, verdictInMin: 5 },
   { movieId: 'demo-49th-stream', sessionId: 'demo-49th-stream-s2', seats: ['4-6', '4-7'], customerName: 'Роман', status: 'CONFIRMED', daysAgo: 0, verdictInMin: 5 },
+  // «аншлаг»: корпоратив выкупил зал целиком — сеанс демо-Рекурсия-s1
+  // полный, на нём витрина листа ожидания (seats = все 80 мест)
+  { movieId: 'demo-recursion', sessionId: 'demo-recursion-s1', seats: allSeatCodes(), customerName: 'КиноКлуб «Аншлаг»', status: 'CONFIRMED', daysAgo: 0, verdictInMin: 5 },
 ];
 
 /** свежие объекты сид-броней: заголовки фильма — из афиши, суммы — из цены */
@@ -391,6 +397,17 @@ function seedPromos(): Promo[] {
 
 type Listener = () => void;
 
+/** запись листа ожидания в состоянии движка (как waitlist_entries в Postgres) */
+interface DemoWaitlistEntry {
+  id: string;
+  sessionId: string;
+  userId: string;
+  status: WaitlistStatus;
+  queuedAt: string;
+  notifiedAt: string | null;
+  createdAt: string;
+}
+
 class DemoEngine {
   private bookings: Booking[] = [];
   /** отзывы всех фильмов; «гость демо» — как user из JWT в live-режиме */
@@ -409,6 +426,8 @@ class DemoEngine {
   private session: User | null = null;
   /** промокоды демо: сиды + созданные в админке демо */
   private promos: Promo[] = seedPromos();
+  /** лист ожидания: записи по сеансам (порядок очереди — по queuedAt) */
+  private waitlist: DemoWaitlistEntry[] = [];
 
   /** «access-токен» демо-сессии — не JWT, просто маркер для стора */
   static readonly SESSION_TOKEN = 'demo-session';
@@ -441,6 +460,7 @@ class DemoEngine {
     this.account = null;
     this.session = null;
     this.promos = seedPromos();
+    this.waitlist = [];
     DEMO_MOVIES.forEach((m) => this.recomputeMovie(m.id));
     this.firstLoad = true;
     this.applySeeds();
@@ -884,6 +904,12 @@ class DemoEngine {
       createdAt: new Date().toISOString(),
     };
     this.bookings.unshift(booking);
+    // бронь создана — запись в листе ожидания этого сеанса больше не нужна
+    for (const w of this.waitlist) {
+      if (w.sessionId === session.id && w.userId === DEMO_GUEST_ID) {
+        w.status = 'LEFT';
+      }
+    }
     this.notify();
 
     // wait-очередь демо: по истечении окна оплаты неоплаченная бронь гасится
@@ -898,6 +924,7 @@ class DemoEngine {
         booking.processedAt = new Date().toISOString();
         const occupiedSet = this.occupiedFor(booking.sessionId);
         booking.seats.forEach((s) => occupiedSet.delete(s));
+        this.releaseWaitlist(booking.sessionId);
         this.notify();
       }, DEMO_PAYMENT_TIMEOUT_MS),
     );
@@ -963,6 +990,7 @@ class DemoEngine {
         // оплата не прошла — места возвращаются в продажу (как в API)
         const occupiedSet = this.occupiedFor(booking.sessionId);
         booking.seats.forEach((s) => occupiedSet.delete(s));
+        this.releaseWaitlist(booking.sessionId);
       }
       this.notify();
     }, delay);
@@ -988,6 +1016,7 @@ class DemoEngine {
       booking.message = 'Бронь отменена до оплаты — места снова в продаже';
       const occupiedSet = this.occupiedFor(booking.sessionId);
       booking.seats.forEach((s) => occupiedSet.delete(s));
+      this.releaseWaitlist(booking.sessionId);
       this.notify();
       return booking;
     }
@@ -1016,11 +1045,142 @@ class DemoEngine {
         // возврат прошёл — места снова в продаже (как booking.refunded в API)
         const occupiedSet = this.occupiedFor(booking.sessionId);
         booking.seats.forEach((s) => occupiedSet.delete(s));
+        this.releaseWaitlist(booking.sessionId);
       }
       this.notify();
     }, delay);
 
     return booking;
+  }
+
+  // ── Лист ожидания: честная гонка в миниатюре ────────────────────────
+  // Как waitlist_entries + api.waitlist.released в API: очередь по
+  // queuedAt, уведомление голове при освобождении места, место НЕ
+  // резервируется. «Письмо» демо не пишет — уведомление видно статусом
+  // NOTIFIED в /my и всплывашкой (стор ловит переход по onChange).
+
+  /** позиция среди WAITING сеанса (1 — голова); null — уже не в очереди */
+  private toWaitlistDto(entry: DemoWaitlistEntry): WaitlistEntry {
+    const queue = this.waitlistQueue(entry.sessionId);
+    const position = queue.findIndex((w) => w.id === entry.id) + 1;
+    return {
+      id: entry.id,
+      sessionId: entry.sessionId,
+      userId: entry.userId,
+      status: entry.status,
+      position: position || null,
+      queuedAt: entry.queuedAt,
+      notifiedAt: entry.notifiedAt,
+      createdAt: entry.createdAt,
+    };
+  }
+
+  /** очередь сеанса: WAITING от старейшей к новой (waitingQueue из API) */
+  private waitlistQueue(sessionId: string): DemoWaitlistEntry[] {
+    return this.waitlist
+      .filter((w) => w.sessionId === sessionId && w.status === 'WAITING')
+      .sort(
+        (a, b) =>
+          a.queuedAt.localeCompare(b.queuedAt) || (a.id < b.id ? -1 : 1),
+      );
+  }
+
+  /** миниатюра POST /waitlist/:sessionId — гварды как в WaitlistService */
+  joinWaitlist(sessionId: string): WaitlistEntry {
+    const found = this.findSession(sessionId);
+    if (!found) throw new Error('Сеанс не найден');
+    if (Date.parse(found.session.startsAt) <= Date.now()) {
+      throw new ApiError('HTTP 410', 410, JSON.stringify({
+        statusCode: 410,
+        error: 'Gone',
+        message: 'Сеанс уже начался — лист ожидания закрыт',
+        code: 'sessionPassed',
+      }));
+    }
+    if (this.occupiedFor(sessionId).size < HALL_CAPACITY) {
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'На сеансе есть свободные места — лист ожидания не нужен',
+        code: 'sessionNotFull',
+      }));
+    }
+    // демо без JWT: записи «гостя демо» (как гостевые брони и отзывы)
+    const existing = this.waitlist.find(
+      (w) => w.sessionId === sessionId && w.userId === DEMO_GUEST_ID,
+    );
+    if (existing?.status === 'WAITING') {
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Вы уже в листе ожидания этого сеанса',
+        code: 'waitlistAlready',
+      }));
+    }
+    const now = new Date().toISOString();
+    if (existing) {
+      // повторный вход после NOTIFIED/LEFT — в конец очереди
+      existing.status = 'WAITING';
+      existing.queuedAt = now;
+      existing.notifiedAt = null;
+      this.notify();
+      return this.toWaitlistDto(existing);
+    }
+    const entry: DemoWaitlistEntry = {
+      id: uuid(),
+      sessionId,
+      userId: DEMO_GUEST_ID,
+      status: 'WAITING',
+      queuedAt: now,
+      notifiedAt: null,
+      createdAt: now,
+    };
+    this.waitlist.push(entry);
+    this.notify();
+    return this.toWaitlistDto(entry);
+  }
+
+  /** миниатюра DELETE /waitlist/:sessionId (404 — записи нет) */
+  leaveWaitlist(sessionId: string): void {
+    const existing = this.waitlist.find(
+      (w) => w.sessionId === sessionId && w.userId === DEMO_GUEST_ID,
+    );
+    if (!existing || existing.status === 'LEFT') {
+      throw new ApiError('HTTP 404', 404, JSON.stringify({
+        statusCode: 404,
+        error: 'Not Found',
+        message: 'Запись в листе ожидания не найдена',
+        code: 'waitlistEntryNotFound',
+      }));
+    }
+    existing.status = 'LEFT';
+    this.notify();
+  }
+
+  /** миниатюра GET /waitlist/my: активные записи по будущим сеансам */
+  myWaitlist(): MyWaitlistEntry[] {
+    return this.waitlist
+      .filter((w) => w.userId === DEMO_GUEST_ID && w.status !== 'LEFT')
+      .map((w) => {
+        const found = this.findSession(w.sessionId)!;
+        return {
+          ...this.toWaitlistDto(w),
+          movieId: found.movie.id,
+          movieTitle: found.movie.title,
+          hall: found.session.hall,
+          startsAt: found.session.startsAt,
+        };
+      })
+      .filter((w) => Date.parse(w.startsAt) > Date.now())
+      .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+  }
+
+  /** места освободились — уведомить голову (консьюмер api.waitlist.released) */
+  private releaseWaitlist(sessionId: string): void {
+    const head = this.waitlistQueue(sessionId)[0];
+    if (!head) return;
+    head.status = 'NOTIFIED';
+    head.notifiedAt = new Date().toISOString();
   }
 
   // ── QR-билеты: симуляция производной брони ─────────────────────────

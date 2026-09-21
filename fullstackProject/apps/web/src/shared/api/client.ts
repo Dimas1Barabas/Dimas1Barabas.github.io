@@ -20,6 +20,8 @@ import type {
   UpdateProfilePayload,
   User,
   ValidatePromoPayload,
+  WaitlistEntry,
+  MyWaitlistEntry,
 } from '@/shared/api/types';
 
 /** Базовый URL API. По умолчанию — тот же origin (vite-proxy / nginx) */
@@ -183,6 +185,18 @@ export const api = {
   /** билеты брони: по одному на место (409 bookingNotConfirmed без CONFIRMED) */
   bookingTickets: (id: string) =>
     request<Ticket[]>(`/bookings/${id}/tickets`),
+  /** встать в лист ожидания полного сеанса (409 waitlistAlready/sessionNotFull) */
+  joinWaitlist: (sessionId: string) =>
+    request<WaitlistEntry>(`/waitlist/${sessionId}`, {
+      method: 'POST',
+    }),
+  /** выйти из листа ожидания; 204 без тела */
+  leaveWaitlist: (sessionId: string) =>
+    request<void>(`/waitlist/${sessionId}`, {
+      method: 'DELETE',
+    }),
+  /** мои активные записи (WAITING/NOTIFIED) по будущим сеансам */
+  myWaitlist: () => request<MyWaitlistEntry[]>('/waitlist/my'),
   /** регистрация: пароль хэшируется на бэкенде, вернётся UserDto */
   register: (payload: RegisterPayload) =>
     request<User>('/auth/register', {
