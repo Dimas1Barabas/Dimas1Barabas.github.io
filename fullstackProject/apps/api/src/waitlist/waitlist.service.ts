@@ -133,8 +133,9 @@ export class WaitlistService {
 
   /**
    * Мои записи — только по будущим сеансам (прошедшие лениво гасим
-   * из ответа, без cron). Позиция — среди WAITING сеанса; объём мал,
-   * поэтому очередь каждого сеанса выгружается целиком.
+   * из ответа, без cron) и только активные: LEFT — история, её клиенту
+   * не показываем. Позиция — среди WAITING сеанса; объём мал, поэтому
+   * очередь каждого сеанса выгружается целиком.
    */
   async my(user: AuthUser): Promise<WaitlistMyEntryDto[]> {
     const mine = await this.entries.find({
@@ -142,7 +143,10 @@ export class WaitlistService {
       relations: ['session', 'session.movie'],
     });
     const upcoming = mine.filter(
-      (e) => e.session && e.session.startsAt.getTime() > Date.now(),
+      (e) =>
+        e.session &&
+        e.session.startsAt.getTime() > Date.now() &&
+        e.status !== 'LEFT',
     );
 
     const queues = new Map<string, WaitlistEntry[]>();

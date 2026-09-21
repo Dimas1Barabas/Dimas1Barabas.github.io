@@ -343,6 +343,14 @@ describe('Лист ожидания: HTTP-интеграция (фейковые
         .set('Authorization', bearerA);
       expect(again.status).toBe(404);
       expect(again.body.code).toBe('waitlistEntryNotFound');
+
+      // LEFT — история: /my её не показывает
+      const mine = await request(app.getHttpServer())
+        .get('/api/waitlist/my')
+        .set('Authorization', bearerA);
+      expect(
+        mine.body.some((e: { sessionId: string }) => e.sessionId === session.id),
+      ).toBe(false);
     });
 
     it('после leave повторный join — снова WAITING, но в конце очереди', async () => {
