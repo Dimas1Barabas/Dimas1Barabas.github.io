@@ -24,6 +24,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Booking } from '../src/bookings/booking.entity';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { Promo } from '../src/promos/promo.entity';
+import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { sseFrames, waitForSseEvent } from './sse';
@@ -323,6 +324,8 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
           useValue: occupancyRepo,
         },
         { provide: getRepositoryToken(Promo), useValue: promosRepo },
+        // create() гасит запись листа ожидания — фейку достаточно update
+        { provide: getRepositoryToken(WaitlistEntry), useValue: { update: jest.fn(async () => ({ affected: 0 })) } },
         { provide: AmqpConnection, useValue: { publish: rabbitPublish, connected: true } },
         {
           provide: DataSource,
@@ -1202,8 +1205,14 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
 
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('CANCELLED');
-      // возвращать нечего — события booking.cancelled нет
-      expect(rabbitPublish).not.toHaveBeenCalled();
+      // возвращать нечего — события booking.cancelled нет; места свободны —
+      // лист ожидания узнаёт об этом событием
+      expect(rabbitPublish).toHaveBeenCalledTimes(1);
+      expect(rabbitPublish).toHaveBeenCalledWith(
+        'cinema',
+        'waitlist.seat.released',
+        expect.objectContaining({ reason: 'CANCELLED_UNPAID', seats: ['4-9'] }),
+      );
 
       const map = await request(app.getHttpServer())
         .get(`/api/sessions/${session.id}/seats`);

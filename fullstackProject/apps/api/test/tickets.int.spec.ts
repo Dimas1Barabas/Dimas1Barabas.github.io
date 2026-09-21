@@ -23,6 +23,7 @@ import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Promo } from '../src/promos/promo.entity';
+import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
 
 /**
  * Интеграционный тест QR-билетов: реальный HTTP-стек Nest (роутинг,
@@ -137,6 +138,8 @@ describe('QR-билеты: HTTP-интеграция (фейковые зави�
         { provide: getRepositoryToken(Session), useValue: sessionsRepo },
         { provide: getRepositoryToken(SeatOccupancy), useValue: occupancyRepo },
         { provide: getRepositoryToken(Promo), useValue: promosRepo },
+        // create() гасит запись листа ожидания — фейку достаточно update
+        { provide: getRepositoryToken(WaitlistEntry), useValue: { update: jest.fn(async () => ({ affected: 0 })) } },
         { provide: AmqpConnection, useValue: { connected: true, publish: jest.fn() } },
         { provide: DataSource, useValue: { query: jest.fn(async () => [[], 0]) } },
         { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },

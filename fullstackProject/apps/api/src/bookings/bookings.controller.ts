@@ -171,14 +171,18 @@ export class BookingsController {
   @ApiOperation({
     summary: 'SSE-стрим броней (демо-табло)',
     description:
-      'text/event-stream: событие `booking` с каждой мутацией брони + ' +
-      'heartbeat `ping` каждые 25 c. try-it-out здесь не покажет поток — ' +
-      'смотрите вкладку Network или `curl -N`.',
+      'text/event-stream: событие `booking` с каждой мутацией брони, ' +
+      '`waitlist` — «место освободилось» голове листа ожидания ' +
+      '(клиент матчит payload.userId по себе), heartbeat `ping` каждые 25 c. ' +
+      'try-it-out здесь не покажет поток — смотрите вкладку Network или `curl -N`.',
   })
   stream(): Observable<MessageEvent> {
     return merge(
       this.bus.events$.pipe(
         map((payload) => ({ type: 'booking', data: payload })),
+      ),
+      this.bus.waitlist$.pipe(
+        map((payload) => ({ type: 'waitlist', data: payload })),
       ),
       interval(PING_MS).pipe(map(() => ({ type: 'ping', data: '' }))),
     );

@@ -17,6 +17,11 @@ import {
   promoRefusalError,
 } from '../promos/promo.logic';
 import { Session } from '../movies/session.entity';
+import {
+  WaitlistReleaseReason,
+  WaitlistSeatReleasedEvent,
+} from '../waitlist/waitlist-events';
+import { WaitlistEntry } from '../waitlist/waitlist.entity';
 import { BookingStream } from './booking-stream';
 import {
   BookingCancelledEvent,
@@ -100,9 +105,33 @@ export class BookingsService {
     private readonly occupancy: Repository<SeatOccupancy>,
     @InjectRepository(Promo)
     private readonly promos: Repository<Promo>,
+    // напрямую репозиторием: WaitlistModule импортирует BookingsModule,
+    // обратной зависимости нет — так цикл модулей не возникает
+    @InjectRepository(WaitlistEntry)
+    private readonly waitlistEntries: Repository<WaitlistEntry>,
     private readonly rabbit: AmqpConnection,
     private readonly stream: BookingStream,
   ) {}
+
+  /**
+   * Места снова в продаже — событие листу ожидания. Контекст фильма
+   * не прикладываем: консьюмер сам перечитает сеанс из БД.
+   * Ределивери (краш до ack) может уведомить следующего в очереди —
+   * это безопасно: уведомление не резерв, гонка остаётся честной.
+   */
+  private publishSeatsReleased(
+    booking: Booking,
+    reason: WaitlistReleaseReason,
+  ): void {
+    const event: WaitlistSeatReleasedEvent = {
+      sessionId: booking.sessionId,
+      bookingId: booking.id,
+      seats: booking.seats,
+      reason,
+      releasedAt: new Date().toISOString(),
+    };
+    this.rabbit.publish('cinema', 'waitlist.seat.released', event);
+  }
 
   /** толкает изменение брони подключённым SSE-клиентам */
   private async push(
@@ -238,6 +267,13 @@ export class BookingsService {
       `Бронь ${booking.id} (${movie.title}, ${session.hall} ${session.startsAt.toISOString()}, места ${booking.seats.join(', ')}) ждёт оплаты до ${waitEvent.expiresAt}`,
     );
     await this.push(booking, movie, session);
+
+    // забронировал — запись в листе ожидания этого сеанса больше не нужна
+    // (безусловный LEFT: идемпотентно при повторной брони того же юзера)
+    await this.waitlistEntries.update(
+      { sessionId: dto.sessionId, userId: user.id },
+      { status: 'LEFT' },
+    );
 
     return toBookingDto(booking, movie, session);
   }
@@ -445,6 +481,7 @@ export class BookingsService {
     if (!switched.affected) return null;
 
     await this.occupancy.delete({ bookingId: booking.id });
+    this.publishSeatsReleased(booking, 'CANCELLED_UNPAID');
     this.logger.log(`Отмена неоплаченной брони ${booking.id} (${movie.title})`);
     booking.status = 'CANCELLED';
     booking.message = message;
@@ -565,6 +602,7 @@ export class BookingsService {
     if (event.status === 'FAILED') {
       // оплата не прошла — места возвращаются в продажу
       await this.occupancy.delete({ bookingId: booking.id });
+      this.publishSeatsReleased(booking, 'FAILED');
     }
     this.logger.log(
       `Бронь ${event.bookingId} → ${event.status} (${event.processedBy})`,
@@ -599,6 +637,7 @@ export class BookingsService {
     await this.occupancy.delete({ bookingId: event.bookingId });
     this.logger.log(`Бронь ${event.bookingId} → EXPIRED (${event.processedBy})`);
     const booking = await this.bookings.findOneByOrFail({ id: event.bookingId });
+    this.publishSeatsReleased(booking, 'EXPIRED');
     const { movie, session } = await this.contextOf(booking);
     await this.push(booking, movie, session);
   }
@@ -620,6 +659,7 @@ export class BookingsService {
     if (updated.status === 'CANCELLED') {
       // возврат прошёл — места снова в продаже
       await this.occupancy.delete({ bookingId: booking.id });
+      this.publishSeatsReleased(updated, 'REFUNDED');
     }
     this.logger.log(
       `Возврат ${event.bookingId} → ${event.status} (${event.processedBy})`,

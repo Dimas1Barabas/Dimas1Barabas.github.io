@@ -19,6 +19,7 @@ import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Promo } from '../src/promos/promo.entity';
+import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
 import { PromosController } from '../src/promos/promos.controller';
 import { PromosService } from '../src/promos/promos.service';
 
@@ -242,6 +243,8 @@ describe('Промокоды: HTTP-интеграция (фейковые зав
         BookingsService,
         BookingStream,
         { provide: getRepositoryToken(Promo), useValue: promosRepo },
+        // create() гасит запись листа ожидания — фейку достаточно update
+        { provide: getRepositoryToken(WaitlistEntry), useValue: { update: jest.fn(async () => ({ affected: 0 })) } },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Session), useValue: sessionsRepo },

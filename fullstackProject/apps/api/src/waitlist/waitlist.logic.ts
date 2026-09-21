@@ -46,6 +46,11 @@ export type WaitlistJoinRefusal =
   | 'sessionNotFull'
   | 'sessionPassed';
 
+/** база ссылки «к выбору мест» в письме листа ожидания */
+export function webLinkBase(): string {
+  return process.env.WEB_LINK_BASE ?? 'http://localhost:18080/#/';
+}
+
 /**
  * Отказ по коду — единый источник для join и повторного join
  * (по образцу promoRefusalError: тело с code, фронт различает причины).

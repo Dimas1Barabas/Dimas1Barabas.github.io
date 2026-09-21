@@ -1,3 +1,4 @@
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { INestApplication, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
@@ -9,10 +10,12 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
+import { BookingStream } from '../src/bookings/booking-stream';
 import { HALL_CAPACITY } from '../src/bookings/hall';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { Movie, MovieDto } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
+import { User } from '../src/users/user.entity';
 import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
 import { WaitlistController } from '../src/waitlist/waitlist.controller';
 import { WaitlistService } from '../src/waitlist/waitlist.service';
@@ -180,6 +183,11 @@ describe('Лист ожидания: HTTP-интеграция (фейковые
         { provide: getRepositoryToken(WaitlistEntry), useValue: entriesRepo },
         { provide: getRepositoryToken(Session), useValue: sessionsRepo },
         { provide: getRepositoryToken(SeatOccupancy), useValue: occupancyRepo },
+        // для handleSeatReleased (контекст письма/уведомления)
+        { provide: getRepositoryToken(Movie), useValue: { findOneByOrFail: jest.fn() } },
+        { provide: getRepositoryToken(User), useValue: { findOneByOrFail: jest.fn() } },
+        { provide: AmqpConnection, useValue: { publish: jest.fn() } },
+        { provide: BookingStream, useValue: { emitWaitlist: jest.fn() } },
         { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },
         JwtStrategy,
         { provide: APP_GUARD, useClass: JwtAuthGuard },

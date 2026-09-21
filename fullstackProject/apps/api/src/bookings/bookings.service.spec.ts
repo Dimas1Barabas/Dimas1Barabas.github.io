@@ -11,6 +11,7 @@ import { DataSource } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { Movie } from '../movies/movie.entity';
 import { Promo } from '../promos/promo.entity';
+import { WaitlistEntry } from '../waitlist/waitlist.entity';
 import { Session } from '../movies/session.entity';
 import { Booking, BookingStatus } from './booking.entity';
 import { BookingStream } from './booking-stream';
@@ -161,6 +162,8 @@ describe('BookingsService (unit)', () => {
         { provide: getRepositoryToken(Session), useValue: sessionsRepo },
         { provide: getRepositoryToken(SeatOccupancy), useValue: occupancyRepo },
         { provide: getRepositoryToken(Promo), useValue: promosRepo },
+        // create() гасит запись листа ожидания — фейку достаточно update
+        { provide: getRepositoryToken(WaitlistEntry), useValue: { update: jest.fn(async () => ({ affected: 0 })) } },
         { provide: AmqpConnection, useValue: rabbit },
         { provide: BookingStream, useValue: stream },
       ],
@@ -770,8 +773,18 @@ describe('BookingsService (unit)', () => {
         { id: 'booking-1', status: 'PENDING_PAYMENT' },
         expect.objectContaining({ status: 'CANCELLED' }),
       );
-      // возвращать нечего — события booking.cancelled нет
-      expect(rabbit.publish).not.toHaveBeenCalled();
+      // возвращать нечего — события booking.cancelled нет; но места
+      // освободились — лист ожидания должен об этом узнать
+      expect(rabbit.publish).toHaveBeenCalledTimes(1);
+      expect(rabbit.publish).toHaveBeenCalledWith(
+        'cinema',
+        'waitlist.seat.released',
+        expect.objectContaining({
+          sessionId: 'session-1',
+          bookingId: 'booking-1',
+          reason: 'CANCELLED_UNPAID',
+        }),
+      );
     });
 
     it('отмена неоплаченной освобождает места сразу', async () => {
