@@ -68,6 +68,26 @@ func TestToOutcome(t *testing.T) {
 		}
 	})
 
+	t.Run("waitlist.seat — адресат-email едет в BookingID", func(t *testing.T) {
+		o, err := toOutcome(delivery(keyWaitlistSeat,
+			`{"email":"boris@example.com","userId":"u-9","movieTitle":"Дюна","message":"успей забронировать"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.Verdict != "WAITLIST_SEAT" || o.BookingID != "boris@example.com" {
+			t.Fatalf("outcome = %+v", o)
+		}
+		if o.Message != "успей забронировать" {
+			t.Fatalf("message = %q", o.Message)
+		}
+	})
+
+	t.Run("waitlist.seat без email — ядовитое", func(t *testing.T) {
+		if _, err := toOutcome(delivery(keyWaitlistSeat, `{"message":"место есть, адресата нет"}`)); err == nil {
+			t.Fatal("ожидали ошибку: письмо без адресата")
+		}
+	})
+
 	t.Run("битый JSON", func(t *testing.T) {
 		if _, err := toOutcome(delivery(keyProcessed, `{не json`)); err == nil {
 			t.Fatal("ожидали ошибку разбора")

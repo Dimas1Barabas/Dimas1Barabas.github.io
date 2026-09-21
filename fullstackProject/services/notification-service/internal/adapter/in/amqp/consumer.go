@@ -24,6 +24,7 @@ const (
 	keyRefunded      = "booking.refunded"    // воркер: CANCELLED | REFUND_FAILED
 	keyExpired       = "booking.expired"     // воркер: резерв истёк
 	keyPasswordReset = "user.password.reset" // NestJS API: письмо сброса пароля
+	keyWaitlistSeat  = "user.waitlist.seat"  // NestJS API: «место освободилось»
 )
 
 const (
@@ -73,7 +74,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 		return fmt.Errorf("consume: %w", err)
 	}
 
-	log.Printf("notification слушает %s / booking.processed + booking.refunded + booking.expired + user.password.reset", queueName)
+	log.Printf("notification слушает %s / booking.processed + booking.refunded + booking.expired + user.password.reset + user.waitlist.seat", queueName)
 
 	for {
 		select {
@@ -129,7 +130,7 @@ func (c *Consumer) declareTopology(ch *amqp091.Channel) error {
 		return fmt.Errorf("очередь %s.parking: %w", queueName, err)
 	}
 
-	for _, key := range []string{keyProcessed, keyRefunded, keyExpired, keyPasswordReset} {
+	for _, key := range []string{keyProcessed, keyRefunded, keyExpired, keyPasswordReset, keyWaitlistSeat} {
 		if err := ch.QueueBind(queueName, key, exchange, false, nil); err != nil {
 			return fmt.Errorf("бинд %s на %s: %w", queueName, key, err)
 		}

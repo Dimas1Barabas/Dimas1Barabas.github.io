@@ -19,6 +19,7 @@ const (
 	KindRefundFailed  Kind = "refund_failed"
 	KindExpired       Kind = "booking_expired"
 	KindPasswordReset Kind = "password_reset"
+	KindWaitlistSeat  Kind = "waitlist_seat"
 )
 
 // DeliveryStatus — судьба отправки.
@@ -73,6 +74,8 @@ func NewFromOutcome(o Outcome, now time.Time) (Notification, error) {
 		kind, title = KindExpired, "Время оплаты истекло"
 	case "PASSWORD_RESET":
 		kind, title = KindPasswordReset, "Сброс пароля"
+	case "WAITLIST_SEAT":
+		kind, title = KindWaitlistSeat, "Место освободилось"
 	default:
 		return Notification{}, fmt.Errorf("%w: %q", ErrUnknownVerdict, o.Verdict)
 	}
