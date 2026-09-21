@@ -111,3 +111,31 @@ export function toWaitlistEntryDto(
     createdAt: entry.createdAt.toISOString(),
   };
 }
+
+/** запись + контекст сеанса для «Моих листов ожидания» (GET /waitlist/my) */
+export class WaitlistMyEntryDto extends WaitlistEntryDto {
+  @ApiProperty({ format: 'uuid' })
+  movieId!: string;
+
+  @ApiProperty({ example: 'Дюна: Часть третья' })
+  movieTitle!: string;
+
+  @ApiProperty({ example: 'IMAX' })
+  hall!: string;
+
+  @ApiProperty({ format: 'date-time', description: 'начало сеанса' })
+  startsAt!: string;
+}
+
+export function toWaitlistMyDto(
+  entry: WaitlistEntry,
+  position: number | null = null,
+): WaitlistMyEntryDto {
+  return {
+    ...toWaitlistEntryDto(entry, position),
+    movieId: entry.session?.movieId ?? '',
+    movieTitle: entry.session?.movie?.title ?? '—',
+    hall: entry.session?.hall ?? '—',
+    startsAt: entry.session?.startsAt?.toISOString() ?? '',
+  };
+}

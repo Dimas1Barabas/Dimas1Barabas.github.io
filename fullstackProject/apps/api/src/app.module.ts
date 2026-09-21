@@ -15,6 +15,7 @@ import { rabbitMqModule } from './rabbit/rabbitmq.config';
 import { ReviewsModule } from './reviews/reviews.module';
 import { RedisModule } from './redis/redis.module';
 import { UsersModule } from './users/users.module';
+import { WaitlistModule } from './waitlist/waitlist.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { UsersModule } from './users/users.module';
     ReviewsModule,
     AdminModule,
     PromosModule,
+    WaitlistModule,
 
     // пользователи и авторизация: регистрация сейчас, логин+JWT дальше
     UsersModule,
