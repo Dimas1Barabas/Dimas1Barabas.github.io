@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, clearAuth, saveAuth } from '@/shared/api/client';
+import { api, clearAuth, saveAuth, wsUrl } from '@/shared/api/client';
 
 /**
  * Транспорт: Bearer из localStorage, перехват 401 → refresh-ротация →
@@ -170,5 +170,21 @@ describe('api client: сессия и refresh', () => {
     clearAuth();
     expect(localStorage.getItem('cine.token')).toBeNull();
     expect(localStorage.getItem('cine.user')).toBeNull();
+  });
+});
+
+describe('wsUrl: адрес WebSocket живой карты', () => {
+  it('относительный BASE (тот же origin) → ws по текущему host', () => {
+    const url = wsUrl('/seats');
+    expect(url.startsWith('ws://')).toBe(true);
+    expect(url.endsWith('/api/seats')).toBe(true);
+  });
+
+  it('абсолютный https BASE → wss без host-магии', async () => {
+    vi.resetModules();
+    vi.stubEnv('VITE_API_URL', 'https://api.example.com/api');
+    const { wsUrl: fresh } = await import('@/shared/api/client');
+    expect(fresh('/seats')).toBe('wss://api.example.com/api/seats');
+    vi.unstubAllEnvs();
   });
 });

@@ -36,6 +36,13 @@ export function apiUrl(path: string): string {
   return `${BASE}${path}`;
 }
 
+/** ws/wss URL для WebSocket (живая карта мест): https→wss, свой origin→host */
+export function wsUrl(path: string): string {
+  if (/^https?:\/\//.test(BASE)) return `${BASE.replace(/^http/, 'ws')}${path}`;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${location.host}${BASE}${path}`;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,

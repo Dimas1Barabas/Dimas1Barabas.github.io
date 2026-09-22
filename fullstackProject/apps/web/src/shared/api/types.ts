@@ -42,6 +42,20 @@ export interface SeatMap {
   free: number;
 }
 
+/** кадр ws-канала живой карты: полный снапшот занятости сеанса */
+export interface SeatSnapshotFrame {
+  type: 'snapshot';
+  data: SeatMap;
+}
+
+/** кадр ошибки ws-канала (мусор/неизвестный сеанс) */
+export interface SeatErrorFrame {
+  type: 'error';
+  message: string;
+}
+
+export type SeatFrame = SeatSnapshotFrame | SeatErrorFrame;
+
 export interface Booking {
   id: string;
   movieId: string;
