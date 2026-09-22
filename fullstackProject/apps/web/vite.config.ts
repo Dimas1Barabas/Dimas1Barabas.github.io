@@ -16,8 +16,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // в dev-режиме проксируем API на локальный NestJS
-      '/api': { target: 'http://localhost:3000', changeOrigin: true },
+      // в dev-режиме проксируем API на локальный NestJS;
+      // ws:true — апгрейд WebSocket живой карты (/api/seats)
+      '/api': { target: 'http://localhost:3000', changeOrigin: true, ws: true },
     },
   },
 });
