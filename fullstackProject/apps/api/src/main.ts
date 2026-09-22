@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { WsAdapter } from '@nestjs/platform-ws';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { setupSwagger } from './swagger';
@@ -17,6 +18,9 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api');
+  // ws-гейтвеи (живая карта мест /api/seats) — на общем HTTP-сервере:
+  // префикс 'api' на них не действует, путь задан в самом гейтвее
+  app.useWebSocketAdapter(new WsAdapter(app));
   // refresh-cookie ездит с запросами — credentials + явный список origin
   // (отражение origin при credentials браузеры принимают, а '*' — нет)
   app.enableCors({

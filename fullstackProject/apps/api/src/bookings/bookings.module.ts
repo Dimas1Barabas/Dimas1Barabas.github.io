@@ -10,8 +10,10 @@ import { BookingStream } from './booking-stream';
 import { BookingsConsumer } from './bookings.consumer';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
+import { SeatMapGateway } from './seat-map.gateway';
 import { SeatOccupancy } from './seat-occupancy.entity';
 import { SeatsController } from './seats.controller';
+import { SeatStream } from './seat-stream';
 
 @Module({
   // rabbitMqModule — чтобы инжектить AmqpConnection (публикация событий);
@@ -29,7 +31,9 @@ import { SeatsController } from './seats.controller';
     rabbitMqModule,
   ],
   controllers: [BookingsController, SeatsController],
-  providers: [BookingsService, BookingsConsumer, BookingStream],
+  // SeatStream + SeatMapGateway — живая карта мест по WS: та же нора,
+  // что и данные занятости (BookingsService), экспортировать наружу не нужно
+  providers: [BookingsService, BookingsConsumer, BookingStream, SeatStream, SeatMapGateway],
   // BookingStream нужен и waitlist-консьюмеру: тот же SSE-эндпоинт,
   // второй канал событий — см. waitlist.module
   exports: [BookingStream],
