@@ -30,6 +30,9 @@ export const useMoviesStore = defineStore('movies', {
      *  объект сокета в state становится reactive-прокси, идентичность
      *  ненадёжна (грабля Pinia), примитив — надёжен */
     seatEpoch: 0,
+    /** демо: отписка от движка и таймер «других зрителей» */
+    seatUnsubscribe: null as (() => void) | null,
+    seatViewerTimer: null as ReturnType<typeof setTimeout> | null,
     /** места, которые живая карта не должна уводить из-под nose (демо) */
     seatAvoid: null as (() => string[]) | null,
   }),
@@ -83,11 +86,33 @@ export const useMoviesStore = defineStore('movies', {
       this.seatAvoid = avoidSeats ?? null;
       this.seatEpoch += 1;
       if (app.mode === 'demo') {
-        // демо-«зрители» — симуляция в demoEngine (этап 4); пока карта
-        // живёт только собственными действиями пользователя
+        // демо-«зрители»: пока модалка открыта, движок изредка занимает
+        // или освобождает чужое место — живая карта без сети. Мутации
+        // движка прилетают через onChange, как SSE у остальных сторов
+        this.seatUnsubscribe = demoEngine.onChange(() => {
+          if (!this.seatSessionId) return;
+          this.applySeatSnapshot(demoEngine.seatMap(this.seatSessionId));
+        });
+        this.scheduleSeatViewer();
         return;
       }
       this.connectSeatSocket();
+    },
+
+    /** демо: следующий «зритель» через случайные 7–15 c (не setInterval —
+     *  так интервал дышит и таймер один на поток) */
+    scheduleSeatViewer(): void {
+      if (!this.seatStreamActive || !this.seatSessionId) return;
+      const sessionId = this.seatSessionId;
+      const epoch = this.seatEpoch;
+      this.seatViewerTimer = setTimeout(
+        () => {
+          if (this.seatEpoch !== epoch || !this.seatStreamActive) return;
+          demoEngine.simulateOtherViewer(sessionId, this.seatAvoid?.() ?? []);
+          this.scheduleSeatViewer();
+        },
+        7000 + Math.random() * 8000,
+      );
     },
 
     /** (пере)подключение к ws-каналу; вызывается стартом и реконнектом */
@@ -130,6 +155,14 @@ export const useMoviesStore = defineStore('movies', {
       this.seatStreamActive = false;
       this.seatSessionId = null;
       this.seatAvoid = null;
+      if (this.seatViewerTimer) {
+        clearTimeout(this.seatViewerTimer);
+        this.seatViewerTimer = null;
+      }
+      if (this.seatUnsubscribe) {
+        this.seatUnsubscribe();
+        this.seatUnsubscribe = null;
+      }
       if (this.seatRetryTimer) {
         clearTimeout(this.seatRetryTimer);
         this.seatRetryTimer = null;
