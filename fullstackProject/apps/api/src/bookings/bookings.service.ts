@@ -23,6 +23,7 @@ import {
 } from '../waitlist/waitlist-events';
 import { WaitlistEntry } from '../waitlist/waitlist.entity';
 import { BookingStream } from './booking-stream';
+import { SeatStream } from './seat-stream';
 import {
   BookingCancelledEvent,
   BookingCreatedEvent,
@@ -111,6 +112,7 @@ export class BookingsService {
     private readonly waitlistEntries: Repository<WaitlistEntry>,
     private readonly rabbit: AmqpConnection,
     private readonly stream: BookingStream,
+    private readonly seatStream: SeatStream,
   ) {}
 
   /**
@@ -131,6 +133,10 @@ export class BookingsService {
       releasedAt: new Date().toISOString(),
     };
     this.rabbit.publish('cinema', 'waitlist.seat.released', event);
+    // живая карта мест: все четыре освобождения закрываются здесь одним
+    // сигналом (вызывается уже после occupancy.delete — гейтвей перечитает
+    // пост-состояние)
+    this.seatStream.emit({ sessionId: booking.sessionId });
   }
 
   /** толкает изменение брони подключённым SSE-клиентам */
@@ -262,6 +268,9 @@ export class BookingsService {
       totalRub: booking.totalRub,
       expiresAt: booking.expiresAt!.toISOString(),
     };
+    // транзакция закоммитилась — места заняты: сигнал живой карте
+    // (внутри замыкания транзакции нельзя: гейтвей раздал бы докоммитное)
+    this.seatStream.emit({ sessionId: booking.sessionId });
     this.rabbit.publish('cinema', 'booking.payment.wait', waitEvent);
     this.logger.log(
       `Бронь ${booking.id} (${movie.title}, ${session.hall} ${session.startsAt.toISOString()}, места ${booking.seats.join(', ')}) ждёт оплаты до ${waitEvent.expiresAt}`,

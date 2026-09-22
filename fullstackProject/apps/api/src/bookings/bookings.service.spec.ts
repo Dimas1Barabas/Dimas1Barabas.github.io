@@ -16,6 +16,7 @@ import { Session } from '../movies/session.entity';
 import { Booking, BookingStatus } from './booking.entity';
 import { BookingStream } from './booking-stream';
 import { BookingsService } from './bookings.service';
+import { SeatStream } from './seat-stream';
 import { SeatOccupancy } from './seat-occupancy.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { signTicket, ticketCanonical } from './ticket.logic';
@@ -93,6 +94,8 @@ describe('BookingsService (unit)', () => {
   let rabbit: { publish: jest.Mock };
   /** SSE-шина: спаем, что после мутаций ушли события */
   let stream: { emit: jest.Mock };
+  /** шина живой карты мест: сигнал на каждое изменение занятости */
+  let seatStream: { emit: jest.Mock };
   /** что «INSERT INTO seat_occupancy» сделал внутри транзакции */
   let emInsert: jest.Mock;
   /** что «UPDATE …» сделал внутри транзакции (pay: статус + скидка) */
@@ -125,6 +128,7 @@ describe('BookingsService (unit)', () => {
     waitlistRepo = { update: jest.fn(async () => ({ affected: 0 })) };
     rabbit = { publish: jest.fn() };
     stream = { emit: jest.fn() };
+    seatStream = { emit: jest.fn() };
     emInsert = jest.fn(async () => undefined);
     // условный UPDATE по умолчанию проходит (affected = 1)
     emUpdate = jest.fn(async () => ({ affected: 1 }));
@@ -168,6 +172,7 @@ describe('BookingsService (unit)', () => {
         { provide: getRepositoryToken(WaitlistEntry), useValue: waitlistRepo },
         { provide: AmqpConnection, useValue: rabbit },
         { provide: BookingStream, useValue: stream },
+        { provide: SeatStream, useValue: seatStream },
       ],
     }).compile();
 
@@ -1060,6 +1065,122 @@ describe('BookingsService (unit)', () => {
       });
 
       expect(stream.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('живая карта: сигнал SeatStream', () => {
+    it('create (места заняты) → сигнал по сеансу', async () => {
+      await service.create(
+        { sessionId: 'session-1', customerName: 'Дмитрий', seats: ['1-1'] },
+        authUser,
+      );
+
+      expect(seatStream.emit).toHaveBeenCalledTimes(1);
+      expect(seatStream.emit).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    });
+
+    it('конфликт мест → без сигнала (транзакция откатилась)', async () => {
+      emInsert.mockRejectedValue({ code: '23505' });
+
+      await expect(
+        service.create(
+          { sessionId: 'session-1', customerName: 'Дмитрий', seats: ['1-1'] },
+          authUser,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(seatStream.emit).not.toHaveBeenCalled();
+    });
+
+    it('отмена неоплаченной → сигнал (места свободны)', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        status: 'PENDING_PAYMENT',
+      });
+
+      await service.cancel('booking-1', authUser);
+
+      expect(seatStream.emit).toHaveBeenCalledTimes(1);
+      expect(seatStream.emit).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    });
+
+    it('FAILED-вердикт воркера → сигнал', async () => {
+      bookingsRepo.update.mockResolvedValue({ affected: 1 });
+      bookingsRepo.findOneByOrFail.mockResolvedValue(bookingFixture());
+
+      await service.handleProcessed({
+        bookingId: 'booking-1',
+        status: 'FAILED',
+        message: 'Банк отказал',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:00:05Z',
+      });
+
+      expect(seatStream.emit).toHaveBeenCalledTimes(1);
+      expect(seatStream.emit).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    });
+
+    it('EXPIRED по TTL → сигнал', async () => {
+      bookingsRepo.update.mockResolvedValue({ affected: 1 });
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        status: 'EXPIRED',
+      });
+
+      await service.handleExpired({
+        bookingId: 'booking-1',
+        message: 'Время оплаты истекло',
+        processedBy: 'go-worker-1',
+        expiredAt: '2026-09-03T12:15:00Z',
+      });
+
+      expect(seatStream.emit).toHaveBeenCalledTimes(1);
+      expect(seatStream.emit).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    });
+
+    it('возврат по саге (CANCELLED) → сигнал', async () => {
+      bookingsRepo.update.mockResolvedValue({ affected: 1 });
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        status: 'CANCELLING',
+      });
+
+      await service.handleRefunded({
+        bookingId: 'booking-1',
+        status: 'CANCELLED',
+        message: 'Возврат 1200 ₽ зачислен',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:05:00Z',
+      });
+
+      expect(seatStream.emit).toHaveBeenCalledTimes(1);
+      expect(seatStream.emit).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    });
+
+    it('REFUND_FAILED (места держатся) и ределивери EXPIRED → без сигнала', async () => {
+      bookingsRepo.update.mockResolvedValue({ affected: 1 });
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        status: 'CANCELLING',
+      });
+
+      await service.handleRefunded({
+        bookingId: 'booking-1',
+        status: 'REFUND_FAILED',
+        message: 'Банк отказал в возврате',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:05:00Z',
+      });
+      expect(seatStream.emit).not.toHaveBeenCalled();
+
+      bookingsRepo.update.mockResolvedValue({ affected: 0 });
+      await service.handleExpired({
+        bookingId: 'booking-1',
+        message: 'Время оплаты истекло',
+        processedBy: 'go-worker-1',
+        expiredAt: '2026-09-03T12:15:00Z',
+      });
+      expect(seatStream.emit).not.toHaveBeenCalled();
     });
   });
 
