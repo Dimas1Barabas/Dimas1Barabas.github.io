@@ -13,6 +13,7 @@ import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { Booking } from '../src/bookings/booking.entity';
 import { BookingStream } from '../src/bookings/booking-stream';
+import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingsService } from '../src/bookings/bookings.service';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
@@ -242,6 +243,7 @@ describe('Промокоды: HTTP-интеграция (фейковые зав
         PromosService,
         BookingsService,
         BookingStream,
+        SeatStream,
         { provide: getRepositoryToken(Promo), useValue: promosRepo },
         // create() гасит запись листа ожидания — фейку достаточно update
         { provide: getRepositoryToken(WaitlistEntry), useValue: { update: jest.fn(async () => ({ affected: 0 })) } },

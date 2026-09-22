@@ -13,6 +13,7 @@ import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { Booking } from '../src/bookings/booking.entity';
 import { BookingStream } from '../src/bookings/booking-stream';
+import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingsService } from '../src/bookings/bookings.service';
 import {
@@ -133,6 +134,7 @@ describe('QR-билеты: HTTP-интеграция (фейковые зави�
       providers: [
         BookingsService,
         BookingStream,
+        SeatStream,
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Session), useValue: sessionsRepo },

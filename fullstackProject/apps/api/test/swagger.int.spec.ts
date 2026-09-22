@@ -14,6 +14,7 @@ import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingStream } from '../src/bookings/booking-stream';
+import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsService } from '../src/bookings/bookings.service';
 import { SeatsController } from '../src/bookings/seats.controller';
 import { HealthController } from '../src/health/health.controller';
@@ -59,6 +60,7 @@ describe('Swagger UI /api/docs (integration)', () => {
         { provide: AdminStatsService, useValue: {} },
         { provide: BookingsService, useValue: {} },
         { provide: BookingStream, useValue: {} },
+        { provide: SeatStream, useValue: {} },
         { provide: ReviewsService, useValue: {} },
         { provide: PromosService, useValue: {} },
         { provide: UsersService, useValue: {} },

@@ -11,6 +11,7 @@ import request from 'supertest';
 import { DataSource, FindOperator } from 'typeorm';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingStream } from '../src/bookings/booking-stream';
+import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsService } from '../src/bookings/bookings.service';
 import { SeatsController } from '../src/bookings/seats.controller';
 import { HealthController } from '../src/health/health.controller';
@@ -314,6 +315,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         MoviesService,
         BookingsService,
         BookingStream,
+        SeatStream,
         RedisService,
         { provide: REDIS_CLIENT, useValue: redisFake(redisStore) },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
