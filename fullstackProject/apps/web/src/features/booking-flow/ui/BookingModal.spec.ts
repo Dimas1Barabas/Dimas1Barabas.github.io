@@ -293,4 +293,54 @@ describe('BookingModal: аншлаг — лист ожидания', () => {
     await buttons[1].trigger('click'); // «Обновить карту»
     expect(moviesStore.loadSeats).toHaveBeenCalledWith('s-1');
   });
+
+  it('живая карта: место, занятое при мне, выпадает из выбора с подсказкой', async () => {
+    const { wrapper, moviesStore } = mountModal();
+
+    // «первый взгляд» инициализирует дифф (в live это делает loadSeats)
+    moviesStore.seatMap = { ...seatMap };
+    await nextTick();
+
+    // первый свободный сеанс 3×4 (заняты 1-1 и 2-2) — это 1-2
+    await wrapper.findAll('button.hall__seat:not([disabled])')[0].trigger('click');
+    expect(wrapper.findAll('.seat-chip')).toHaveLength(1);
+
+    // чужая покупка прилетает кадром живой карты
+    moviesStore.seatMap = {
+      ...seatMap,
+      occupied: ['1-1', '2-2', '1-2'],
+      free: 9,
+    };
+    await nextTick();
+
+    expect(wrapper.findAll('.seat-chip')).toHaveLength(0);
+    expect(wrapper.text()).toContain('Место 1-2 только что заняли');
+    // и кнопка «Выберите места» снова подсказывает пустой выбор
+    expect(wrapper.text()).toContain('Выберите места');
+  });
+
+  it('открытие модалки стартует поток живой карты, закрытие — стоп', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const appStore = useAppStore();
+    const moviesStore = useMoviesStore();
+    appStore.mode = 'demo';
+    moviesStore.loadSeats = vi.fn();
+    moviesStore.seatMap = seatMap;
+    const start = (moviesStore.startSeatStream = vi.fn());
+    const stop = (moviesStore.stopSeatStream = vi.fn());
+
+    const wrapper = mount(BookingModal, {
+      props: { movie },
+      global: { plugins: [pinia], stubs: { Teleport: true } },
+    });
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledWith('s-1', expect.any(Function));
+
+    await wrapper.setProps({ movie: null });
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    wrapper.unmount();
+    expect(stop).toHaveBeenCalledTimes(2);
+  });
 });

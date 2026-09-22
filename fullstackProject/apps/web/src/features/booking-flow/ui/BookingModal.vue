@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import type { Booking, Movie } from '@/shared/api/types';
 import { ApiError } from '@/shared/api/client';
 import {
@@ -174,9 +174,17 @@ watch(
       selectedSessionId.value = upcomingSessions(movie.sessions)[0]?.id ?? null;
       if (selectedSessionId.value) {
         void moviesStore.loadSeats(selectedSessionId.value);
+        moviesStore.startSeatStream(
+          selectedSessionId.value,
+          // демо-«зрители» не занимают места из-под локального выбора
+          () => selected.value,
+        );
       }
       await nextTick();
       modalEl.value?.focus({ preventScroll: true });
+    } else {
+      // модалка закрыта — живой карте нечего обновлять
+      moviesStore.stopSeatStream();
     }
   },
   { immediate: true },
@@ -185,8 +193,45 @@ watch(
 // смена сеанса — своя карта занятости и пустой выбор мест
 watch(selectedSessionId, (sessionId) => {
   selected.value = [];
-  if (sessionId) void moviesStore.loadSeats(sessionId);
+  if (sessionId) {
+    void moviesStore.loadSeats(sessionId);
+    moviesStore.startSeatStream(sessionId, () => selected.value);
+  }
 });
+
+/**
+ * Живая карта: чужая покупка серееет мгновенно. Место, занятое «при мне»,
+ * выпадает из выбора с подсказкой — тот же тон, что у 409-ветки submit.
+ * Первый снапшот сеанса равен loadSeats — подсказку не вспыхиваем.
+ */
+const seenOccupied = ref<{ sessionId: string | null; seats: Set<string> }>({
+  sessionId: null,
+  seats: new Set(),
+});
+watch(seatMap, (map) => {
+  if (!map) {
+    seenOccupied.value = { sessionId: null, seats: new Set() };
+    return;
+  }
+  const firstLook = seenOccupied.value.sessionId !== map.sessionId;
+  const previous = seenOccupied.value.seats;
+  const occupied = new Set(map.occupied);
+  seenOccupied.value = { sessionId: map.sessionId, seats: occupied };
+  if (firstLook || map.sessionId !== selectedSessionId.value) return;
+
+  if (selected.value.length) {
+    const takenNow = selected.value.filter(
+      (seat) => occupied.has(seat) && !previous.has(seat),
+    );
+    if (takenNow.length) {
+      error.value = `Место ${formatSeats(takenNow)} только что заняли — выберите другое`;
+      selected.value = selected.value.filter((seat) => !takenNow.includes(seat));
+    }
+  }
+});
+
+// страховка: компонент размонтирован (ушли со страницы с открытой модалкой)
+onUnmounted(() => moviesStore.stopSeatStream());
 </script>
 
 <template>
