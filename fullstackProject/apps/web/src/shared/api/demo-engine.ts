@@ -416,6 +416,9 @@ class DemoEngine {
   private firstLoad = true;
   /** sessionId → занятые места (посев ленивый, при первом обращении) */
   private occupied = new Map<string, Set<string>>();
+  /** sessionId → места, занятые симулянтом «других зрителей» живой карты
+   *  (освобождать можно только их — сиды и брони пользователя неприкосновенны) */
+  private viewerSeats = new Map<string, Set<string>>();
   /** bookingId → таймер экспирации неоплаченной брони (wait-очередь демо) */
   private expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** «Redis-кэш» аналитики: значение + время расчёта (TTL как у API) */
@@ -456,6 +459,7 @@ class DemoEngine {
     this.expiryTimers.forEach((t) => clearTimeout(t));
     this.expiryTimers.clear();
     this.occupied.clear();
+    this.viewerSeats.clear();
     this.reviews = seedReviews();
     this.account = null;
     this.session = null;
@@ -663,6 +667,45 @@ class DemoEngine {
       occupied,
       free: HALL_CAPACITY - occupied.length,
     };
+  }
+
+  /**
+   * Живая карта в демо: «другой зритель» занимает или освобождает место,
+   * пока открыта модалка выбора. Занимает только свободное — не сиды
+   * и не выбор локального пользователя (avoid); освобождает — только
+   * места симулянта (viewerSeats). Ветвь освобождения зовёт releaseWaitlist —
+   * паритет с четырьмя точками освобождения живого API.
+   */
+  simulateOtherViewer(
+    sessionId: string,
+    avoid: string[],
+  ): 'taken' | 'released' | 'none' {
+    if (!this.findSession(sessionId)) return 'none';
+    const releaseBranch = Math.random() < 0.3;
+    if (releaseBranch) {
+      const mine = this.viewerSeats.get(sessionId);
+      if (!mine || mine.size === 0) return 'none';
+      const seat = [...mine][Math.floor(Math.random() * mine.size)];
+      mine.delete(seat);
+      if (mine.size === 0) this.viewerSeats.delete(sessionId);
+      this.occupiedFor(sessionId).delete(seat);
+      this.releaseWaitlist(sessionId);
+      this.notify();
+      return 'released';
+    }
+    const taken = this.occupiedFor(sessionId);
+    const avoidSet = new Set(avoid);
+    const free = allSeatCodes().filter(
+      (code) => !taken.has(code) && !avoidSet.has(code),
+    );
+    if (free.length === 0) return 'none'; // аншлаг — симулянту нечего занимать
+    const seat = free[Math.floor(Math.random() * free.length)];
+    taken.add(seat);
+    const mine = this.viewerSeats.get(sessionId) ?? new Set<string>();
+    mine.add(seat);
+    this.viewerSeats.set(sessionId, mine);
+    this.notify();
+    return 'taken';
   }
 
   list(): Booking[] {
