@@ -48,14 +48,19 @@
 | FR-40 | Подпись: канон CINE1\|bookingId\|seat\|epoch, HMAC-SHA256 усечён до 128 бит, сравнение timingSafeEqual; web-зеркало синхронным sha256 сверяется с node:crypto | High | TC-QR-004 | ✅ unit (api + web) |
 | FR-41 | Сканер verify (только admin): вердикт с причиной — badSignature/malformedPayload без обращения к БД, bookingNotFound/bookingNotConfirmed/seatMismatch/sessionPassed по данным | High | TC-QR-005, TC-QR-006, TC-QR-007 | ✅ unit, int, e2e, web |
 | FR-42 | Экран /ticket/:id и демо-паритет: карточки по местам, полноэкранный QR «у входа в зал», CTA с оплаты/моих билет/табло | Medium | TC-QR-008 | ✅ web + ✋ витрина Pages |
+| FR-43 | Вход в очередь — только на полный будущий сеанс за JWT; отказы 401/400/404, 409 waitlistAlready\|sessionNotFull, 410 sessionPassed | High | TC-WL-001, TC-WL-002 | ✅ int, e2e, web |
+| FR-44 | Очередь FIFO: позиция среди WAITING; leave → LEFT скрыт из /my; повторный join — в конец; прошедшие сеансы гасятся лениво, без cron | High | TC-WL-003, TC-WL-004 | ✅ unit, int |
+| FR-45 | Освобождение места (4 точки: отмена неоплаченной/EXPIRED/FAILED/возврат) публикует waitlist.seat.released; консьюмер условным UPDATE переводит голову в NOTIFIED, место не резервируется; ределивери безопасен | High | TC-WL-005 | ✅ unit, int, e2e |
+| FR-46 | Уведомление двумя каналами: письмо user.waitlist.seat (пятый поток notification-service, ссылка ?movie=) и витринное SSE type waitlist с userId | High | TC-WL-005, TC-WL-007, TC-WL-008 | ✅ int, e2e, go, web |
+| FR-47 | Бронь уведомлённого гасит его запись в LEFT тем же create() — гонка остаётся честной; следующее освобождение уведомляет следующего | High | TC-WL-006 | ✅ int, e2e, web |
 
 ## Покрытие по уровням
 
 | Уровень | Покрывает требования |
 |---|---|
-| Юнит (api + web) | FR-2, FR-5, FR-8, FR-10, FR-11, FR-12 (шина), FR-13 (ping), FR-15, FR-16, FR-19, FR-20, FR-21, FR-23, FR-24, FR-25, FR-27, FR-28, FR-30, FR-31, FR-32, FR-33, FR-34, FR-35, FR-37…FR-41 |
-| Интеграционные | FR-1…FR-6, FR-8…FR-12, FR-18…FR-25, FR-27…FR-35, FR-37…FR-39, FR-41 |
-| E2E (стенд) | FR-4, FR-7, FR-9, FR-10, FR-12, FR-18, FR-19, FR-20, FR-22, FR-23, FR-24, FR-25, FR-27…FR-30, FR-32, FR-34, FR-35, FR-37, FR-38, FR-39, FR-41 |
+| Юнит (api + web) | FR-2, FR-5, FR-8, FR-10, FR-11, FR-12 (шина), FR-13 (ping), FR-15, FR-16, FR-19, FR-20, FR-21, FR-23, FR-24, FR-25, FR-27, FR-28, FR-30, FR-31, FR-32, FR-33, FR-34, FR-35, FR-37…FR-41, FR-44, FR-45 |
+| Интеграционные | FR-1…FR-6, FR-8…FR-12, FR-18…FR-25, FR-27…FR-35, FR-37…FR-39, FR-41, FR-43…FR-47 |
+| E2E (стенд) | FR-4, FR-7, FR-9, FR-10, FR-12, FR-18, FR-19, FR-20, FR-22, FR-23, FR-24, FR-25, FR-27…FR-30, FR-32, FR-34, FR-35, FR-37, FR-38, FR-39, FR-41, FR-43, FR-45, FR-46, FR-47 |
 | Ручные (стенд/UX) | FR-13 (reconnect глазами), FR-14, FR-17, FR-26 (дашборд глазами), FR-30 (письмо глазами), FR-36 (витрина демо), FR-42 (витрина демо) |
 
 Вывод: все High-требования покрыты хотя бы одним уровнем; ручные проверки
