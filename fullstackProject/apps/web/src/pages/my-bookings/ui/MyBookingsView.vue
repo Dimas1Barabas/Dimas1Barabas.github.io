@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, watch } from 'vue';
 import StatusBadge from '@/entities/booking/ui/StatusBadge.vue';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useBookingsStore } from '@/entities/booking/model/store';
+import { useBonusStore } from '@/entities/bonus/model/store';
 import { useWaitlistStore } from '@/entities/waitlist/model/store';
+import type { BonusReason } from '@/shared/api/types';
 import {
   formatPrice,
   formatSeats,
@@ -14,10 +16,20 @@ import {
 const app = useAppStore();
 const auth = useAuthStore();
 const store = useBookingsStore();
+const bonuses = useBonusStore();
 const waitlist = useWaitlistStore();
 
 /** кабинет живёт только при живом API и вошедшем пользователе */
 const allowed = computed(() => app.mode === 'live' && auth.isAuthed);
+
+/** человекочитаемые причины движений счёта */
+const BONUS_REASONS: Record<BonusReason, string> = {
+  cashback: 'кэшбэк за бронь',
+  payment: 'оплата бонусами',
+  payment_failed: 'возврат — платёж не прошёл',
+  refund: 'возврат при отмене брони',
+  clawback: 'гашение кэшбэка при возврате',
+};
 
 onMounted(() => {
   if (!allowed.value) return;
@@ -27,7 +39,17 @@ onMounted(() => {
   // лист ожидания: событие `waitlist` того же стрима + свежие записи
   waitlist.startListening();
   void waitlist.refresh();
+  // бонусный счёт: кэшбэк придет с вердиктом, развороты — с возвратом
+  void bonuses.refresh();
 });
+
+// вердикты и возвраты меняют баланс — SSE трогает брони, освежаем счёт
+watch(
+  () => store.mine.map((b) => b.status).join(','),
+  () => {
+    if (allowed.value) void bonuses.refresh();
+  },
+);
 
 onUnmounted(() => {
   if (allowed.value) {
@@ -133,6 +155,36 @@ async function cancel(id: string): Promise<void> {
         </article>
       </div>
 
+      <!-- бонусный счёт: баланс от источника + история движений ledger'а -->
+      <div class="bonus-card">
+        <div class="bonus-card__head">
+          <h2 class="bonus-card__title">Бонусный счёт</h2>
+          <strong class="bonus-card__balance">
+            {{ bonuses.balance }}
+            <span class="bonus-card__unit">бонусов</span>
+          </strong>
+        </div>
+        <p class="bonus-card__sub">
+          1 бонус = 1 ₽ · кэшбэк 5% с подтверждённой брони · списать можно
+          до половины чека
+        </p>
+        <ul v-if="bonuses.transactions.length" class="bonus-card__list">
+          <li
+            v-for="t in bonuses.transactions"
+            :key="t.id"
+            class="bonus-card__row"
+          >
+            <span class="bonus-card__reason">{{ BONUS_REASONS[t.reason] }}</span>
+            <span
+              class="bonus-card__amount"
+              :class="`bonus-card__amount--${t.kind}`"
+            >
+              {{ t.kind === 'accrual' ? '+' : '−' }}{{ t.amount }}
+            </span>
+          </li>
+        </ul>
+      </div>
+
       <p v-if="store.mineError" class="hint hint--error">{{ store.mineError }}</p>
 
       <div v-if="store.mine.length" class="booking-list">
@@ -208,6 +260,78 @@ async function cancel(id: string): Promise<void> {
 </template>
 
 <style scoped>
+/* бонусный счёт: баланс + свежие движения ledger'а */
+.bonus-card {
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.bonus-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.bonus-card__title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.bonus-card__balance {
+  font-size: 1.4rem;
+  color: var(--cyan);
+}
+
+.bonus-card__unit {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.bonus-card__sub {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.bonus-card__list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bonus-card__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+
+.bonus-card__reason {
+  color: var(--muted);
+}
+
+.bonus-card__amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.bonus-card__amount--accrual {
+  color: var(--cyan);
+}
+
+.bonus-card__amount--spend {
+  color: var(--muted);
+}
+
 /* «место освободилось» — честная гонка, место не зарезервировано */
 .waitlist-banner {
   display: flex;
