@@ -9,7 +9,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
-import { BONUS_SPEND_LIMIT } from '../bonus/bonus.logic';
+import { BONUS_SPEND_LIMIT, cashbackFor } from '../bonus/bonus.logic';
+import { cashbackPercent } from '../bonus/cashback-percent';
 import {
   BonusKind,
   BonusReason,
@@ -731,29 +732,62 @@ export class BookingsService {
 
   /** Callback события booking.processed от Go-воркера */
   async handleProcessed(event: BookingProcessedEvent): Promise<void> {
-    const booking = await this.bookings.findOneByOrFail({
-      id: event.bookingId,
+    // вердикт и бонусный хвост — одной транзакцией: кэшбэк не может
+    // начислиться без переключения статуса (и наоборот)
+    const applied = await this.dataSource.transaction(async (em) => {
+      const booking = await em.findOneByOrFail(Booking, {
+        id: event.bookingId,
+      });
+      if (booking.status !== 'PENDING') {
+        // ределивери или «хвост» старой топологии: бронь уже закрыта иначе
+        // (EXPIRED/CANCELLED) — вердикт по ней не должен оживлять места
+        this.logger.warn(
+          `booking.processed по бронь ${event.bookingId} в статусе ${booking.status} — пропуск`,
+        );
+        return null;
+      }
+      applyProcessed(booking, event);
+      await em.save(Booking, booking);
+
+      // гостевые брони без владельца бонусов не зарабатывают;
+      // orIgnore — uq(booking_id, reason) гасит дубль при ределивери
+      if (!booking.userId) return booking;
+      if (event.status === 'CONFIRMED') {
+        // кэшбэк: процент от финальной суммы — после промокода и бонусов
+        const amount = cashbackFor(booking.totalRub, cashbackPercent());
+        if (amount > 0) {
+          await this.insertBonus(em, {
+            userId: booking.userId,
+            bookingId: booking.id,
+            kind: 'accrual',
+            reason: 'cashback',
+            amount,
+          });
+        }
+      } else if (event.status === 'FAILED' && booking.bonusSpent) {
+        // оплата не прошла — списанные при оплате бонусы возвращаются
+        await this.insertBonus(em, {
+          userId: booking.userId,
+          bookingId: booking.id,
+          kind: 'accrual',
+          reason: 'payment_failed',
+          amount: booking.bonusSpent,
+        });
+      }
+      return booking;
     });
-    if (booking.status !== 'PENDING') {
-      // ределивери или «хвост» старой топологии: бронь уже закрыта иначе
-      // (EXPIRED/CANCELLED) — вердикт по ней не должен оживлять места
-      this.logger.warn(
-        `booking.processed по бронь ${event.bookingId} в статусе ${booking.status} — пропуск`,
-      );
-      return;
-    }
-    applyProcessed(booking, event);
-    await this.bookings.save(booking);
+    if (!applied) return;
+
     if (event.status === 'FAILED') {
       // оплата не прошла — места возвращаются в продажу
-      await this.occupancy.delete({ bookingId: booking.id });
-      this.publishSeatsReleased(booking, 'FAILED');
+      await this.occupancy.delete({ bookingId: applied.id });
+      this.publishSeatsReleased(applied, 'FAILED');
     }
     this.logger.log(
       `Бронь ${event.bookingId} → ${event.status} (${event.processedBy})`,
     );
-    const { movie, session } = await this.contextOf(booking);
-    await this.push(booking, movie, session);
+    const { movie, session } = await this.contextOf(applied);
+    await this.push(applied, movie, session);
   }
 
   /**
@@ -789,21 +823,33 @@ export class BookingsService {
 
   /** Callback события booking.refunded от Go-воркера */
   async handleRefunded(event: BookingRefundedEvent): Promise<void> {
-    const booking = await this.bookings.findOneByOrFail({
-      id: event.bookingId,
+    // вердикт возврата и разворот бонусов — одной транзакцией
+    const updated = await this.dataSource.transaction(async (em) => {
+      const booking = await em.findOneByOrFail(Booking, {
+        id: event.bookingId,
+      });
+      if (booking.status !== 'CANCELLING') {
+        // ределивери или событие по уже закрытой саге — ничего не делаем
+        this.logger.warn(
+          `booking.refunded по бронь ${event.bookingId} в статусе ${booking.status} — пропуск`,
+        );
+        return null;
+      }
+      const updated = applyRefunded(booking, event);
+      await em.save(Booking, updated);
+
+      // возврат прошёл — бонусы разворачиваются: списанное возвращается,
+      // кэшбэк гасится (но не в минус)
+      if (updated.status === 'CANCELLED' && updated.userId) {
+        await this.reverseBookingBonuses(em, updated.userId, updated.id);
+      }
+      return updated;
     });
-    if (booking.status !== 'CANCELLING') {
-      // ределивери или событие по уже закрытой саге — ничего не делаем
-      this.logger.warn(
-        `booking.refunded по бронь ${event.bookingId} в статусе ${booking.status} — пропуск`,
-      );
-      return;
-    }
-    const updated = applyRefunded(booking, event);
-    await this.bookings.save(updated);
+    if (!updated) return;
+
     if (updated.status === 'CANCELLED') {
       // возврат прошёл — места снова в продаже
-      await this.occupancy.delete({ bookingId: booking.id });
+      await this.occupancy.delete({ bookingId: updated.id });
       this.publishSeatsReleased(updated, 'REFUNDED');
     }
     this.logger.log(
@@ -811,5 +857,47 @@ export class BookingsService {
     );
     const { movie, session } = await this.contextOf(updated);
     await this.push(updated, movie, session);
+  }
+
+  /**
+   * Разворот бонусов отменённой брони: списанное при оплате возвращается
+   * (accrual refund), начисленный кэшбэк гасится (spend clawback) — но
+   * не в минус: потраченный кэшбэк гасим сколько есть, остаток прощаем.
+   */
+  private async reverseBookingBonuses(
+    em: EntityManager,
+    userId: string,
+    bookingId: string,
+  ): Promise<void> {
+    const rows = await em.query<{ reason: BonusReason; amount: number }[]>(
+      `SELECT reason, amount FROM bonus_transactions WHERE booking_id = $1`,
+      [bookingId],
+    );
+    const spent = rows.find((r) => r.reason === 'payment')?.amount;
+    if (spent) {
+      await this.insertBonus(em, {
+        userId,
+        bookingId,
+        kind: 'accrual',
+        reason: 'refund',
+        amount: spent,
+      });
+    }
+    const cashback = rows.find((r) => r.reason === 'cashback')?.amount;
+    if (cashback) {
+      // баланс — уже с учётом возврата списанного: если зритель успел
+      // потратить кэшбэк, гасим сколько есть
+      const balance = await this.bonusBalance(em, userId);
+      const amount = Math.min(cashback, Math.max(balance, 0));
+      if (amount > 0) {
+        await this.insertBonus(em, {
+          userId,
+          bookingId,
+          kind: 'spend',
+          reason: 'clawback',
+          amount,
+        });
+      }
+    }
   }
 }

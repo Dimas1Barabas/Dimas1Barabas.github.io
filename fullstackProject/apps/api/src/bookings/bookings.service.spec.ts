@@ -176,9 +176,11 @@ describe('BookingsService (unit)', () => {
       createQueryBuilder: (entity: unknown) => unknown;
     } = {
       findOneByOrFail: (entity, where) =>
-        entity === Session
-          ? sessionsRepo.findOneByOrFail(where)
-          : moviesRepo.findOneByOrFail(where),
+        entity === Booking
+          ? bookingsRepo.findOneByOrFail(where)
+          : entity === Session
+            ? sessionsRepo.findOneByOrFail(where)
+            : moviesRepo.findOneByOrFail(where),
       create: (_entity, x) => x,
       save: (_entity, x) => bookingsRepo.save(x),
       insert: emInsert,
@@ -1100,6 +1102,81 @@ describe('BookingsService (unit)', () => {
       expect(occupancyRepo.delete).not.toHaveBeenCalled();
       expect(stream.emit).not.toHaveBeenCalled();
     });
+
+    describe('бонусный хвост вердикта', () => {
+      const processed = (status: 'CONFIRMED' | 'FAILED') => ({
+        bookingId: 'booking-1',
+        status,
+        message: status === 'CONFIRMED' ? 'Оплата прошла' : 'Платёж отклонён',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:00:05Z',
+      });
+
+      it('CONFIRMED начисляет кэшбэк: 5% от финальной суммы, floor', async () => {
+        bookingsRepo.findOneByOrFail.mockResolvedValue({
+          ...bookingFixture(),
+          totalRub: 1080,
+        });
+
+        await service.handleProcessed(processed('CONFIRMED'));
+
+        // floor(1080 × 5%) = 54 — от суммы после промокода и бонусов
+        expect(bonusRows).toContainEqual({
+          userId: 'user-1',
+          bookingId: 'booking-1',
+          kind: 'accrual',
+          reason: 'cashback',
+          amount: 54,
+        });
+      });
+
+      it('копеечная оплата — кэшбэк ноль, строки нет', async () => {
+        bookingsRepo.findOneByOrFail.mockResolvedValue({
+          ...bookingFixture(),
+          totalRub: 19, // floor(0.95) = 0
+        });
+
+        await service.handleProcessed(processed('CONFIRMED'));
+
+        expect(bonusRows).toHaveLength(0);
+      });
+
+      it('FAILED возвращает списанные при оплате бонусы', async () => {
+        bookingsRepo.findOneByOrFail.mockResolvedValue({
+          ...bookingFixture(),
+          bonusSpent: 400,
+        });
+
+        await service.handleProcessed(processed('FAILED'));
+
+        expect(bonusRows).toContainEqual({
+          userId: 'user-1',
+          bookingId: 'booking-1',
+          kind: 'accrual',
+          reason: 'payment_failed',
+          amount: 400,
+        });
+      });
+
+      it('FAILED без списания — строки нет', async () => {
+        bookingsRepo.findOneByOrFail.mockResolvedValue(bookingFixture());
+
+        await service.handleProcessed(processed('FAILED'));
+
+        expect(bonusRows).toHaveLength(0);
+      });
+
+      it('гостевая бронь (без владельца) кэшбэк не зарабатывает', async () => {
+        bookingsRepo.findOneByOrFail.mockResolvedValue({
+          ...bookingFixture(),
+          userId: null,
+        });
+
+        await service.handleProcessed(processed('CONFIRMED'));
+
+        expect(bonusRows).toHaveLength(0);
+      });
+    });
   });
 
   describe('handleExpired', () => {
@@ -1200,6 +1277,106 @@ describe('BookingsService (unit)', () => {
 
       expect(bookingsRepo.save).not.toHaveBeenCalled();
       expect(occupancyRepo.delete).not.toHaveBeenCalled();
+    });
+
+    describe('разворот бонусов', () => {
+      const refunded = (status: 'CANCELLED' | 'REFUND_FAILED') => ({
+        bookingId: 'booking-1',
+        status,
+        message: 'Возврат зачислен',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:05:00Z',
+      });
+
+      it('CANCELLED: списанное вернулось, кэшбэк погасился', async () => {
+        bookingsRepo.findOneByOrFail.mockResolvedValue(cancellingFixture());
+        // бронь оплачена с 400 бонусами, кэшбэк по ней — 54
+        bonusRows.push(
+          {
+            userId: 'user-1',
+            bookingId: 'booking-1',
+            kind: 'spend',
+            reason: 'payment',
+            amount: 400,
+          },
+          {
+            userId: 'user-1',
+            bookingId: 'booking-1',
+            kind: 'accrual',
+            reason: 'cashback',
+            amount: 54,
+          },
+        );
+
+        await service.handleRefunded(refunded('CANCELLED'));
+
+        expect(bonusRows).toContainEqual({
+          userId: 'user-1',
+          bookingId: 'booking-1',
+          kind: 'accrual',
+          reason: 'refund',
+          amount: 400,
+        });
+        // баланс к моменту гашения: −400 + 54 + 400 = 54 → весь кэшбэк
+        expect(bonusRows).toContainEqual({
+          userId: 'user-1',
+          bookingId: 'booking-1',
+          kind: 'spend',
+          reason: 'clawback',
+          amount: 54,
+        });
+      });
+
+      it('кэшбэк уже потрачен — гасим сколько есть, не в минус', async () => {
+        bookingsRepo.findOneByOrFail.mockResolvedValue(cancellingFixture());
+        // кэшбэк 100 по этой брони, 60 из него потрачено на другой —
+        // баланс 40, гасим только его
+        bonusRows.push(
+          {
+            userId: 'user-1',
+            bookingId: 'booking-1',
+            kind: 'accrual',
+            reason: 'cashback',
+            amount: 100,
+          },
+          {
+            userId: 'user-1',
+            bookingId: 'other-booking',
+            kind: 'spend',
+            reason: 'payment',
+            amount: 60,
+          },
+        );
+
+        await service.handleRefunded(refunded('CANCELLED'));
+
+        expect(bonusRows).toContainEqual({
+          userId: 'user-1',
+          bookingId: 'booking-1',
+          kind: 'spend',
+          reason: 'clawback',
+          amount: 40,
+        });
+        // списания при оплате этой брони не было — refund-строки нет
+        expect(
+          bonusRows.filter((r) => r.reason === 'refund'),
+        ).toHaveLength(0);
+      });
+
+      it('REFUND_FAILED — бронь живёт дальше, бонусы не тронуты', async () => {
+        bookingsRepo.findOneByOrFail.mockResolvedValue(cancellingFixture());
+        bonusRows.push({
+          userId: 'user-1',
+          bookingId: 'booking-1',
+          kind: 'accrual',
+          reason: 'cashback',
+          amount: 54,
+        });
+
+        await service.handleRefunded(refunded('REFUND_FAILED'));
+
+        expect(bonusRows).toHaveLength(1);
+      });
     });
   });
 
