@@ -48,6 +48,7 @@ function bookingFixture(): Booking {
     totalRub: 1000,
     promoCode: null,
     discountRub: null,
+    bonusSpent: null,
     status: 'PENDING_PAYMENT',
     expiresAt: null,
     message: null,

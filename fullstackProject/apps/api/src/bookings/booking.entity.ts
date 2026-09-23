@@ -66,6 +66,10 @@ export class Booking {
   @Column({ name: 'discount_rub', type: 'int', nullable: true })
   discountRub: number | null;
 
+  /** сколько бонусов вчёно в оплату (списание в pay; null — без бонусов) */
+  @Column({ name: 'bonus_spent', type: 'int', nullable: true })
+  bonusSpent: number | null;
+
   /** lifecycle: ждёт оплаты → проводится → вердикт; не оплачена вовремя — истекла */
   @Column({ length: 24, default: 'PENDING_PAYMENT' })
   status: BookingStatus;
@@ -146,6 +150,14 @@ export class BookingDto {
   })
   discountRub!: number | null;
 
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    example: 250,
+    description: 'сколько бонусов списано при оплате',
+  })
+  bonusSpent!: number | null;
+
   /** union-тип в reflect-metadata неразличим — перечисляем явно */
   @ApiProperty({
     enum: BOOKING_STATUSES,
@@ -196,6 +208,7 @@ export function toBookingDto(
     totalRub: booking.totalRub,
     promoCode: booking.promoCode ?? null,
     discountRub: booking.discountRub ?? null,
+    bonusSpent: booking.bonusSpent ?? null,
     status: booking.status,
     expiresAt: booking.expiresAt?.toISOString() ?? null,
     message: booking.message,

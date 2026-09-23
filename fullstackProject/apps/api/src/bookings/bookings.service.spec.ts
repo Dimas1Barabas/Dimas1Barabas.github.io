@@ -66,6 +66,7 @@ function bookingFixture(): Booking {
     totalRub: 1200,
     promoCode: null,
     discountRub: null,
+    bonusSpent: null,
     status: 'PENDING',
     expiresAt: new Date('2026-09-03T12:15:00Z'),
     message: null,
