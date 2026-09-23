@@ -2,6 +2,7 @@ import type {
   AdminStatsEnvelope,
   Booking,
   BookingStats,
+  BonusAccount,
   ChangePasswordPayload,
   CreateBookingPayload,
   CreateMoviePayload,
@@ -182,12 +183,16 @@ export const api = {
       method: 'POST',
     }),
   /** оплата: PENDING_PAYMENT → PENDING, воркер проводит платёж;
-   *  промокод активируется той же транзакцией (409 promoExhausted в гонке) */
-  payBooking: (id: string, promoCode?: string) =>
+   *  промокод и бонусы активируются той же транзакцией (409 промо-
+   *  исчерпан / bonusOverLimit / bonusInsufficient в гонке) */
+  payBooking: (id: string, promoCode?: string, useBonuses?: number) =>
     request<Booking>(`/bookings/${id}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(promoCode ? { promoCode } : {}),
+      body: JSON.stringify({
+        ...(promoCode ? { promoCode } : {}),
+        ...(useBonuses ? { useBonuses } : {}),
+      }),
     }),
   /** билеты брони: по одному на место (409 bookingNotConfirmed без CONFIRMED) */
   bookingTickets: (id: string) =>
@@ -204,6 +209,8 @@ export const api = {
     }),
   /** мои активные записи (WAITING/NOTIFIED) по будущим сеансам */
   myWaitlist: () => request<MyWaitlistEntry[]>('/waitlist/my'),
+  /** бонусный счёт: баланс (SUM от источника) + история движений */
+  myBonuses: () => request<BonusAccount>('/bonuses/my'),
   /** регистрация: пароль хэшируется на бэкенде, вернётся UserDto */
   register: (payload: RegisterPayload) =>
     request<User>('/auth/register', {

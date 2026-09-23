@@ -3,6 +3,10 @@ import type {
   AdminStatsEnvelope,
   Booking,
   BookingStats,
+  BonusAccount,
+  BonusKind,
+  BonusReason,
+  BonusTransaction,
   CreateBookingPayload,
   CreatePromoPayload,
   CreateReviewPayload,
@@ -32,6 +36,7 @@ import {
   compareSeats,
   isValidSeat,
 } from '@/shared/lib/hall';
+import { BONUS_SPEND_LIMIT, cashbackFor } from '@/shared/lib/bonus';
 import {
   PROMO_CODE_RE,
   normalizePromoCode,
@@ -93,6 +98,40 @@ const REFUND_MIN_MS = 800;
 const REFUND_MAX_MS = 1600;
 /** окно оплаты демо — паритет с PAYMENT_TIMEOUT_MS docker-стенда (2 мин) */
 export const DEMO_PAYMENT_TIMEOUT_MS = 120_000;
+/** кэшбэк демо — как дефолт BONUS_CASHBACK_PERCENT у API */
+const DEMO_CASHBACK_PERCENT = 5;
+
+/** сид бонусного счёта: история прошлых броней «гостя демо», баланс 350 */
+function seedBonusLedger(): BonusTransaction[] {
+  const daysAgo = (d: number) =>
+    new Date(Date.now() - d * 86_400_000).toISOString();
+  return [
+    {
+      id: 'demo-bonus-1',
+      kind: 'accrual',
+      reason: 'cashback',
+      amount: 140,
+      bookingId: 'demo-booking-seed-1',
+      createdAt: daysAgo(10),
+    },
+    {
+      id: 'demo-bonus-2',
+      kind: 'spend',
+      reason: 'payment',
+      amount: 90,
+      bookingId: 'demo-booking-seed-2',
+      createdAt: daysAgo(6),
+    },
+    {
+      id: 'demo-bonus-3',
+      kind: 'accrual',
+      reason: 'cashback',
+      amount: 300,
+      bookingId: 'demo-booking-seed-3',
+      createdAt: daysAgo(2),
+    },
+  ];
+}
 
 function inDays(days: number, hour: number): string {
   const d = new Date();
@@ -345,6 +384,7 @@ function seedBookings(): Booking[] {
       totalRub: movie.priceRub * s.seats.length,
       promoCode: null,
       discountRub: null,
+      bonusSpent: null,
       status: s.status,
       expiresAt: null,
       message: verdictMessage,
@@ -431,6 +471,10 @@ class DemoEngine {
   private promos: Promo[] = seedPromos();
   /** лист ожидания: записи по сеансам (порядок очереди — по queuedAt) */
   private waitlist: DemoWaitlistEntry[] = [];
+  /** бонусный счёт демо: ledger движений (баланс — SUM от источника) */
+  private bonusLedger: BonusTransaction[] = seedBonusLedger();
+  /** счётчик id строк ledger'а — детерминированные «demo-bonus-N» */
+  private bonusSeq = seedBonusLedger().length;
 
   /** «access-токен» демо-сессии — не JWT, просто маркер для стора */
   static readonly SESSION_TOKEN = 'demo-session';
@@ -465,6 +509,8 @@ class DemoEngine {
     this.session = null;
     this.promos = seedPromos();
     this.waitlist = [];
+    this.bonusLedger = seedBonusLedger();
+    this.bonusSeq = seedBonusLedger().length;
     DEMO_MOVIES.forEach((m) => this.recomputeMovie(m.id));
     this.firstLoad = true;
     this.applySeeds();
@@ -939,6 +985,7 @@ class DemoEngine {
       totalRub: movie.priceRub * seats.length,
       promoCode: null,
       discountRub: null,
+      bonusSpent: null,
       status: 'PENDING_PAYMENT',
       expiresAt: new Date(Date.now() + DEMO_PAYMENT_TIMEOUT_MS).toISOString(),
       message: null,
@@ -978,11 +1025,12 @@ class DemoEngine {
   /**
    * Оплата: PENDING_PAYMENT → PENDING (условный переход — 409 иначе),
    * затем «воркер» проводит платёж. Миниатюра POST /bookings/:id/pay.
-   * С промокодом — как в транзакции API: активация списывается до
-   * переключения статуса, отказ откатывает оплату целиком (бронь
-   * остаётся payable), вердикт приходит со скидочной суммой.
+   * Промокод и бонусы — как в транзакции API: сначала валидация
+   * (промо жив, бонусы в лимите и на счету), потом «коммит» — отказ
+   * ничего не мутирует (бронь остаётся payable, активация не списана).
+   * Бонусы списываются после скидки: лимит «половина чека» — от остатка.
    */
-  pay(id: string, promoCode?: string): Booking {
+  pay(id: string, promoCode?: string, useBonuses?: number): Booking {
     const booking = this.bookings.find((b) => b.id === id);
     if (!booking) throw new Error('Бронь не найдена');
     if (booking.status !== 'PENDING_PAYMENT') {
@@ -994,24 +1042,53 @@ class DemoEngine {
         status: booking.status,
       }));
     }
-    let applied: { code: string; discountRub: number } | null = null;
-    if (promoCode) {
-      const promo = this.activePromo(promoCode);
-      promo.usedCount += 1; // атомарный инкремент в миниатюре
-      const discountRub = promoDiscount(booking.totalRub, promo.kind, promo.value);
-      applied = { code: promo.code, discountRub };
+    // валидация промокода — без мутаций (activePromo бросает 404/410/409)
+    const promo = promoCode ? this.activePromo(promoCode) : null;
+    const discountRub = promo
+      ? promoDiscount(booking.totalRub, promo.kind, promo.value)
+      : 0;
+    const base = booking.totalRub - discountRub;
+
+    // валидация бонусов: лимит половины чека (после промо) и баланс
+    if (useBonuses && useBonuses > Math.floor(base * BONUS_SPEND_LIMIT)) {
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Бонусами можно закрыть не больше половины чека',
+        code: 'bonusOverLimit',
+      }));
     }
+    if (useBonuses && useBonuses > this.bonusBalance()) {
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Не хватает бонусов: на счету ${this.bonusBalance()}`,
+        code: 'bonusInsufficient',
+      }));
+    }
+
+    // «коммит транзакции»: активация, статус, списание, финальная сумма
+    if (promo) promo.usedCount += 1; // атомарный инкремент в миниатюре
     const timer = this.expiryTimers.get(booking.id);
     if (timer) {
       clearTimeout(timer);
       this.expiryTimers.delete(booking.id);
     }
     booking.status = 'PENDING';
-    if (applied) {
-      booking.promoCode = applied.code;
-      booking.discountRub = applied.discountRub;
-      booking.totalRub -= applied.discountRub;
+    if (promo) {
+      booking.promoCode = promo.code;
+      booking.discountRub = discountRub;
     }
+    if (useBonuses) {
+      booking.bonusSpent = useBonuses;
+      this.pushBonus({
+        kind: 'spend',
+        reason: 'payment',
+        amount: useBonuses,
+        bookingId: booking.id,
+      });
+    }
+    booking.totalRub = base - (useBonuses ?? 0);
     this.notify();
 
     this.scheduleVerdict(booking);
@@ -1029,11 +1106,31 @@ class DemoEngine {
         : `Платёж отклонён банком (код ${10 + Math.floor(Math.random() * 90)}). Бронь отменена, деньги не списаны.`;
       booking.processedBy = 'go-worker (демо)';
       booking.processedAt = new Date().toISOString();
-      if (!ok) {
-        // оплата не прошла — места возвращаются в продажу (как в API)
+      if (ok) {
+        // кэшбэк: процент от финальной суммы — как handleProcessed в API
+        const cashback = cashbackFor(booking.totalRub, DEMO_CASHBACK_PERCENT);
+        if (cashback > 0) {
+          this.pushBonus({
+            kind: 'accrual',
+            reason: 'cashback',
+            amount: cashback,
+            bookingId: booking.id,
+          });
+        }
+      } else {
+        // оплата не прошла — места возвращаются в продажу (как в API),
+        // списанные бонусы возвращаются на счёт
         const occupiedSet = this.occupiedFor(booking.sessionId);
         booking.seats.forEach((s) => occupiedSet.delete(s));
         this.releaseWaitlist(booking.sessionId);
+        if (booking.bonusSpent) {
+          this.pushBonus({
+            kind: 'accrual',
+            reason: 'payment_failed',
+            amount: booking.bonusSpent,
+            bookingId: booking.id,
+          });
+        }
       }
       this.notify();
     }, delay);
@@ -1085,15 +1182,86 @@ class DemoEngine {
       booking.processedBy = 'go-worker (демо)';
       booking.processedAt = new Date().toISOString();
       if (ok) {
-        // возврат прошёл — места снова в продаже (как booking.refunded в API)
+        // возврат прошёл — места снова в продаже (как booking.refunded
+        // в API), бонусы разворачиваются: списанное вернулось, кэшбэк
+        // погасился (но не в минус)
         const occupiedSet = this.occupiedFor(booking.sessionId);
         booking.seats.forEach((s) => occupiedSet.delete(s));
         this.releaseWaitlist(booking.sessionId);
+        this.reverseBookingBonuses(booking);
       }
       this.notify();
     }, delay);
 
     return booking;
+  }
+
+  // ── Бонусы: ledger движений в миниатюре ─────────────────────────────
+  // Как bonus_transactions в Postgres: записи только добавляются, баланс
+  // считается SUM'ом от источника; uq(booking_id, reason) — дубль
+  // операции одного типа по бронь не вставляется (идемпотентность).
+
+  /** счёт «гостя демо»: баланс + история свежими сверху */
+  myBonuses(limit = 20): BonusAccount {
+    return {
+      balance: this.bonusBalance(),
+      transactions: [...this.bonusLedger]
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+        .slice(0, limit)
+        .map((t) => ({ ...t })),
+    };
+  }
+
+  /** баланс: SUM(accrual) − SUM(spend) от источника-ledger */
+  private bonusBalance(): number {
+    return this.bonusLedger.reduce(
+      (s, r) => s + (r.kind === 'accrual' ? r.amount : -r.amount),
+      0,
+    );
+  }
+
+  /** запись в ledger; дубль (booking_id + reason) молча игнорируется */
+  private pushBonus(row: {
+    kind: BonusKind;
+    reason: BonusReason;
+    amount: number;
+    bookingId: string;
+  }): void {
+    const dup = this.bonusLedger.some(
+      (r) => r.bookingId === row.bookingId && r.reason === row.reason,
+    );
+    if (dup) return;
+    this.bonusLedger.push({
+      id: `demo-bonus-${++this.bonusSeq}`,
+      createdAt: new Date().toISOString(),
+      ...row,
+    });
+  }
+
+  /** разворот бонусов отменённой брони — как reverseBookingBonuses в API */
+  private reverseBookingBonuses(booking: Booking): void {
+    const rows = this.bonusLedger.filter((r) => r.bookingId === booking.id);
+    const spent = rows.find((r) => r.reason === 'payment')?.amount;
+    if (spent) {
+      this.pushBonus({
+        kind: 'accrual',
+        reason: 'refund',
+        amount: spent,
+        bookingId: booking.id,
+      });
+    }
+    const cashback = rows.find((r) => r.reason === 'cashback')?.amount;
+    if (cashback) {
+      const amount = Math.min(cashback, Math.max(this.bonusBalance(), 0));
+      if (amount > 0) {
+        this.pushBonus({
+          kind: 'spend',
+          reason: 'clawback',
+          amount,
+          bookingId: booking.id,
+        });
+      }
+    }
   }
 
   // ── Лист ожидания: честная гонка в миниатюре ────────────────────────

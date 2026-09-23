@@ -179,6 +179,7 @@ describe('BookingModal', () => {
       totalRub: 400,
       promoCode: null,
       discountRub: null,
+      bonusSpent: null,
       status: 'PENDING_PAYMENT',
       expiresAt: new Date(Date.now() + 120_000).toISOString(),
       message: null,

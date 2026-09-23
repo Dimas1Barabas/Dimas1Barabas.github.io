@@ -76,6 +76,8 @@ export interface Booking {
   promoCode: string | null;
   /** скидка применённого промокода, ₽ (null — без промокода) */
   discountRub: number | null;
+  /** сколько бонусов списано при оплате (null — без бонусов), 1 бонус = 1 ₽ */
+  bonusSpent: number | null;
   status: BookingStatus;
   /** дедлайн оплаты (актуален для PENDING_PAYMENT), ISO */
   expiresAt: string | null;
@@ -357,4 +359,36 @@ export interface WaitlistStreamEvent {
   sessionAt: string;
   seats: string[];
   notifiedAt: string;
+}
+
+/** направления движений бонусного счёта: accrual — начисление, spend — списание */
+export type BonusKind = 'accrual' | 'spend';
+
+/**
+ * Причины движений — почему изменился баланс. Одна операция одного типа
+ * по бронь не задваивается (uq в Postgres).
+ */
+export type BonusReason =
+  | 'cashback'
+  | 'payment'
+  | 'payment_failed'
+  | 'refund'
+  | 'clawback';
+
+/** движение счёта — элемент истории GET /api/bonuses/my */
+export interface BonusTransaction {
+  id: string;
+  kind: BonusKind;
+  reason: BonusReason;
+  /** сколько бонусов (положительное целое; направление — в kind) */
+  amount: number;
+  /** бронь-источник движения */
+  bookingId: string;
+  createdAt: string;
+}
+
+/** бонусный счёт — GET /api/bonuses/my: баланс от источника + история */
+export interface BonusAccount {
+  balance: number;
+  transactions: BonusTransaction[];
 }
