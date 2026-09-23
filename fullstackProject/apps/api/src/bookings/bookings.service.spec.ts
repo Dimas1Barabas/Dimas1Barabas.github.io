@@ -9,6 +9,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
+import { BonusTransaction } from '../bonus/bonus-transaction.entity';
 import { Movie } from '../movies/movie.entity';
 import { Promo } from '../promos/promo.entity';
 import { WaitlistEntry } from '../waitlist/waitlist.entity';
@@ -101,8 +102,16 @@ describe('BookingsService (unit)', () => {
   let emInsert: jest.Mock;
   /** что «UPDATE …» сделал внутри транзакции (pay: статус + скидка) */
   let emUpdate: jest.Mock;
-  /** что сырой UPDATE promos (активация) вернул внутри транзакции */
+  /** что сырые SQL-запросы вернули внутри транзакции (промо/баланс) */
   let emQuery: jest.Mock;
+  /** фейковый ledger: строки bonus_transactions «в БД» */
+  let bonusRows: Array<{
+    userId: string;
+    bookingId: string;
+    kind: string;
+    reason: string;
+    amount: number;
+  }>;
 
   beforeEach(async () => {
     bookingsRepo = {
@@ -133,8 +142,24 @@ describe('BookingsService (unit)', () => {
     emInsert = jest.fn(async () => undefined);
     // условный UPDATE по умолчанию проходит (affected = 1)
     emUpdate = jest.fn(async () => ({ affected: 1 }));
-    // UPDATE … RETURNING в postgres-драйвере: [строки, число затронутых]
-    emQuery = jest.fn(async () => [[], 0]);
+    bonusRows = [];
+    // сырой SQL по содержимому: баланс/строки ledger'а считаются от
+    // фейковых bonusRows (SUM в pg — bigint, драйвер отдаёт строкой),
+    // UPDATE … RETURNING промокода — кортеж [строки, число затронутых]
+    emQuery = jest.fn(async (sql: string, params: unknown[]) => {
+      if (/FROM bonus_transactions WHERE user_id/.test(sql)) {
+        const balance = bonusRows
+          .filter((r) => r.userId === params[0])
+          .reduce((s, r) => s + (r.kind === 'accrual' ? r.amount : -r.amount), 0);
+        return [{ balance: String(balance) }];
+      }
+      if (/SELECT reason, amount FROM bonus_transactions/.test(sql)) {
+        return bonusRows
+          .filter((r) => r.bookingId === params[0])
+          .map((r) => ({ reason: r.reason, amount: r.amount }));
+      }
+      return [[], 0];
+    });
 
     // «транзакция» сразу выполняет callback с эмуляцией EntityManager:
     // insert может упасть с pg-кодом 23505 — как настоящий констрейнт
@@ -148,6 +173,7 @@ describe('BookingsService (unit)', () => {
       insert: jest.Mock;
       update: jest.Mock;
       query: jest.Mock;
+      createQueryBuilder: (entity: unknown) => unknown;
     } = {
       findOneByOrFail: (entity, where) =>
         entity === Session
@@ -158,12 +184,41 @@ describe('BookingsService (unit)', () => {
       insert: emInsert,
       update: emUpdate,
       query: emQuery,
+      // INSERT INTO bonus_transactions … ON CONFLICT DO NOTHING:
+      // orIgnore-цепочка пишет строку в фейковый ledger
+      createQueryBuilder: () => ({
+        insert: () => ({
+          into: (entity: unknown) => {
+            if (entity !== BonusTransaction) {
+              throw new Error(
+                `Неожиданный insert-QB в тесте: ${String(entity)}`,
+              );
+            }
+            return {
+              values: (v: (typeof bonusRows)[number]) => ({
+                orIgnore: () => ({
+                  execute: async () => {
+                    bonusRows.push(v);
+                  },
+                }),
+              }),
+            };
+          },
+        }),
+      }),
     };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
-        { provide: DataSource, useValue: { transaction: (cb: (e: typeof em) => unknown) => cb(em) } },
+        {
+          provide: DataSource,
+          // manager — для перечитывания баланса в сообщении отказа
+          useValue: {
+            transaction: (cb: (e: typeof em) => unknown) => cb(em),
+            manager: { query: emQuery },
+          },
+        },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Session), useValue: sessionsRepo },
@@ -486,6 +541,147 @@ describe('BookingsService (unit)', () => {
       await expect(promise).rejects.toBeInstanceOf(GoneException);
       const err = (await promise.catch((e: unknown) => e)) as GoneException;
       expect(err.getResponse()).toMatchObject({ code: 'promoExpired' });
+    });
+
+    describe('списание бонусов', () => {
+      /** сидим на счёт 500 бонусов (кэшбэк прошлой брони) */
+      const seedBalance = (amount = 500) => {
+        bonusRows.push({
+          userId: 'user-1',
+          bookingId: 'seed-booking',
+          kind: 'accrual',
+          reason: 'cashback',
+          amount,
+        });
+      };
+
+      it('списывает бонусы в пределах лимита: spend-строка в ledger, итог меньше', async () => {
+        seedBalance(500);
+
+        const result = await service.pay('booking-1', authUser, undefined, 400);
+
+        // 1200 − 400 бонусов = 800
+        expect(result).toMatchObject({
+          status: 'PENDING',
+          totalRub: 800,
+          bonusSpent: 400,
+        });
+        expect(bonusRows).toContainEqual({
+          userId: 'user-1',
+          bookingId: 'booking-1',
+          kind: 'spend',
+          reason: 'payment',
+          amount: 400,
+        });
+        expect(emUpdate).toHaveBeenLastCalledWith(
+          Booking,
+          { id: 'booking-1' },
+          { totalRub: 800, bonusSpent: 400 },
+        );
+        expect(rabbit.publish).toHaveBeenCalledWith(
+          'cinema',
+          'booking.created',
+          expect.objectContaining({ totalRub: 800 }),
+        );
+      });
+
+      it('промокод и бонусы вместе: скидка первой, лимит — от остатка', async () => {
+        seedBalance(600);
+        emQuery.mockImplementation(async (sql: string, params: unknown[]) => {
+          if (/UPDATE promos/.test(sql)) {
+            return [[{ code: 'CINE10', kind: 'percent', value: 10 }], 1];
+          }
+          if (/user_id/.test(sql)) {
+            const balance = bonusRows
+              .filter((r) => r.userId === params[0])
+              .reduce(
+                (s, r) => s + (r.kind === 'accrual' ? r.amount : -r.amount),
+                0,
+              );
+            return [{ balance: String(balance) }];
+          }
+          return [[], 0];
+        });
+
+        // 1200 −10% = 1080; половина остатка = 540 — граница проходит
+        const result = await service.pay(
+          'booking-1',
+          authUser,
+          'CINE10',
+          540,
+        );
+
+        expect(result).toMatchObject({
+          totalRub: 540,
+          discountRub: 120,
+          bonusSpent: 540,
+        });
+      });
+
+      it('409 bonusOverLimit: больше половины чека, оплата откатилась', async () => {
+        seedBalance(5000);
+
+        // лимит = 600, просим 700
+        const promise = service.pay('booking-1', authUser, undefined, 700);
+
+        await expect(promise).rejects.toBeInstanceOf(ConflictException);
+        const err =
+          (await promise.catch((e: unknown) => e)) as ConflictException;
+        expect(err.getResponse()).toMatchObject({ code: 'bonusOverLimit' });
+        // только переключение статуса — скидки/списания не писались
+        expect(emUpdate).toHaveBeenCalledTimes(1);
+        expect(bonusRows).toHaveLength(1); // только сид
+        expect(rabbit.publish).not.toHaveBeenCalled();
+      });
+
+      it('409 bonusInsufficient: баланса меньше запрошенного', async () => {
+        seedBalance(100);
+
+        const promise = service.pay('booking-1', authUser, undefined, 200);
+
+        await expect(promise).rejects.toBeInstanceOf(ConflictException);
+        const err =
+          (await promise.catch((e: unknown) => e)) as ConflictException;
+        expect(err.getResponse()).toMatchObject({ code: 'bonusInsufficient' });
+        expect(bonusRows).toHaveLength(1);
+      });
+
+      it('гонка балансом: контрольный пересчёт ушёл в минус → 409, всё откатилось', async () => {
+        seedBalance(300);
+        let balanceCalls = 0;
+        emQuery.mockImplementation(async (sql: string) => {
+          if (/user_id/.test(sql)) {
+            balanceCalls += 1;
+            // первая проверка видит 300; после вставки «параллельная оплата»
+            // успела списать 500 — контрольный пересчёт уходит в минус
+            return [{ balance: balanceCalls === 1 ? '300' : '-200' }];
+          }
+          return [[], 0];
+        });
+
+        const promise = service.pay('booking-1', authUser, undefined, 200);
+
+        await expect(promise).rejects.toBeInstanceOf(ConflictException);
+        const err =
+          (await promise.catch((e: unknown) => e)) as ConflictException;
+        expect(err.getResponse()).toMatchObject({ code: 'bonusInsufficient' });
+        expect(rabbit.publish).not.toHaveBeenCalled();
+      });
+
+      it('409 bonusUnavailable: гостевая бронь без владельца', async () => {
+        bookingsRepo.findOneByOrFail.mockResolvedValue({
+          ...bookingFixture(),
+          userId: null,
+          status: 'PENDING_PAYMENT',
+        });
+
+        const promise = service.pay('booking-1', authUser, undefined, 100);
+
+        await expect(promise).rejects.toBeInstanceOf(ConflictException);
+        const err =
+          (await promise.catch((e: unknown) => e)) as ConflictException;
+        expect(err.getResponse()).toMatchObject({ code: 'bonusUnavailable' });
+      });
     });
   });
 

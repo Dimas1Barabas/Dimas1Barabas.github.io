@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BonusTransaction } from '../bonus/bonus-transaction.entity';
 import { Movie } from '../movies/movie.entity';
 import { Promo } from '../promos/promo.entity';
 import { Session } from '../movies/session.entity';
@@ -18,7 +19,8 @@ import { SeatStream } from './seat-stream';
 @Module({
   // rabbitMqModule — чтобы инжектить AmqpConnection (публикация событий);
   // Promo — причина отказа активации после отката транзакции оплаты;
-  // WaitlistEntry — бронь гасит запись в листе ожидания (create → LEFT)
+  // WaitlistEntry — бронь гасит запись в листе ожидания (create → LEFT);
+  // BonusTransaction — списание в pay и реверсы вердиктов ledger'ом
   imports: [
     TypeOrmModule.forFeature([
       Booking,
@@ -27,6 +29,7 @@ import { SeatStream } from './seat-stream';
       SeatOccupancy,
       Promo,
       WaitlistEntry,
+      BonusTransaction,
     ]),
     rabbitMqModule,
   ],

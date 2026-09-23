@@ -70,7 +70,7 @@ export class BookingsController {
   @HttpCode(200)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Оплатить бронь (опционально с промокодом)',
+    summary: 'Оплатить бронь (опционально с промокодом и бонусами)',
     description:
       'Условный UPDATE переводит PENDING_PAYMENT → PENDING и публикует ' +
       'booking.created воркеру. Гонку с таймаутом резерва и двойным кликом ' +
@@ -78,22 +78,27 @@ export class BookingsController {
       'той же транзакцией: атомарный инкремент used_count при запасе и ' +
       'живом сроке, скидка уходит в total_rub (воркер списывает уже её). ' +
       'Проигравший в гонке за последний код получает 409 promoExhausted, ' +
-      'бронь остаётся в PENDING_PAYMENT. Вердикт (CONFIRMED/FAILED) ' +
-      'придёт по SSE-стриму.',
+      'бронь остаётся в PENDING_PAYMENT. Бонусы (`useBonuses`, 1 бонус = ' +
+      '1 ₽) списываются там же, сразу после промокода: не больше половины ' +
+      'чека со скидкой и не больше баланса — иначе 409 bonusOverLimit / ' +
+      'bonusInsufficient, транзакция откатывается целиком. Вердикт ' +
+      '(CONFIRMED/FAILED) придёт по SSE-стриму.',
   })
   @ApiOkResponse({ type: BookingDto })
   @ApiUnauthorizedResponse({ description: 'Нет JWT' })
   @ApiNotFoundResponse({ description: 'Бронь не найдена' })
   @ApiConflictResponse({
     description:
-      'Бронь уже оплачена/истекла/отменена (status) или промокод исчерпан (promoExhausted)',
+      'Бронь уже оплачена/истекла/отменена (status), промокод исчерпан ' +
+      '(promoExhausted) или бонусы не подошли (bonusOverLimit / ' +
+      'bonusInsufficient / bonusUnavailable)',
   })
   pay(
     @Param('id') id: string,
     @Body() dto: PayBookingDto,
     @Req() req: { user: AuthUser },
   ) {
-    return this.bookings.pay(id, req.user, dto.promoCode);
+    return this.bookings.pay(id, req.user, dto.promoCode, dto.useBonuses);
   }
 
   /** запуск компенсирующей саги: возврат платежа через Go-воркера */

@@ -7,8 +7,14 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
+import { BONUS_SPEND_LIMIT } from '../bonus/bonus.logic';
+import {
+  BonusKind,
+  BonusReason,
+  BonusTransaction,
+} from '../bonus/bonus-transaction.entity';
 import { Movie } from '../movies/movie.entity';
 import { Promo, PromoKind } from '../promos/promo.entity';
 import {
@@ -77,6 +83,24 @@ class SeatsTakenError extends Error {
 class PromoRefusedError extends Error {
   constructor(readonly code: string) {
     super('Промокод не подошёл');
+  }
+}
+
+/** причины отказа тратить бонусы при оплате */
+type BonusRefusedReason =
+  | 'bonusOverLimit'
+  | 'bonusInsufficient'
+  | 'bonusUnavailable';
+
+/**
+ * Сигнал «бонусы не подошли», проброшенный из транзакции оплаты:
+ * лимит половины чека / не хватает баланса / гостевая бронь без счёта.
+ * Наружу становится 409 с кодом причины; транзакция откатывается
+ * целиком — бронь остаётся в PENDING_PAYMENT, промо-активация тоже.
+ */
+class BonusRefusedError extends Error {
+  constructor(readonly reason: BonusRefusedReason) {
+    super('Бонусы не подошли');
   }
 }
 
@@ -294,14 +318,17 @@ export class BookingsService {
    * — одна транзакция: инкремент used_count атомарен
    * (WHERE used_count < max_activations AND expires_at > now), поэтому
    * гонку за последний код решает БД; проигравшему транзакция откатывает и
-   * переключение брони — она остаётся в PENDING_PAYMENT. Воркеру уходит
-   * событие с уже скидочной суммой: вердикт, возврат и аналитика видят
-   * одно и то же число.
+   * переключение брони — она остаётся в PENDING_PAYMENT. Бонусы — тем же
+   * способом сразу после промокода: не больше половины чека (со скидкой) и
+   * не больше баланса; контрольный пересчёт SUM после вставки не даёт
+   * параллельным оплатам увести счёт в минус. Воркеру уходит событие с уже
+   * финальной суммой: вердикт, возврат и аналитика видят одно число.
    */
   async pay(
     id: string,
     user: AuthUser,
     promoCode?: string,
+    useBonuses?: number,
   ): Promise<BookingDto> {
     const booking = await this.bookings.findOneByOrFail({ id });
     if (booking.userId && booking.userId !== user.id) {
@@ -311,8 +338,9 @@ export class BookingsService {
     const code = promoCode ? normalizePromoCode(promoCode) : null;
 
     let applied: { code: string; discountRub: number } | null = null;
+    let spent = 0;
     try {
-      applied = await this.dataSource.transaction(async (em) => {
+      const result = await this.dataSource.transaction(async (em) => {
         const switched = await em.update(
           Booking,
           { id, status: 'PENDING_PAYMENT' },
@@ -327,43 +355,84 @@ export class BookingsService {
           });
         }
 
-        if (!code) return null;
-
-        // атомарная активация: инкремент только при запасе и живом сроке.
-        // postgres-драйвер TypeORM для UPDATE возвращает кортеж
-        // [строки RETURNING, число затронутых] — см. PostgresQueryRunner
-        const [activated, activations] = await em.query<
-          [{ code: string; kind: PromoKind; value: number }[], number]
-        >(
-          `UPDATE promos SET used_count = used_count + 1
-             WHERE code = $1 AND used_count < max_activations
-               AND expires_at > now()
+        let applied: { code: string; discountRub: number } | null = null;
+        if (code) {
+          // атомарная активация: инкремент только при запасе и живом сроке.
+          // postgres-драйвер TypeORM для UPDATE возвращает кортеж
+          // [строки RETURNING, число затронутых] — см. PostgresQueryRunner
+          const [activated, activations] = await em.query<
+            [{ code: string; kind: PromoKind; value: number }[], number]
+          >(
+            `UPDATE promos SET used_count = used_count + 1
+               WHERE code = $1 AND used_count < max_activations
+                 AND expires_at > now()
              RETURNING code, kind, value`,
-          [code],
-        );
-        if (!activations) throw new PromoRefusedError(code);
+            [code],
+          );
+          if (!activations) throw new PromoRefusedError(code);
 
-        const discountRub = promoDiscount(
-          booking.totalRub,
-          activated[0].kind,
-          activated[0].value,
-        );
-        await em.update(
-          Booking,
-          { id },
-          {
-            totalRub: booking.totalRub - discountRub,
-            promoCode: activated[0].code,
-            discountRub,
-          },
-        );
-        return { code: activated[0].code, discountRub };
+          const discountRub = promoDiscount(
+            booking.totalRub,
+            activated[0].kind,
+            activated[0].value,
+          );
+          await em.update(
+            Booking,
+            { id },
+            {
+              totalRub: booking.totalRub - discountRub,
+              promoCode: activated[0].code,
+              discountRub,
+            },
+          );
+          applied = { code: activated[0].code, discountRub };
+        }
+
+        // бонусы — после промокода: лимит «половина чека» считается от
+        // суммы уже со скидкой; списание живёт в той же транзакции, что
+        // переключение статуса и промо-активация
+        const base = booking.totalRub - (applied?.discountRub ?? 0);
+        let spent = 0;
+        if (useBonuses) {
+          if (!booking.userId) throw new BonusRefusedError('bonusUnavailable');
+          if (useBonuses > Math.floor(base * BONUS_SPEND_LIMIT)) {
+            throw new BonusRefusedError('bonusOverLimit');
+          }
+          if (useBonuses > (await this.bonusBalance(em, booking.userId))) {
+            throw new BonusRefusedError('bonusInsufficient');
+          }
+          await this.insertBonus(em, {
+            userId: booking.userId,
+            bookingId: id,
+            kind: 'spend',
+            reason: 'payment',
+            amount: useBonuses,
+          });
+          // ledger как деньги: контрольный пересчёт после вставки не
+          // должен уйти в минус — гонку двух параллельных оплат одним
+          // балансом решает эта проверка (проигравший откатывается целиком)
+          if ((await this.bonusBalance(em, booking.userId)) < 0) {
+            throw new BonusRefusedError('bonusInsufficient');
+          }
+          await em.update(
+            Booking,
+            { id },
+            { totalRub: base - useBonuses, bonusSpent: useBonuses },
+          );
+          spent = useBonuses;
+        }
+        return { applied, spent };
       });
+      applied = result.applied;
+      spent = result.spent;
     } catch (err) {
       if (err instanceof PromoRefusedError) {
         // транзакция откатилась — спрашиваем у БД причину отказа
         const promo = await this.promos.findOneBy({ code: err.code });
         throw promoRefusalError(promo);
+      }
+      if (err instanceof BonusRefusedError) {
+        throw await this.bonusRefusalError(err.reason, booking);
       }
       throw err;
     }
@@ -372,18 +441,85 @@ export class BookingsService {
     if (applied) {
       booking.promoCode = applied.code;
       booking.discountRub = applied.discountRub;
-      booking.totalRub -= applied.discountRub;
     }
+    if (spent > 0) booking.bonusSpent = spent;
+    booking.totalRub -= (applied?.discountRub ?? 0) + spent;
     this.rabbit.publish(
       'cinema',
       'booking.created',
       this.createdEventOf(booking, movie, session),
     );
     this.logger.log(
-      `Оплата брони ${booking.id} (${booking.totalRub} ₽${applied ? `, промокод ${applied.code} −${applied.discountRub} ₽` : ''}) → в очередь`,
+      `Оплата брони ${booking.id} (${booking.totalRub} ₽${applied ? `, промокод ${applied.code} −${applied.discountRub} ₽` : ''}${spent ? `, бонусы −${spent}` : ''}) → в очередь`,
     );
     await this.push(booking, movie, session);
     return toBookingDto(booking, movie, session);
+  }
+
+  /** баланс бонусного счёта: SUM(accrual) − SUM(spend) от источника-ledger */
+  private async bonusBalance(
+    em: EntityManager,
+    userId: string,
+  ): Promise<number> {
+    const rows = await em.query<{ balance: string | null }[]>(
+      `SELECT COALESCE(SUM(CASE kind WHEN 'accrual' THEN amount ELSE -amount END), 0) AS balance
+         FROM bonus_transactions WHERE user_id = $1`,
+      [userId],
+    );
+    // SUM(int) в Postgres → bigint, pg-драйвер отдаёт строкой
+    return Number(rows[0]?.balance ?? 0);
+  }
+
+  /** запись в ledger; uq(booking_id, reason) + orIgnore гасят дубль ределивери */
+  private insertBonus(
+    em: EntityManager,
+    row: {
+      userId: string;
+      bookingId: string;
+      kind: BonusKind;
+      reason: BonusReason;
+      amount: number;
+    },
+  ) {
+    return em
+      .createQueryBuilder()
+      .insert()
+      .into(BonusTransaction)
+      .values(row)
+      .orIgnore()
+      .execute();
+  }
+
+  /** причина отказа бонусов → 409 с кодом; баланс перечитан для сообщения */
+  private async bonusRefusalError(
+    reason: BonusRefusedReason,
+    booking: Booking,
+  ): Promise<ConflictException> {
+    if (reason === 'bonusUnavailable') {
+      return new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Гостевые брони нельзя оплатить бонусами',
+        code: 'bonusUnavailable',
+      });
+    }
+    if (reason === 'bonusOverLimit') {
+      return new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Бонусами можно закрыть не больше половины чека',
+        code: 'bonusOverLimit',
+      });
+    }
+    const balance = booking.userId
+      ? await this.bonusBalance(this.dataSource.manager, booking.userId)
+      : 0;
+    return new ConflictException({
+      statusCode: 409,
+      error: 'Conflict',
+      message: `Не хватает бонусов: на счету ${balance}`,
+      code: 'bonusInsufficient',
+    });
   }
 
   async list(limit = 30): Promise<BookingDto[]> {
