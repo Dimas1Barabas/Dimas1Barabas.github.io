@@ -223,4 +223,88 @@ describe('PaymentView', () => {
       expect(wrapper.text()).toContain('405');
     });
   });
+
+  describe('бонусы', () => {
+    /** включает списание чекбоксом (по умолчанию — максимум) */
+    async function enableBonus(wrapper: Awaited<ReturnType<typeof mountPay>>) {
+      await wrapper.find('.pay-bonus__toggle input').setValue(true);
+      await flushPromises();
+    }
+
+    it('блок виден с балансом сида; чекбокс включает максимум', async () => {
+      const booking = createUnpaid(); // 450 ₽
+      const wrapper = await mountPay(booking.id);
+
+      const block = wrapper.find('.pay-bonus');
+      expect(block.exists()).toBe(true);
+      expect(block.text()).toContain('350 на счету');
+      // до включения итог не меняется
+      expect(wrapper.find('.pay-actions .btn').text()).toContain('450');
+
+      await enableBonus(wrapper);
+
+      // лимит — половина чека: floor(450/2) = 225
+      expect((wrapper.find('.pay-bonus__input').element as HTMLInputElement).value).toBe('225');
+      expect(wrapper.find('.pay-actions .btn').text()).toContain('225');
+    });
+
+    it('ручной ввод зажимается потолком половины чека', async () => {
+      const booking = createUnpaid();
+      const wrapper = await mountPay(booking.id);
+
+      await enableBonus(wrapper);
+      await wrapper.find('.pay-bonus__input').setValue('400');
+      await flushPromises();
+
+      // 400 > 225 — спишем только лимит
+      expect(wrapper.find('.pay-actions .btn').text()).toContain('225');
+    });
+
+    it('можно списать меньше максимума — итог пересчитывается', async () => {
+      const booking = createUnpaid();
+      const wrapper = await mountPay(booking.id);
+
+      await enableBonus(wrapper);
+      await wrapper.find('.pay-bonus__input').setValue('100');
+      await flushPromises();
+
+      expect(wrapper.find('.pay-actions .btn').text()).toContain('350');
+    });
+
+    it('промо сужает потолок бонусов: половина от суммы со скидкой', async () => {
+      const booking = createUnpaid();
+      const wrapper = await mountPay(booking.id);
+
+      // CINE10: 450 − 10% = 405; потолок бонусов = floor(405/2) = 202
+      await wrapper.find('.pay-promo__input').setValue('cine10');
+      await wrapper.find('.pay-promo .btn').trigger('click');
+      await flushPromises();
+      await enableBonus(wrapper);
+
+      expect((wrapper.find('.pay-bonus__input').element as HTMLInputElement).value).toBe('202');
+      // 405 − 202 = 203 к оплате
+      expect(wrapper.find('.pay-actions .btn').text()).toContain('203');
+    });
+
+    it('оплата с бонусами: вердикт с финальной суммой, счёт списан', async () => {
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
+      const booking = createUnpaid();
+      const wrapper = await mountPay(booking.id);
+
+      await enableBonus(wrapper);
+      await wrapper.find('.pay-bonus__input').setValue('200');
+      await wrapper.find('.pay-actions .btn').trigger('click');
+      await flushPromises();
+
+      await vi.advanceTimersByTimeAsync(3000);
+      await flushPromises();
+      randomSpy.mockRestore();
+
+      expect(wrapper.text()).toContain('Оплата прошла');
+      // 450 − 200 бонусов = 250 ₽ — финальная сумма в сообщении «воркера»
+      expect(wrapper.text()).toContain('250');
+      // 350 − 200 + кэшбэк floor(250 × 5%) = 162
+      expect(demoEngine.myBonuses().balance).toBe(162);
+    });
+  });
 });

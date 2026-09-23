@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import StatusBadge from '@/entities/booking/ui/StatusBadge.vue';
 import { api, ApiError } from '@/shared/api/client';
@@ -7,6 +7,7 @@ import { demoEngine } from '@/shared/api/demo-engine';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useBookingsStore } from '@/entities/booking/model/store';
+import { useBonusStore } from '@/entities/bonus/model/store';
 import type { PromoPreview } from '@/shared/api/types';
 import {
   formatCountdown,
@@ -15,6 +16,7 @@ import {
   formatSession,
 } from '@/shared/lib/format';
 import { PROMO_CODE_RE } from '@/shared/lib/promo';
+import { spendCap } from '@/shared/lib/bonus';
 
 /**
  * Экран оплаты брони: места уже зарезервированы за клиентом на окно оплаты
@@ -26,6 +28,7 @@ const route = useRoute();
 const app = useAppStore();
 const auth = useAuthStore();
 const store = useBookingsStore();
+const bonuses = useBonusStore();
 
 const bookingId = computed(() => String(route.params.bookingId ?? ''));
 const booking = computed(
@@ -46,6 +49,11 @@ const applying = ref(false);
 const applied = ref<PromoPreview | null>(null);
 const promoError = ref<string | null>(null);
 
+/** бонусы: сколько списать при оплате (валидацию повторит API) */
+const useBonus = ref(false);
+const bonusSpend = ref(0);
+const bonusError = ref<string | null>(null);
+
 const now = ref(Date.now());
 let tick: ReturnType<typeof setInterval> | null = null;
 
@@ -54,6 +62,9 @@ onMounted(async () => {
   await store.refresh();
   if (app.mode === 'live' && auth.isAuthed) {
     await store.refreshMine();
+    await bonuses.refresh();
+  } else if (app.mode === 'demo') {
+    await bonuses.refresh();
   }
   loaded.value = true;
   tick = setInterval(() => (now.value = Date.now()), 1000);
@@ -75,9 +86,43 @@ const overdue = computed(
   () => booking.value?.status === 'PENDING_PAYMENT' && remainingMs.value <= 0,
 );
 
-/** итог с учётом применённого промокода */
-const totalDue = computed(
+/** сумма после промокода — база лимита бонусов («половина чека») */
+const afterPromo = computed(
   () => (booking.value?.totalRub ?? 0) - (applied.value?.discountRub ?? 0),
+);
+
+/** максимум бонусов к списанию: половина чека после промо и баланс */
+const bonusCap = computed(() => spendCap(afterPromo.value, bonuses.balance));
+
+/** блок бонусов есть смысл показывать, когда списать что-то можно */
+const bonusAvailable = computed(() => bonusCap.value > 0);
+
+/** сколько реально спишем: ручной ввод зажимаем в [0, cap] */
+const clampedSpend = computed(() => {
+  const raw = Number(bonusSpend.value);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.min(Math.floor(raw), bonusCap.value);
+});
+
+// промо и баланс меняют потолок — зажимаем введённое
+watch(bonusCap, (cap) => {
+  if (bonusSpend.value > cap) bonusSpend.value = cap;
+});
+// включили бонусы — по умолчанию предлагаем максимум
+watch(useBonus, (on) => {
+  if (on) bonusSpend.value = bonusCap.value;
+});
+// вердикт CONFIRMED принёс кэшбэк — освежим счёт
+watch(
+  () => booking.value?.status,
+  (status, prev) => {
+    if (status === 'CONFIRMED' && status !== prev) void bonuses.refresh();
+  },
+);
+
+/** итог с учётом промокода и бонусов */
+const totalDue = computed(
+  () => afterPromo.value - (useBonus.value ? clampedSpend.value : 0),
 );
 
 const PROMO_HINTS: Record<string, string> = {
@@ -86,11 +131,27 @@ const PROMO_HINTS: Record<string, string> = {
   promoExhausted: 'Лимит активаций промокода исчерпан',
 };
 
+const BONUS_HINTS: Record<string, string> = {
+  bonusOverLimit: 'Бонусами можно закрыть не больше половины чека',
+  bonusInsufficient: 'Не хватает бонусов на счету',
+  bonusUnavailable: 'Гостевые брони нельзя оплатить бонусами',
+};
+
 /** текст-подсказка из кода ошибки API (null — это не про промокод) */
 function promoHintOf(err: ApiError): string | null {
   try {
     const code = (JSON.parse(err.body) as { code?: string }).code;
     return code && PROMO_HINTS[code] ? PROMO_HINTS[code] : null;
+  } catch {
+    return null;
+  }
+}
+
+/** то же для бонусов (null — ошибка не про них) */
+function bonusHintOf(err: ApiError): string | null {
+  try {
+    const code = (JSON.parse(err.body) as { code?: string }).code;
+    return code && BONUS_HINTS[code] ? BONUS_HINTS[code] : null;
   } catch {
     return null;
   }
@@ -135,8 +196,12 @@ async function pay(): Promise<void> {
   if (!booking.value) return;
   paying.value = true;
   error.value = null;
+  bonusError.value = null;
   try {
-    await store.pay(booking.value.id, applied.value?.code);
+    const spend = useBonus.value && clampedSpend.value > 0 ? clampedSpend.value : undefined;
+    await store.pay(booking.value.id, applied.value?.code, spend);
+    // списание ушло — счёт уже изменился (кэшбэк доначислит вердикт)
+    void bonuses.refresh();
   } catch (err) {
     if (err instanceof ApiError) {
       // код могли исчерпать между превью и оплатой: транзакция откатилась,
@@ -145,6 +210,15 @@ async function pay(): Promise<void> {
       if (hint) {
         applied.value = null;
         promoError.value = hint;
+        return;
+      }
+      // баланс могли потратить в другом окне: откатилась вся оплата —
+      // освежаем счёт, зажимаем ввод и подсказываем
+      const bonusHint = bonusHintOf(err);
+      if (bonusHint) {
+        await bonuses.refresh();
+        bonusSpend.value = bonusCap.value;
+        bonusError.value = bonusHint;
         return;
       }
       // 409 «уже PENDING» — платёж ушёл с первого клика, ждём вердикт по SSE
@@ -254,6 +328,36 @@ async function cancel(): Promise<void> {
         </button>
       </div>
       <p v-if="promoError" class="hint hint--error">{{ promoError }}</p>
+
+      <!-- бонусы: списание не больше половины чека, активация — в оплате -->
+      <div v-if="bonusAvailable" class="pay-bonus">
+        <label class="pay-bonus__toggle">
+          <input v-model="useBonus" type="checkbox" :disabled="paying" />
+          <span>
+            Списать бонусы
+            <span class="pay-bonus__balance">
+              {{ bonuses.balance }} на счету · кэшбэк 5% с подтверждённой
+              брони
+            </span>
+          </span>
+        </label>
+        <div v-if="useBonus" class="pay-bonus__controls">
+          <input
+            v-model.number="bonusSpend"
+            class="field__input pay-bonus__input"
+            type="number"
+            inputmode="numeric"
+            min="0"
+            :max="bonusCap"
+            :disabled="paying"
+          />
+          <span class="pay-bonus__cap">
+            максимум {{ bonusCap }} — не больше половины чека, курс 1 бонус
+            = 1 ₽
+          </span>
+        </div>
+      </div>
+      <p v-if="bonusError" class="hint hint--error">{{ bonusError }}</p>
 
       <p class="pay-timer" :class="{ 'pay-timer--overdue': overdue }">
         <template v-if="overdue">время вышло — проверяем статус…</template>

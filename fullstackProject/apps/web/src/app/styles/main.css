@@ -1247,6 +1247,45 @@ main.container {
   font-weight: 600;
 }
 
+/* бонусы на экране оплаты: списание не больше половины чека */
+.pay-bonus {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.pay-bonus__toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.pay-bonus__balance {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pay-bonus__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.pay-bonus__input {
+  width: 110px;
+}
+
+.pay-bonus__cap {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 /* ---------- статистика ---------- */
 
 .stat-row {
