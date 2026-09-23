@@ -26,3 +26,16 @@ export function spendCap(totalRub: number, balance: number): number {
     Math.min(Math.floor(totalRub * BONUS_SPEND_LIMIT), Math.floor(balance)),
   );
 }
+
+/**
+ * Баланс пользователя из ledger'а: SUM(accrual) − SUM(spend).
+ * Один источник для оплаты (BookingsService.pay) и счёта
+ * (GET /bonuses/my). SUM(int) → bigint, pg-драйвер отдаёт строкой.
+ */
+export const BONUS_BALANCE_SQL = `
+  SELECT COALESCE(SUM(CASE kind WHEN 'accrual' THEN amount ELSE -amount END), 0) AS balance
+    FROM bonus_transactions WHERE user_id = $1`;
+
+/** строки брони — источник разворота бонусов при отмене */
+export const BONUS_BOOKING_ROWS_SQL = `
+  SELECT reason, amount FROM bonus_transactions WHERE booking_id = $1`;

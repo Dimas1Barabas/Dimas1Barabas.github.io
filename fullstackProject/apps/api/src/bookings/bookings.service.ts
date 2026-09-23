@@ -9,7 +9,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
-import { BONUS_SPEND_LIMIT, cashbackFor } from '../bonus/bonus.logic';
+import {
+  BONUS_BALANCE_SQL,
+  BONUS_BOOKING_ROWS_SQL,
+  BONUS_SPEND_LIMIT,
+  cashbackFor,
+} from '../bonus/bonus.logic';
 import { cashbackPercent } from '../bonus/cashback-percent';
 import {
   BonusKind,
@@ -463,8 +468,7 @@ export class BookingsService {
     userId: string,
   ): Promise<number> {
     const rows = await em.query<{ balance: string | null }[]>(
-      `SELECT COALESCE(SUM(CASE kind WHEN 'accrual' THEN amount ELSE -amount END), 0) AS balance
-         FROM bonus_transactions WHERE user_id = $1`,
+      BONUS_BALANCE_SQL,
       [userId],
     );
     // SUM(int) в Postgres → bigint, pg-драйвер отдаёт строкой
@@ -870,7 +874,7 @@ export class BookingsService {
     bookingId: string,
   ): Promise<void> {
     const rows = await em.query<{ reason: BonusReason; amount: number }[]>(
-      `SELECT reason, amount FROM bonus_transactions WHERE booking_id = $1`,
+      BONUS_BOOKING_ROWS_SQL,
       [bookingId],
     );
     const spent = rows.find((r) => r.reason === 'payment')?.amount;

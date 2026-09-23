@@ -272,10 +272,20 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
     rabbitPublish = jest.fn();
 
     // эмуляция EntityManager из DataSource.transaction
+    // bonusRows — фейковый ledger: кэшбэк вердиктов и развороты при отмене
+    const bonusRows: {
+      userId: string;
+      bookingId: string;
+      kind: string;
+      reason: string;
+      amount: number;
+    }[] = [];
     const em = {
       findOneByOrFail: (entity: unknown, where: { id: string }) => {
         if (entity === Movie) return moviesRepo.findOneByOrFail(where);
         if (entity === Session) return sessionsRepo.findOneByOrFail(where);
+        // вердикты воркера перечитывают бронь внутри транзакции
+        if (entity === Booking) return bookingsRepo.findOneByOrFail(where);
         throw new Error('unexpected entity');
       },
       create: (_entity: unknown, x: Partial<Booking>) => x,
@@ -296,8 +306,52 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         if (entity === Booking) return bookingsRepo.update(criteria, patch);
         throw new Error('unexpected entity');
       },
-      // сырой UPDATE promos в оплате с промокодом; без промо — не вызывается
-      query: jest.fn(async () => [[], 0]),
+      // сырой UPDATE promos в оплате с промокодом; баланс/строки —
+      // от фейкового ledger'а (SUM в pg — bigint, строкой)
+      query: jest.fn(async (sql: string, params: string[]) => {
+        if (sql.includes('FROM bonus_transactions WHERE user_id')) {
+          const balance = bonusRows
+            .filter((r) => r.userId === params[0])
+            .reduce(
+              (s, r) => s + (r.kind === 'accrual' ? r.amount : -r.amount),
+              0,
+            );
+          return [{ balance: String(balance) }];
+        }
+        if (sql.includes('SELECT reason, amount FROM bonus_transactions')) {
+          return bonusRows
+            .filter((r) => r.bookingId === params[0])
+            .map((r) => ({ reason: r.reason, amount: r.amount }));
+        }
+        return [[], 0];
+      }),
+      // INSERT INTO bonus_transactions … ON CONFLICT (booking_id, reason)
+      createQueryBuilder: () => ({
+        insert: () => ({
+          into: () => ({
+            values: (
+              v: {
+                userId: string;
+                bookingId: string;
+                kind: string;
+                reason: string;
+                amount: number;
+              },
+            ) => ({
+              orIgnore: () => ({
+                execute: async () => {
+                  const dup = bonusRows.some(
+                    (r) =>
+                      r.bookingId === v.bookingId && r.reason === v.reason,
+                  );
+                  if (dup) return;
+                  bonusRows.push(v);
+                },
+              }),
+            }),
+          }),
+        }),
+      }),
     };
 
     const moduleRef = await Test.createTestingModule({
