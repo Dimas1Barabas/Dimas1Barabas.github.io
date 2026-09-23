@@ -57,6 +57,9 @@ services:
       PAYMENT_TIMEOUT_MS: '120000'
       # база одноразовой ссылки сброса пароля в «письме» (фронт стенда)
       RESET_LINK_BASE: http://localhost:18080/#/reset-password
+      # кэшбэк бонусной программы: % от фактически оплаченной суммы
+      # CONFIRMED-брони (дефолт в коде 5 — тут задан явно для наглядности)
+      BONUS_CASHBACK_PERCENT: '5'
     ports:
       - '13000:3000'
     depends_on:
