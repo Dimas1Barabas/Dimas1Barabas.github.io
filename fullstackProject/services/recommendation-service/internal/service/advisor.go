@@ -42,3 +42,16 @@ func (a *Advisor) Recommend(ctx context.Context, userID string, candidates []dom
 	profile := domain.BuildProfile(userID, signals)
 	return domain.Rank(candidates, profile, limit), nil
 }
+
+// Profile — витрина профиля зрителя (жанровые веса + просмотренное);
+// используется служебным HTTP-эндпоинтом стенда.
+func (a *Advisor) Profile(ctx context.Context, userID string) (domain.Profile, error) {
+	if userID == "" {
+		return domain.Profile{}, domain.ErrEmptyUserID
+	}
+	signals, err := a.store.List(ctx, userID)
+	if err != nil {
+		return domain.Profile{}, err
+	}
+	return domain.BuildProfile(userID, signals), nil
+}

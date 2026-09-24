@@ -102,6 +102,26 @@ services:
       postgres:
         condition: service_healthy
 
+  # гексагональный Go-сервис «КиноСоветник»: сигналы зрителей из RabbitMQ
+  # (подтверждённые брони, отзывы) → персональный топ афиши по gRPC;
+  # сигналы — в собственной БД cine_recommendations того же кластера
+  recommendation:
+    build: ./services/recommendation-service
+    environment:
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+      GRPC_ADDR: :8084
+      HTTP_ADDR: :8085
+      STORAGE: postgres
+      DATABASE_URL: postgres://cine:cine@postgres:5432/cine_recommendations
+    ports:
+      - '18084:8084' # gRPC Recommendations (API ходит внутри сети; хост-порт — для grpcurl)
+      - '18085:8085' # /health и /profile?userId= — витрина профиля зрителя
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
   web:
     build: ./apps/web
     ports:

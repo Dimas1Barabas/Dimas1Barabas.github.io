@@ -92,7 +92,9 @@ func TestRecommendStoreError(t *testing.T) {
 
 type failingStore struct{}
 
-func (failingStore) Append(context.Context, domain.Signal) error { return errors.New("бд недоступна") }
+func (failingStore) Append(context.Context, domain.Signal) error {
+	return errors.New("бд недоступна")
+}
 func (failingStore) List(context.Context, string) ([]domain.Signal, error) {
 	return nil, errors.New("бд недоступна")
 }
