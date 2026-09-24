@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+// КиноСоветник — gRPC-контракт сервиса рекомендаций.
+// Общий контракт API (NestJS) и recommendation-service (Go): proto-loader
+// на стороне Node читает этот файл в рантайме, Go-сторона использует
+// сгенерированный код (scripts/protogen.sh -> internal/pb).
+package cine.recommendations.v1;
+
+option go_package = "recommendation-service/internal/pb;cinepb";
+
+// Сервис персональных рекомендаций. Профили зрителей строит сам из сигналов
+// RabbitMQ (подтверждённые брони, отзывы); кандидатов ему передаёт API —
+// текущая афиша, поэтому сервису не нужно хранить каталог фильмов.
+service Recommendations {
+  // Топ фильмов для зрителя среди переданных кандидатов.
+  rpc GetRecommendations (RecommendationsRequest) returns (RecommendationsResponse);
+}
+
+// Кандидат афиши — фильм, который вообще можно забронировать.
+message MovieCandidate {
+  string movie_id = 1;   // uuid фильма в БД API
+  string title = 2;
+  string genre = 3;      // жанр-строка афиши («фантастика»)
+  double rating_avg = 4; // средний рейтинг 0..5, 0 = отзывов нет
+  int32 rating_count = 5;
+}
+
+message RecommendationsRequest {
+  string user_id = 1;                     // uuid зрителя
+  repeated MovieCandidate candidates = 2; // афиша от API
+  int32 limit = 3;                        // топ-N; <=0 = дефолт 4
+}
+
+message RecommendationItem {
+  string movie_id = 1;
+  string title = 2;
+  string genre = 3;
+  double score = 4;  // 0..1 — нормализованный скор для витрины
+  string reason = 5; // причина на русском: «вы часто смотрите фантастику»
+}
+
+message RecommendationsResponse {
+  repeated RecommendationItem items = 1;
+  string basis = 2; // profile | popular | empty — на чём построен топ
+}
