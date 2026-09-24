@@ -47,7 +47,8 @@ docker compose up --build
 | RabbitMQ UI | http://localhost:15672 | guest / guest |
 | worker (Go) | http://localhost:8081/stats | счётчики оплат и возвратов |
 | notification (Go) | http://localhost:18082/notifications | история «email»-уведомлений, гексагон |
-| PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications |
+| recommendation (Go, gRPC) | localhost:18084 (gRPC, reflection для grpcurl); http://localhost:18085/profile?userId=… | «КиноСоветник»: профили зрителей, витрина жанровых весов |
+| PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications + cine_recommendations |
 | Redis | localhost:6379 | кэш фильмов, TTL 60 c |
 
 Host-порты 13000/15432/18080 выбраны, чтобы не конфликтовать
@@ -125,7 +126,7 @@ docker compose exec postgres dropdb -U cine cine_empty
 Три уровня, фронт и бэк:
 
 ```bash
-# фронт: vitest (312 тестов) — форматтеры, зал, sha256/HMAC (векторы FIPS/RFC
+# фронт: vitest (328 тестов) — форматтеры, зал, sha256/HMAC (векторы FIPS/RFC
 # и сверка с node:crypto), зеркальная логика QR-билетов, демо-движок
 # (включая отзывы, сид-брони аналитики, симуляцию аккаунта, промокоды,
 # билеты со сканером, очередь аншлага, «других зрителей» живой карты
@@ -143,7 +144,7 @@ docker compose exec postgres dropdb -U cine cine_empty
 # среза (eslint-plugin-boundaries, политика — в eslint.config.js)
 cd apps/web && npm run lint && npm test
 
-# API: юнит (237 тестов) — логика брони, места/конфликт, pay/expire/cancel,
+# API: юнит (247 тестов) — логика брони, места/конфликт, pay/expire/cancel,
 # SSE, кэш, расписание сеансов, health, пользователи/посев админа,
 # JWT-логин, retry/parking, отзывы (право/дубль/агрегаты/удаление),
 # промокоды (скидка-математика, превью, атомарное списание в оплате,
@@ -157,7 +158,7 @@ cd apps/web && npm run lint && npm test
 # и forgot/reset пароля
 cd apps/api && npm test
 
-# API: интеграционные (161) — полный HTTP-стек Nest (роутинг, ValidationPipe,
+# API: интеграционные (166) — полный HTTP-стек Nest (роутинг, ValidationPipe,
 # контроллеры → сервисы → фейковые Postgres/RabbitMQ/Redis на Map),
 # включая 409-конфликт мест, изоляцию мест между сеансами, контракт /pay,
 # экспирацию резерва, сагу отмены, SSE-стрим по живому HTTP,
@@ -195,7 +196,9 @@ cd apps/api && npm run test:integration
 # админ-аналитика: 401/403, согласованность счётчиков с живым Postgres,
 # 14 дней графика, кэш; аккаунт: refresh-ротация, logout, профиль, смена
 # пароля и полный сброс по ссылке из «письма» notification-service;
-# swagger-документация /docs и /docs-json;
+# swagger-документация /docs и /docs-json; КиноСоветник: 401 без токена,
+# холодный старт/недоступность — не ошибка, полный цикл «CONFIRMED-бронь
+# → сигнал → профиль → фильм выпал из топа» опросом с дедлайном;
 # если стек не поднят — корректно пропускается с предупреждением)
 cd apps/api && npm run test:e2e
 
@@ -211,6 +214,14 @@ cd services/ticket-worker && go test ./...
 # против живого PG, без стенда скипается), маппинг доставок (включая
 # user.password.reset с адресатом-email), HTTP на httptest, env-конфиг
 cd services/notification-service && go test ./...
+
+# КиноСоветник: домен скоринга (веса сигналов, косинус, ранжирование,
+# причины), Advisor на стабах и сбой хранилища, память-стор с дедупом,
+# amqp-payload (poison-ветки, счётчик попыток), postgres-репозиторий
+# (roundtrip, дедуп uq, идемпотентность схемы — против живого PG,
+# без стенда скипается), gRPC-сервер через bufconn (холодный старт,
+# профиль, лимит, InvalidArgument), HTTP-витрина на httptest
+cd services/recommendation-service && go test ./...
 ```
 
 База стенда для e2e переопределяется через `E2E_BASE_URL` (по умолчанию
@@ -220,7 +231,8 @@ CI (GitHub Actions, workflow в корне репо `.github/workflows/cinebooki
 на пуш/PR по `fullstackProject/` гоняет герметичные уровни: web —
 typecheck + vitest + build, api — юнит + интеграционные + build,
 worker и notification — go test (live-тесты уведомлений скипаются:
-в раннере нет Postgres). E2e остаётся локальным: ему нужен живой
+в раннере нет Postgres), recommendation — go test КиноСоветника
+(live-PG точно так же скипается). E2e остаётся локальным: ему нужен живой
 docker-стенд.
 
 Письменная тест-документация «как у QA» — в [docs/qa/](docs/qa/):
@@ -639,6 +651,46 @@ WebSocket: `@nestjs/platform-ws` на бэкенде, нативный `WebSocke
   списание/кэшбэк/реверсы считает движок зеркалом API, uq-дубль не
   вставляется.
 
+### КиноСоветник (gRPC-рекомендации)
+
+Персональный топ «Вам понравится» — первый gRPC-сервис проекта.
+Контракт `proto/recommendation.proto` (пакет `cine.recommendations.v1`)
+один на обе стороны: Go-сервис использует код, сгенерированный buf
+(`scripts/protogen.sh` — тулы ставятся `go install`, protoc не нужен;
+генерат коммитим, CI от кодогена не зависит), NestJS читает `.proto`
+в рантайме через `@grpc/proto-loader` — кодогена на Node-стороне нет.
+
+- **Профили из сигналов**: API публикует в обмен `cinema` события
+  `recommendation.booking.confirmed` (из `handleProcessed`, только
+  CONFIRMED-брони с владельцем — там под рукой вся связка
+  «зритель × фильм × жанр») и `recommendation.review.created` (после
+  коммита отзыва, с рейтингом). Существующие контракты воркера не
+  трогались вовсе. КиноСоветник (Go, гексагон по образцу
+  notification-service) копит их в своей БД `cine_recommendations`;
+  идемпотентность редоставлений — `uq(dedup_key)`, transport —
+  очередь `recommendation.signals` с retry/parking на каждый rk.
+- **Скоринг — мини-ML**: профиль зрителя = веса жанров (бронь +1.0,
+  отзыв +`rating/5`×1.2 — оценка сильнее факта покупки); скор кандидата
+  = 0.7×косинус(профиль, жанр фильма) + 0.3×рейтинг; просмотренное
+  исключается; холодный старт — топ по рейтингу. Каждой позиции —
+  человеческая причина («вы часто смотрите «фантастика»», «высокий
+  рейтинг зрителей»). Кандидатов в запросе присылает сам API (текущая
+  афиша) — сервису не нужно хранить каталог.
+- **Фасад API**: `GET /api/recommendations/my` за JWT → gRPC
+  (`RecommendationsClient`: сырой `@grpc/grpc-js`, ленивое соединение,
+  дедлайн 3 c) с кэшем Redis 60 c; консьюмер сигналов гасит ключ —
+  свежий отзыв меняет топ почти сразу. Недоступность сервиса — НЕ ошибка
+  запроса: `{items: [], basis: 'unavailable'}`, витрина просто живёт
+  без блока.
+- **UI**: блок «Вам понравится» на главной для вошедших — лента
+  карточек с причиной и мини-баром скора, клик открывает знакомую
+  модалку выбора мест. Демо-паритет: движок гоняет тот же алгоритм
+  зеркалом `shared/lib/recommendation` (векторы сверены с готестами),
+  вердикты броней и отзывы дописывают сигналы live.
+- Стенд: gRPC на `:18084` (включён reflection — работает grpcurl),
+  витрина профиля `:18085/profile?userId=…` — видно, какие жанры
+  накопил зритель; compose-сеть ходит в `recommendation:8084`.
+
 ### Админ-аналитика
 
 `GET /api/admin/stats` — дашборд владельца кинотеатра. Только роль admin
@@ -718,7 +770,7 @@ pages/      экраны: home, bookings, my-bookings, payment, ticket, login,
 widgets/    крупные композиционные блоки: app-header
 features/   сценарии пользователя: booking-flow (модалка + схема зала), review
 entities/   бизнес-сущности: movie (+отзывы и расписание), booking, viewer,
-            stats, promo, ticket, waitlist, bonus
+            stats, promo, ticket, waitlist, bonus, recommendations
 shared/     без бизнес-логики: api-клиент и контракты, демо-движок, lib, config,
             ui (QrCode — SVG-рендер QR)
 ```
@@ -746,7 +798,10 @@ WebSocket, но с «другими зрителями»: пока модалк�
 бонусов и живёт ledger'ом движка: кэшбэк 5% капает с CONFIRMED-вердиктов,
 на `/pay` можно списать до половины чека (кулак правил как у API —
 `bonusOverLimit`/`bonusInsufficient` честные), отмена брони разворачивает
-начисления.
+начисления. КиноСоветник тоже при деле: после демо-входа на главной
+живёт блок «Вам понравится» — сид-история «зрителя» даёт профиль сразу,
+а вердикты броней и отзывы дописывают сигналы, и топ пересчитывается
+тем же алгоритмом, что в Go-сервисе (зеркало `shared/lib/recommendation`).
 Интерфейс — продуктовый, без служебных пометок о стеке и режиме:
 вся архитектура и схема запуска описаны в этом README. Витрина —
 скелетоны загрузки, жанр-фильтры, карта зала с баром занятости,
