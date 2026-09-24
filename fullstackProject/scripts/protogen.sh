@@ -20,3 +20,8 @@ command -v buf >/dev/null || go install github.com/bufbuild/buf/cmd/buf@latest
 cd "$root/proto"
 buf generate
 echo "OK: proto -> services/recommendation-service/internal/pb/"
+
+# копия контракта для NestJS-стороны: proto-loader читает .proto в рантайме
+cp "$root/proto/recommendation.proto" \
+   "$root/apps/api/src/recommendations/proto/recommendation.proto"
+echo "OK: proto -> apps/api/src/recommendations/proto/"

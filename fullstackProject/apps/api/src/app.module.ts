@@ -13,6 +13,7 @@ import { HealthController } from './health/health.controller';
 import { MoviesModule } from './movies/movies.module';
 import { PromosModule } from './promos/promos.module';
 import { rabbitMqModule } from './rabbit/rabbitmq.config';
+import { RecommendationsModule } from './recommendations/recommendations.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { RedisModule } from './redis/redis.module';
 import { UsersModule } from './users/users.module';
@@ -45,6 +46,7 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     PromosModule,
     WaitlistModule,
     BonusModule,
+    RecommendationsModule,
 
     // пользователи и авторизация: регистрация сейчас, логин+JWT дальше
     UsersModule,

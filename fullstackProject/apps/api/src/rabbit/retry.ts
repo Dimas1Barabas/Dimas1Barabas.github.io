@@ -26,17 +26,21 @@ export function readAttempts(msg: ConsumeMessage): number {
  * «Ядовитое» сообщение (NotFound — такой брони уже нет) ретраить бессмысленно,
  * оно уходит в parking сразу. После MAX_ATTEMPTS попыток в `<rk>.parking`
  * уходит всё — эти сообщения разбирают вручную (админ-очередь).
+ *
+ * routingKey опционален: без него rk выводится из самого сообщения — так
+ * одна очередь может слушать несколько потоков (см. api.recommendations.signals).
  */
-export function retryErrorHandler(routingKey: string): MessageErrorHandler {
-  const logger = new Logger(`RabbitRetry[${routingKey}]`);
+export function retryErrorHandler(routingKey?: string): MessageErrorHandler {
   return (channel: Channel, msg: ConsumeMessage, error: unknown) => {
+    const rk = routingKey ?? msg.fields.routingKey;
+    const logger = new Logger(`RabbitRetry[${rk}]`);
     const attempt = readAttempts(msg) + 1;
     const poison = error instanceof NotFoundException;
     const target = !poison && attempt < MAX_ATTEMPTS ? 'retry' : 'parking';
     const message = error instanceof Error ? error.message : String(error);
     logger.warn(`попытка ${attempt}: ${message} → ${target}`);
 
-    channel.publish('cinema', `${routingKey}.${target}`, msg.content, {
+    channel.publish('cinema', `${rk}.${target}`, msg.content, {
       contentType: msg.properties.contentType,
       persistent: true,
       headers: {

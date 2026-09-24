@@ -60,6 +60,9 @@ services:
       # кэшбэк бонусной программы: % от фактически оплаченной суммы
       # CONFIRMED-брони (дефолт в коде 5 — тут задан явно для наглядности)
       BONUS_CASHBACK_PERCENT: '5'
+      # КиноСоветник: gRPC-адрес сервиса рекомендаций внутри сети compose
+      # (соединение ленивое — API стартует и без него, блок просто скрывается)
+      GRPC_RECOMMENDATION_URL: recommendation:8084
     ports:
       - '13000:3000'
     depends_on:
@@ -69,6 +72,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      recommendation:
+        condition: service_started
 
   worker:
     build: ./services/ticket-worker

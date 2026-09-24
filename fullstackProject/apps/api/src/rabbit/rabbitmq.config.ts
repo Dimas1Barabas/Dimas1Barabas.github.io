@@ -26,6 +26,15 @@ export const rabbitMqModule = RabbitMQModule.forRoot({
     ...withRetryTopology('api.booking.expired', 'booking.expired'),
     // места вернулись в продажу → уведомить голову листа ожидания
     ...withRetryTopology('api.waitlist.released', 'waitlist.seat.released'),
+    // сигналы КиноСоветнику → консьюмер API гасит кэш «Вам понравится»
+    ...withRetryTopology(
+      'api.recommendations.signals',
+      'recommendation.booking.confirmed',
+    ),
+    ...withRetryTopology(
+      'api.recommendations.signals',
+      'recommendation.review.created',
+    ),
     // wait-очередь резерва: без потребителей, держит событие create ровно
     // окно оплаты и по TTL (dead-letter) отдаёт его в «booking.payment.timeout».
     // Декларирует только API — единственный публикатор: расхождение аргументов
