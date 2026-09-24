@@ -1,3 +1,4 @@
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import {
   ConflictException,
   ForbiddenException,
@@ -66,6 +67,8 @@ describe('ReviewsService (unit)', () => {
   let reviewsRepo: { find: jest.Mock; findOneByOrFail: jest.Mock };
   let moviesRepo: { findOneByOrFail: jest.Mock };
   let bookingsRepo: { findOneBy: jest.Mock };
+  /** публикация сигналов КиноСоветнику */
+  let rabbit: { publish: jest.Mock };
   let redisStore: Map<string, string>;
   /** что делала транзакция с EntityManager */
   let emSave: jest.Mock;
@@ -81,6 +84,7 @@ describe('ReviewsService (unit)', () => {
     moviesRepo = { findOneByOrFail: jest.fn(async () => movieFixture) };
     // eligibility: по умолчанию подтверждённая бронь находится
     bookingsRepo = { findOneBy: jest.fn(async () => ({} as Booking)) };
+    rabbit = { publish: jest.fn() };
     redisStore = new Map();
     emSave = jest.fn(async (x: Partial<Review>) => reviewFixture(x));
     emDelete = jest.fn(async () => ({ affected: 1 }));
@@ -113,6 +117,7 @@ describe('ReviewsService (unit)', () => {
         { provide: getRepositoryToken(Review), useValue: reviewsRepo },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
+        { provide: AmqpConnection, useValue: rabbit },
       ],
     }).compile();
 
@@ -164,6 +169,24 @@ describe('ReviewsService (unit)', () => {
         movieId: 'movie-1',
         status: 'CONFIRMED',
       });
+    });
+
+    it('публикует сигнал КиноСоветнику: жанр + рейтинг, dedup по reviewId', async () => {
+      await service.create('movie-1', dto, authUser);
+
+      expect(rabbit.publish).toHaveBeenCalledWith(
+        'cinema',
+        'recommendation.review.created',
+        {
+          userId: 'user-1',
+          movieId: 'movie-1',
+          movieTitle: 'Рекурсия',
+          genre: 'хоррор',
+          rating: 5,
+          reviewId: 'review-1',
+          occurredAt: expect.any(String),
+        },
+      );
     });
 
     it('без подтверждённой брони — 403, ничего не пишет', async () => {

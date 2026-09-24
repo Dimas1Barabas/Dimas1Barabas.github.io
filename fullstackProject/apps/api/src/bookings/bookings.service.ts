@@ -30,6 +30,9 @@ import {
 } from '../promos/promo.logic';
 import { Session } from '../movies/session.entity';
 import {
+  RecommendationBookingEvent,
+} from '../recommendations/recommendation-events';
+import {
   WaitlistReleaseReason,
   WaitlistSeatReleasedEvent,
 } from '../waitlist/waitlist-events';
@@ -791,6 +794,21 @@ export class BookingsService {
       `Бронь ${event.bookingId} → ${event.status} (${event.processedBy})`,
     );
     const { movie, session } = await this.contextOf(applied);
+
+    if (event.status === 'CONFIRMED' && applied.userId) {
+      // КиноСоветник: «сходил на фильм» — базовый сигнал профиля зрителя;
+      // контракт и dedup-ключ (bookingId) — в recommendation-events
+      const signal: RecommendationBookingEvent = {
+        userId: applied.userId,
+        movieId: applied.movieId,
+        movieTitle: movie.title,
+        genre: movie.genre,
+        bookingId: applied.id,
+        occurredAt: new Date().toISOString(),
+      };
+      this.rabbit.publish('cinema', 'recommendation.booking.confirmed', signal);
+    }
+
     await this.push(applied, movie, session);
   }
 

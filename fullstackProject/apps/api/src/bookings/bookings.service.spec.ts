@@ -1084,6 +1084,52 @@ describe('BookingsService (unit)', () => {
       });
     });
 
+    it('CONFIRMED публикует сигнал КиноСоветнику (dedup по bookingId)', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue(bookingFixture());
+
+      await service.handleProcessed({
+        bookingId: 'booking-1',
+        status: 'CONFIRMED',
+        message: 'Оплата прошла',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:00:05Z',
+      });
+
+      expect(rabbit.publish).toHaveBeenCalledWith(
+        'cinema',
+        'recommendation.booking.confirmed',
+        {
+          userId: 'user-1',
+          movieId: 'movie-1',
+          movieTitle: 'Рекурсия',
+          genre: 'хоррор',
+          bookingId: 'booking-1',
+          occurredAt: expect.any(String),
+        },
+      );
+    });
+
+    it('гостевая CONFIRMED-бронь сигнал рекомендациям не публикует', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        userId: null,
+      });
+
+      await service.handleProcessed({
+        bookingId: 'booking-1',
+        status: 'CONFIRMED',
+        message: 'Оплата прошла',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:00:05Z',
+      });
+
+      expect(rabbit.publish).not.toHaveBeenCalledWith(
+        'cinema',
+        'recommendation.booking.confirmed',
+        expect.anything(),
+      );
+    });
+
     it('пропускает вердикт по бронь не в PENDING (ределивери/EXPIRED)', async () => {
       bookingsRepo.findOneByOrFail.mockResolvedValue({
         ...bookingFixture(),

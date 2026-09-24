@@ -1,3 +1,4 @@
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import {
   ConflictException,
   ForbiddenException,
@@ -10,6 +11,9 @@ import { AuthUser } from '../auth/auth-user';
 import { Booking } from '../bookings/booking.entity';
 import { Movie } from '../movies/movie.entity';
 import { MOVIES_KEY, movieKey } from '../movies/movies.service';
+import {
+  RecommendationReviewEvent,
+} from '../recommendations/recommendation-events';
 import { RedisService } from '../redis/redis.service';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { Review, ReviewDto, toReviewDto } from './review.entity';
@@ -37,6 +41,7 @@ export class ReviewsService {
     @InjectRepository(Booking)
     private readonly bookings: Repository<Booking>,
     private readonly redis: RedisService,
+    private readonly rabbit: AmqpConnection,
   ) {}
 
   /** отзывы фильма, свежие сверху; автор нужен для имени в DTO */
@@ -62,7 +67,7 @@ export class ReviewsService {
     dto: CreateReviewDto,
     user: AuthUser,
   ): Promise<ReviewDto> {
-    await this.movies.findOneByOrFail({ id: movieId });
+    const movie = await this.movies.findOneByOrFail({ id: movieId });
     const confirmed = await this.bookings.findOneBy({
       userId: user.id,
       movieId,
@@ -101,6 +106,20 @@ export class ReviewsService {
     });
 
     await this.invalidate(movieId);
+
+    // КиноСоветник: отзыв — сигнал сильнее брони, рейтинг взвешивает жанр;
+    // reviewId — dedup-ключ редоставлений на стороне сервиса
+    const signal: RecommendationReviewEvent = {
+      userId: user.id,
+      movieId,
+      movieTitle: movie.title,
+      genre: movie.genre,
+      rating: dto.rating,
+      reviewId: review.id,
+      occurredAt: new Date().toISOString(),
+    };
+    this.rabbit.publish('cinema', 'recommendation.review.created', signal);
+
     this.logger.log(
       `Отзыв ${review.id} на фильм ${movieId} от ${user.email}: ${dto.rating}/5`,
     );

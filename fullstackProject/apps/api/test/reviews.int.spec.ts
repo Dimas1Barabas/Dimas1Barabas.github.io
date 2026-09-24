@@ -1,3 +1,4 @@
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { INestApplication, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
@@ -84,6 +85,8 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
   let bookingsRepo: FakeBookingRepo;
   let reviews: Review[] = [];
   let redisStore: Map<string, string>;
+  /** публикация сигналов КиноСоветнику */
+  let rabbit: { publish: jest.Mock };
   /** фильм, на который пишем отзывы */
   let movieId: string;
 
@@ -99,6 +102,7 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
     bookingsRepo = new FakeBookingRepo();
     reviews = [];
     redisStore = new Map();
+    rabbit = { publish: jest.fn() };
 
     movieId = randomUUID();
     moviesRepo.rows.push({
@@ -200,6 +204,7 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         { provide: getRepositoryToken(Review), useValue: fakeReviewRepo },
+        { provide: AmqpConnection, useValue: rabbit },
         {
           provide: DataSource,
           useValue: {
@@ -322,6 +327,21 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
       // каталог покинул кэш: рейтинг читается из «БД»
       const movie = await movieFromCatalog();
       expect(movie).toMatchObject({ ratingAvg: 4, ratingCount: 1 });
+
+      // КиноСоветник получил сигнал: жанр и рейтинг отзыва, dedup по reviewId
+      expect(rabbit.publish).toHaveBeenCalledWith(
+        'cinema',
+        'recommendation.review.created',
+        {
+          userId: 'user-a',
+          movieId,
+          movieTitle: 'Рекурсия',
+          genre: 'хоррор',
+          rating: 4,
+          reviewId: res.body.id,
+          occurredAt: expect.any(String),
+        },
+      );
     });
 
     it('дубль отзыва — 409 reviewExists', async () => {
