@@ -13,6 +13,7 @@ import type {
   Movie,
   Promo,
   PromoPreview,
+  RecommendationsDto,
   RegisterPayload,
   ResetPasswordPayload,
   Review,
@@ -211,6 +212,8 @@ export const api = {
   myWaitlist: () => request<MyWaitlistEntry[]>('/waitlist/my'),
   /** бонусный счёт: баланс (SUM от источника) + история движений */
   myBonuses: () => request<BonusAccount>('/bonuses/my'),
+  /** персональный топ «Вам понравится» (КиноСоветник за gRPC) */
+  recommendations: () => request<RecommendationsDto>('/recommendations/my'),
   /** регистрация: пароль хэшируется на бэкенде, вернётся UserDto */
   register: (payload: RegisterPayload) =>
     request<User>('/auth/register', {

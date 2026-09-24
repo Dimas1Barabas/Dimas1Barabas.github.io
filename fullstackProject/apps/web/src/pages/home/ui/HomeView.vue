@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import BookingModal from '@/features/booking-flow/ui/BookingModal.vue';
 import MovieCard from '@/entities/movie/ui/MovieCard.vue';
+import RecommendedRow from '@/entities/recommendations/ui/RecommendedRow.vue';
 import ReviewModal from '@/features/review/ui/ReviewModal.vue';
 import type { Booking, Movie } from '@/shared/api/types';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
+import { useRecommendationsStore } from '@/entities/recommendations/model/store';
 import { hasSessionOnDate } from '@/entities/movie/lib/sessions';
 
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 const moviesStore = useMoviesStore();
+const recosStore = useRecommendationsStore();
 const selectedMovie = ref<Movie | null>(null);
 /** фильм, чьи отзывы открыты в модалке */
 const reviewMovie = ref<Movie | null>(null);
@@ -50,10 +53,43 @@ const filteredMovies = computed<Movie[]>(() =>
   ),
 );
 
+/** топ «Вам понравится» обогащаем фильмами афиши (постер, жанр-иконка) */
+const recoEntries = computed(() =>
+  recosStore.items
+    .map((item) => ({
+      item,
+      movie: moviesStore.movies.find((m) => m.id === item.movieId),
+    }))
+    .filter((e): e is { item: (typeof recosStore.items)[number]; movie: Movie } =>
+      Boolean(e.movie),
+    ),
+);
+
+/** подпись блока: на чём КиноСоветник построил топ */
+const recosHint = computed(() =>
+  recosStore.basis === 'profile'
+    ? 'по вашим броням и отзывам'
+    : 'популярное сейчас',
+);
+
 onMounted(() => {
   // Promise.resolve: и живой промис, и мок без возврата — оба подходят
   void Promise.resolve(moviesStore.load()).then(openFromQuery);
+  // рекомендации — только вошедшим (демо-сессия считается входом)
+  if (authStore.isAuthed) void recosStore.refresh();
 });
+
+// вход/выход меняет профиль — подтягиваем или прячем блок
+watch(
+  () => authStore.isAuthed,
+  (authed) => {
+    void recosStore.refresh();
+    if (!authed) {
+      recosStore.items = [];
+      recosStore.loaded = false;
+    }
+  },
+);
 
 /** ?movie=<id> — глубокая ссылка из письма/уведомления листа ожидания:
  *  афиша загружена → сразу открываем модалку выбора мест */
@@ -73,6 +109,11 @@ function onCreated(booking: Booking): void {
   selectedMovie.value = null;
   void router.push({ name: 'pay', params: { bookingId: booking.id } });
 }
+
+/** клик по карточке «Вам понравится» — та же модалка выбора мест */
+function openReco(movie: Movie): void {
+  selectedMovie.value = movie;
+}
 </script>
 
 <template>
@@ -86,6 +127,15 @@ function onCreated(booking: Booking): void {
         онлайн — статус брони обновляется в реальном времени.
       </p>
     </div>
+
+    <!-- КиноСоветник: персональный топ для вошедшего зрителя -->
+    <section v-if="recosStore.visible && recoEntries.length" class="recos">
+      <div class="page-head">
+        <h2 class="page-title">Вам понравится</h2>
+        <span class="hint recos__hint">{{ recosHint }}</span>
+      </div>
+      <RecommendedRow :entries="recoEntries" @pick="openReco" />
+    </section>
 
     <div class="page-head">
       <h2 class="page-title">Сеансы на неделю</h2>
@@ -194,3 +244,9 @@ function onCreated(booking: Booking): void {
     <ReviewModal :movie="reviewMovie" @close="reviewMovie = null" />
   </section>
 </template>
+
+<style scoped>
+.recos__hint {
+  align-self: center;
+}
+</style>

@@ -7,6 +7,7 @@ import type { Movie, User } from '@/shared/api/types';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
+import { useRecommendationsStore } from '@/entities/recommendations/model/store';
 import BookingModal from '@/features/booking-flow/ui/BookingModal.vue';
 import ReviewModal from '@/features/review/ui/ReviewModal.vue';
 import HomeView from '@/pages/home/ui/HomeView.vue';
@@ -151,6 +152,47 @@ describe('HomeView', () => {
     await nextTick();
 
     expect(wrapper.findComponent(ReviewModal).props('movie')).toEqual(movie);
+  });
+
+  describe('Вам понравится (КиноСоветник)', () => {
+    it('вошедшему с топом — блок с причинами; клик открывает модалку мест', async () => {
+      const { pinia, moviesStore, authStore } = setup();
+      const recosStore = useRecommendationsStore();
+      recosStore.refresh = vi.fn(); // onMounted не должен ходить в сеть/движок
+      authStore.token = 'jwt';
+      moviesStore.movies = [movie];
+      recosStore.items = [
+        {
+          movieId: 'm-1',
+          title: 'Рекурсия',
+          genre: 'хоррор',
+          score: 0.9,
+          reason: 'вы часто смотрите «хоррор»',
+        },
+      ];
+      recosStore.basis = 'profile';
+      recosStore.loaded = true;
+
+      const wrapper = mountHome(pinia);
+      expect(wrapper.text()).toContain('Вам понравится');
+      expect(wrapper.text()).toContain('вы часто смотрите «хоррор»');
+      expect(wrapper.text()).toContain('по вашим броням и отзывам');
+
+      await wrapper.find('.recos__card').trigger('click');
+      expect(wrapper.findComponent(BookingModal).props('movie')).toEqual(movie);
+    });
+
+    it('гостю или пустому топу блок не показывается', () => {
+      const { pinia, moviesStore } = setup();
+      const recosStore = useRecommendationsStore();
+      recosStore.refresh = vi.fn();
+      moviesStore.movies = [movie];
+      recosStore.loaded = true;
+      recosStore.basis = 'unavailable';
+
+      const wrapper = mountHome(pinia);
+      expect(wrapper.find('.recos').exists()).toBe(false);
+    });
   });
 
   it('фильтр по жанру оставляет только его сеансы, «Все» возвращает всё', async () => {

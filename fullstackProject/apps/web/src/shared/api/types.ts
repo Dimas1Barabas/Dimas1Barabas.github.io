@@ -392,3 +392,31 @@ export interface BonusAccount {
   balance: number;
   transactions: BonusTransaction[];
 }
+
+/** позиция топа «Вам понравится» — GET /api/recommendations/my */
+export interface RecommendationItem {
+  movieId: string;
+  title: string;
+  genre: string;
+  /** нормализованный скор 0..1 */
+  score: number;
+  /** причина на русском: «вы часто смотрите «фантастика»» */
+  reason: string;
+}
+
+/**
+ * На чём построен топ: profile — по сигналам зрителя, popular — холодный
+ * старт по рейтингу, empty — советовать нечего; unavailable — КиноСоветник
+ * не ответил, блок на витрине скрывается (это не ошибка запроса).
+ */
+export type RecommendationsBasis =
+  | 'profile'
+  | 'popular'
+  | 'empty'
+  | 'unavailable';
+
+/** ответ КиноСоветника */
+export interface RecommendationsDto {
+  items: RecommendationItem[];
+  basis: RecommendationsBasis;
+}

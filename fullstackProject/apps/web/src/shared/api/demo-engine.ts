@@ -15,6 +15,7 @@ import type {
   MovieSession,
   Promo,
   PromoPreview,
+  RecommendationsDto,
   RegisterPayload,
   Review,
   SeatMap,
@@ -37,6 +38,10 @@ import {
   isValidSeat,
 } from '@/shared/lib/hall';
 import { BONUS_SPEND_LIMIT, cashbackFor } from '@/shared/lib/bonus';
+import {
+  rankRecommendations,
+  type RecSignal,
+} from '@/shared/lib/recommendation';
 import {
   PROMO_CODE_RE,
   normalizePromoCode,
@@ -248,6 +253,29 @@ const DEMO_MOVIE_SEEDS: Omit<Movie, 'ratingAvg' | 'ratingCount'>[] = [
 ];
 
 /** демо-афиша; рейтинг пересчитывается из отзывов при инициализации */
+/**
+ * Сид-сигналы КиноСоветника: демо-зритель «раньше» ходил на фантастику
+ * и высоко её оценил — блок «Вам понравится» сразу показывает profile-ветку.
+ */
+function seedSignals(): RecSignal[] {
+  return [
+    {
+      movieId: 'demo-milky-way',
+      genre: 'фантастика',
+      kind: 'booking',
+      rating: 0,
+      dedupKey: 'seed:booking:demo-milky-way',
+    },
+    {
+      movieId: 'demo-milky-way',
+      genre: 'фантастика',
+      kind: 'review',
+      rating: 5,
+      dedupKey: 'seed:review:demo-milky-way',
+    },
+  ];
+}
+
 const DEMO_MOVIES: Movie[] = DEMO_MOVIE_SEEDS.map((m) => ({
   ...m,
   ratingAvg: 0,
@@ -475,6 +503,8 @@ class DemoEngine {
   private bonusLedger: BonusTransaction[] = seedBonusLedger();
   /** счётчик id строк ledger'а — детерминированные «demo-bonus-N» */
   private bonusSeq = seedBonusLedger().length;
+  /** сигналы КиноСоветника: бронь CONFIRMED = «смотрел», отзыв = «оценил» */
+  private signals: RecSignal[] = seedSignals();
 
   /** «access-токен» демо-сессии — не JWT, просто маркер для стора */
   static readonly SESSION_TOKEN = 'demo-session';
@@ -511,6 +541,7 @@ class DemoEngine {
     this.waitlist = [];
     this.bonusLedger = seedBonusLedger();
     this.bonusSeq = seedBonusLedger().length;
+    this.signals = seedSignals();
     DEMO_MOVIES.forEach((m) => this.recomputeMovie(m.id));
     this.firstLoad = true;
     this.applySeeds();
@@ -1117,6 +1148,17 @@ class DemoEngine {
             bookingId: booking.id,
           });
         }
+        // КиноСоветник: «сходил на фильм» — сигнал профиля рекомендаций
+        const movie = DEMO_MOVIES.find((m) => m.id === booking.movieId);
+        if (movie) {
+          this.pushSignal({
+            movieId: booking.movieId,
+            genre: movie.genre,
+            kind: 'booking',
+            rating: 0,
+            dedupKey: `booking:${booking.id}`,
+          });
+        }
       } else {
         // оплата не прошла — места возвращаются в продажу (как в API),
         // списанные бонусы возвращаются на счёт
@@ -1202,6 +1244,30 @@ class DemoEngine {
   // операции одного типа по бронь не вставляется (идемпотентность).
 
   /** счёт «гостя демо»: баланс + история свежими сверху */
+  // ── КиноСоветник: рекомендации ─────────────────────────────────────
+  // Тот же алгоритм, что в Go-сервисе: зеркало shared/lib/recommendation.
+  // Сигналы копит движок (бронь CONFIRMED, отзыв), сиды дают истории
+  // «прошлых просмотров», чтобы блок жил сразу после входа в демо.
+
+  /** топ «Вам понравится» для демо-зрителя среди текущей афиши */
+  recommendations(): RecommendationsDto {
+    const candidates = this.movies().data.map((m) => ({
+      movieId: m.id,
+      title: m.title,
+      genre: m.genre,
+      ratingAvg: m.ratingAvg ?? 0,
+      ratingCount: m.ratingCount ?? 0,
+    }));
+    const ranked = rankRecommendations(candidates, this.signals);
+    return { items: ranked.items, basis: ranked.basis };
+  }
+
+  /** сигнал профиля: дубль по dedup-ключу не проходит (как uq в Postgres) */
+  private pushSignal(signal: RecSignal): void {
+    if (this.signals.some((s) => s.dedupKey === signal.dedupKey)) return;
+    this.signals.push(signal);
+  }
+
   myBonuses(limit = 20): BonusAccount {
     return {
       balance: this.bonusBalance(),
@@ -1551,6 +1617,14 @@ class DemoEngine {
     };
     this.reviews.unshift(review);
     this.recomputeMovie(movieId);
+    // КиноСоветник: отзыв — сигнал сильнее брони, рейтинг взвешивает жанр
+    this.pushSignal({
+      movieId,
+      genre: movie.genre,
+      kind: 'review',
+      rating: payload.rating,
+      dedupKey: `review:${review.id}`,
+    });
     this.notify();
     return review;
   }
