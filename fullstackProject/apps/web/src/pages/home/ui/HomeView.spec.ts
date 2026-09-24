@@ -45,6 +45,10 @@ function setup() {
   const moviesStore = useMoviesStore();
   const authStore = useAuthStore();
   moviesStore.load = vi.fn(); // onMounted не должен ходить в сеть
+  // модалка выбора мест тоже не должна: открытие BookingModal дергает
+  // loadSeats, а без мока это живой fetch — на Linux-раннере CI его
+  // unhandled-отказ роняет vitest (на Windows глотается тихо)
+  moviesStore.loadSeats = vi.fn();
   return { pinia, moviesStore, authStore };
 }
 
