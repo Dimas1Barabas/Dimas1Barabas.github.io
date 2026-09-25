@@ -24,6 +24,8 @@ import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Promo } from '../src/promos/promo.entity';
+import { RemindersClient } from '../src/reminders/reminders.client';
+import { User } from '../src/users/user.entity';
 import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
 
 /**
@@ -143,6 +145,9 @@ describe('QR-билеты: HTTP-интеграция (фейковые зави�
         { provide: getRepositoryToken(Promo), useValue: promosRepo },
         // create() гасит запись листа ожидания — фейку достаточно update
         { provide: getRepositoryToken(WaitlistEntry), useValue: { update: jest.fn(async () => ({ affected: 0 })) } },
+        // email напоминаний + gRPC-клиент reminder'ов (вердиктные хуки)
+        { provide: getRepositoryToken(User), useValue: { findOneByOrFail: jest.fn() } },
+        { provide: RemindersClient, useValue: { schedule: jest.fn(async () => ({ status: 'SCHEDULED' })), cancel: jest.fn(async () => ({ status: 'CANCELLED' })) } },
         { provide: AmqpConnection, useValue: { connected: true, publish: jest.fn() } },
         { provide: DataSource, useValue: { query: jest.fn(async () => [[], 0]) } },
         { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },

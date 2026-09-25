@@ -32,6 +32,8 @@ import { Session } from '../movies/session.entity';
 import {
   RecommendationBookingEvent,
 } from '../recommendations/recommendation-events';
+import { RemindersClient } from '../reminders/reminders.client';
+import { User } from '../users/user.entity';
 import {
   WaitlistReleaseReason,
   WaitlistSeatReleasedEvent,
@@ -143,9 +145,13 @@ export class BookingsService {
     // обратной зависимости нет — так цикл модулей не возникает
     @InjectRepository(WaitlistEntry)
     private readonly waitlistEntries: Repository<WaitlistEntry>,
+    // email адресата «письма»-напоминания — тот же приём
+    @InjectRepository(User)
+    private readonly users: Repository<User>,
     private readonly rabbit: AmqpConnection,
     private readonly stream: BookingStream,
     private readonly seatStream: SeatStream,
+    private readonly reminders: RemindersClient,
   ) {}
 
   /**
@@ -807,6 +813,10 @@ export class BookingsService {
         occurredAt: new Date().toISOString(),
       };
       this.rabbit.publish('cinema', 'recommendation.booking.confirmed', signal);
+
+      // напоминание «скоро сеанс» — fire-and-forget: недоступность
+      // reminder-сервиса не должна портить вердиктный цикл
+      void this.scheduleReminder(applied.userId, applied, movie, session);
     }
 
     await this.push(applied, movie, session);
@@ -873,12 +883,68 @@ export class BookingsService {
       // возврат прошёл — места снова в продаже
       await this.occupancy.delete({ bookingId: updated.id });
       this.publishSeatsReleased(updated, 'REFUNDED');
+      // билеты вернулись — напоминание гасим. REFUND_FAILED-откат сюда
+      // не попадает (бронь остаётся CONFIRMED) — письмо продолжает ждать
+      void this.cancelReminder(updated.id);
     }
     this.logger.log(
       `Возврат ${event.bookingId} → ${event.status} (${event.processedBy})`,
     );
     const { movie, session } = await this.contextOf(updated);
     await this.push(updated, movie, session);
+  }
+
+  /**
+   * Запланировать «письмо о сеансе» подтверждённой брони: gRPC в
+   * reminder-сервис. Fire-and-forget с полным catch — напоминание
+   * приятная деталь, а не часть транзакции: недоступность сервиса
+   * или краткий сбой не должны валить вердиктный цикл. Прошедший
+   * сеанс не планируется вовсе (страховка от гонки «сеанс начался
+   * между вердиктом и вызовом»; дубль погасит uq booking_id).
+   */
+  private async scheduleReminder(
+    userId: string,
+    booking: Booking,
+    movie: Movie,
+    session: Session,
+  ): Promise<void> {
+    try {
+      if (session.startsAt.getTime() <= Date.now()) {
+        this.logger.log(
+          `Сеанс брони ${booking.id} уже начался — напоминание не планируем`,
+        );
+        return;
+      }
+      const user = await this.users.findOneByOrFail({ id: userId });
+      const res = await this.reminders.schedule({
+        bookingId: booking.id,
+        userId,
+        email: user.email,
+        movieId: movie.id,
+        movieTitle: movie.title,
+        hall: session.hall,
+        sessionAt: session.startsAt.toISOString(),
+        seats: booking.seats,
+      });
+      this.logger.log(
+        `Напоминание брони ${booking.id} запланировано на ${res.dueAt ?? '—'}`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Напоминание брони ${booking.id} не запланировано: ${String(err)}`,
+      );
+    }
+  }
+
+  /** Погасить напоминание возвращённой брони; сбой — только warn */
+  private async cancelReminder(bookingId: string): Promise<void> {
+    try {
+      await this.reminders.cancel(bookingId);
+    } catch (err) {
+      this.logger.warn(
+        `Напоминание брони ${bookingId} не погашено: ${String(err)}`,
+      );
+    }
   }
 
   /**

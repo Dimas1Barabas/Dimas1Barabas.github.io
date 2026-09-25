@@ -27,6 +27,8 @@ import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Promo } from '../src/promos/promo.entity';
+import { RemindersClient } from '../src/reminders/reminders.client';
+import { User } from '../src/users/user.entity';
 import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
 
 /**
@@ -295,6 +297,9 @@ describe('Бонусы: HTTP-интеграция (фейковые зависи
         { provide: getRepositoryToken(Promo), useValue: { findOneBy: jest.fn(async () => null) } },
         // create() гасит запись листа ожидания — фейку достаточно update
         { provide: getRepositoryToken(WaitlistEntry), useValue: { update: jest.fn(async () => ({ affected: 0 })) } },
+        // email адресата «письма»-напоминания + gRPC-клиент reminder'ов
+        { provide: getRepositoryToken(User), useValue: { findOneByOrFail: jest.fn() } },
+        { provide: RemindersClient, useValue: { schedule: jest.fn(async () => ({ status: 'SCHEDULED' })), cancel: jest.fn(async () => ({ status: 'CANCELLED' })) } },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Session), useValue: sessionsRepo },

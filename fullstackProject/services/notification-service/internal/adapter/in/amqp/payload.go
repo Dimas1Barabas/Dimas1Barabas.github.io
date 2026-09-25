@@ -43,6 +43,13 @@ func toOutcome(d amqp091.Delivery) (domain.Outcome, error) {
 		o.Verdict = "WAITLIST_SEAT"
 		// тот же приём: адресат письма — email из BookingID
 		o.BookingID = p.Email
+	case keySessionReminder:
+		if p.Email == "" {
+			return domain.Outcome{}, fmt.Errorf("session.reminder без адресата (email)")
+		}
+		o.Verdict = "SESSION_REMINDER"
+		// и здесь адресат едет в BookingID; текст письма прислал сервис
+		o.BookingID = p.Email
 	default:
 		return domain.Outcome{}, fmt.Errorf("неизвестный routing key %q", d.RoutingKey)
 	}

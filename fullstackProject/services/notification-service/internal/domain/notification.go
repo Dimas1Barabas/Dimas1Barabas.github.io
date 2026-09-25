@@ -13,13 +13,14 @@ import (
 type Kind string
 
 const (
-	KindConfirmed     Kind = "booking_confirmed"
-	KindFailed        Kind = "booking_failed"
-	KindRefunded      Kind = "booking_refunded"
-	KindRefundFailed  Kind = "refund_failed"
-	KindExpired       Kind = "booking_expired"
-	KindPasswordReset Kind = "password_reset"
-	KindWaitlistSeat  Kind = "waitlist_seat"
+	KindConfirmed       Kind = "booking_confirmed"
+	KindFailed          Kind = "booking_failed"
+	KindRefunded        Kind = "booking_refunded"
+	KindRefundFailed    Kind = "refund_failed"
+	KindExpired         Kind = "booking_expired"
+	KindPasswordReset   Kind = "password_reset"
+	KindWaitlistSeat    Kind = "waitlist_seat"
+	KindSessionReminder Kind = "session_reminder"
 )
 
 // DeliveryStatus — судьба отправки.
@@ -76,6 +77,8 @@ func NewFromOutcome(o Outcome, now time.Time) (Notification, error) {
 		kind, title = KindPasswordReset, "Сброс пароля"
 	case "WAITLIST_SEAT":
 		kind, title = KindWaitlistSeat, "Место освободилось"
+	case "SESSION_REMINDER":
+		kind, title = KindSessionReminder, "Скоро сеанс"
 	default:
 		return Notification{}, fmt.Errorf("%w: %q", ErrUnknownVerdict, o.Verdict)
 	}

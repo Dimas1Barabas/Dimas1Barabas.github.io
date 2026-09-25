@@ -35,6 +35,9 @@ export const rabbitMqModule = RabbitMQModule.forRoot({
       'api.recommendations.signals',
       'recommendation.review.created',
     ),
+    // «письмо ушло» от reminder-сервиса → SSE-событие зрителю
+    // (параллельно то же событие читает notification-service)
+    ...withRetryTopology('api.reminder.sent', 'user.session.reminder'),
     // wait-очередь резерва: без потребителей, держит событие create ровно
     // окно оплаты и по TTL (dead-letter) отдаёт его в «booking.payment.timeout».
     // Декларирует только API — единственный публикатор: расхождение аргументов

@@ -20,11 +20,12 @@ import (
 // с NestJS и ticket-worker: вердикты брони от воркера и письма сброса
 // пароля от API — всё, что клиент должен увидеть.
 const (
-	keyProcessed     = "booking.processed"   // воркер: CONFIRMED | FAILED
-	keyRefunded      = "booking.refunded"    // воркер: CANCELLED | REFUND_FAILED
-	keyExpired       = "booking.expired"     // воркер: резерв истёк
-	keyPasswordReset = "user.password.reset" // NestJS API: письмо сброса пароля
-	keyWaitlistSeat  = "user.waitlist.seat"  // NestJS API: «место освободилось»
+	keyProcessed       = "booking.processed"     // воркер: CONFIRMED | FAILED
+	keyRefunded        = "booking.refunded"      // воркер: CANCELLED | REFUND_FAILED
+	keyExpired         = "booking.expired"       // воркер: резерв истёк
+	keyPasswordReset   = "user.password.reset"   // NestJS API: письмо сброса пароля
+	keyWaitlistSeat    = "user.waitlist.seat"    // NestJS API: «место освободилось»
+	keySessionReminder = "user.session.reminder" // reminder-сервис: «скоро сеанс»
 )
 
 const (
@@ -74,7 +75,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 		return fmt.Errorf("consume: %w", err)
 	}
 
-	log.Printf("notification слушает %s / booking.processed + booking.refunded + booking.expired + user.password.reset + user.waitlist.seat", queueName)
+	log.Printf("notification слушает %s / booking.processed + booking.refunded + booking.expired + user.password.reset + user.waitlist.seat + user.session.reminder", queueName)
 
 	for {
 		select {
@@ -130,7 +131,7 @@ func (c *Consumer) declareTopology(ch *amqp091.Channel) error {
 		return fmt.Errorf("очередь %s.parking: %w", queueName, err)
 	}
 
-	for _, key := range []string{keyProcessed, keyRefunded, keyExpired, keyPasswordReset, keyWaitlistSeat} {
+	for _, key := range []string{keyProcessed, keyRefunded, keyExpired, keyPasswordReset, keyWaitlistSeat, keySessionReminder} {
 		if err := ch.QueueBind(queueName, key, exchange, false, nil); err != nil {
 			return fmt.Errorf("бинд %s на %s: %w", queueName, key, err)
 		}

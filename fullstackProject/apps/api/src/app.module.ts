@@ -14,6 +14,7 @@ import { MoviesModule } from './movies/movies.module';
 import { PromosModule } from './promos/promos.module';
 import { rabbitMqModule } from './rabbit/rabbitmq.config';
 import { RecommendationsModule } from './recommendations/recommendations.module';
+import { RemindersModule } from './reminders/reminders.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { RedisModule } from './redis/redis.module';
 import { UsersModule } from './users/users.module';
@@ -47,6 +48,7 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     WaitlistModule,
     BonusModule,
     RecommendationsModule,
+    RemindersModule,
 
     // пользователи и авторизация: регистрация сейчас, логин+JWT дальше
     UsersModule,

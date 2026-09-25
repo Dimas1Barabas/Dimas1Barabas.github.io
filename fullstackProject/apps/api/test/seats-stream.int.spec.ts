@@ -26,6 +26,8 @@ import { SeatStream } from '../src/bookings/seat-stream';
 import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Promo } from '../src/promos/promo.entity';
+import { RemindersClient } from '../src/reminders/reminders.client';
+import { User } from '../src/users/user.entity';
 import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
@@ -275,6 +277,9 @@ describe('WS живая карта мест: HTTP+socket-интеграция (�
         { provide: getRepositoryToken(SeatOccupancy), useValue: occupancyRepo },
         { provide: getRepositoryToken(Promo), useValue: { findOneBy: jest.fn(async () => null) } },
         { provide: getRepositoryToken(WaitlistEntry), useValue: { update: jest.fn(async () => ({ affected: 0 })) } },
+        // email напоминаний + gRPC-клиент reminder'ов (вердиктные хуки)
+        { provide: getRepositoryToken(User), useValue: { findOneByOrFail: jest.fn() } },
+        { provide: RemindersClient, useValue: { schedule: jest.fn(async () => ({ status: 'SCHEDULED' })), cancel: jest.fn(async () => ({ status: 'CANCELLED' })) } },
         { provide: AmqpConnection, useValue: { publish: jest.fn(), connected: true } },
         {
           provide: DataSource,

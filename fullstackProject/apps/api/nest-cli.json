@@ -8,6 +8,10 @@
       {
         "include": "recommendations/proto/*.proto",
         "outDir": "dist"
+      },
+      {
+        "include": "reminders/proto/*.proto",
+        "outDir": "dist"
       }
     ]
   }

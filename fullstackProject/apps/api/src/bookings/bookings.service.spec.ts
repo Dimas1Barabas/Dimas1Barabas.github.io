@@ -12,6 +12,8 @@ import { AuthUser } from '../auth/auth-user';
 import { BonusTransaction } from '../bonus/bonus-transaction.entity';
 import { Movie } from '../movies/movie.entity';
 import { Promo } from '../promos/promo.entity';
+import { RemindersClient } from '../reminders/reminders.client';
+import { User } from '../users/user.entity';
 import { WaitlistEntry } from '../waitlist/waitlist.entity';
 import { Session } from '../movies/session.entity';
 import { Booking, BookingStatus } from './booking.entity';
@@ -78,6 +80,9 @@ function bookingFixture(): Booking {
   };
 }
 
+/** даём fire-and-forget промисам (планирование напоминания) доделать тик */
+const flushAsync = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
 describe('BookingsService (unit)', () => {
   let service: BookingsService;
   let bookingsRepo: {
@@ -93,6 +98,10 @@ describe('BookingsService (unit)', () => {
   let occupancyRepo: { find: jest.Mock; delete: jest.Mock };
   let promosRepo: { findOneBy: jest.Mock };
   let waitlistRepo: { update: jest.Mock };
+  /** email адресата «письма»-напоминания (scheduleReminder) */
+  let usersRepo: { findOneByOrFail: jest.Mock };
+  /** gRPC-клиент напоминаний: спаем schedule/call'ы вердиктных хуков */
+  let reminders: { schedule: jest.Mock; cancel: jest.Mock };
   let rabbit: { publish: jest.Mock };
   /** SSE-шина: спаем, что после мутаций ушли события */
   let stream: { emit: jest.Mock };
@@ -136,6 +145,16 @@ describe('BookingsService (unit)', () => {
     occupancyRepo = { find: jest.fn(async () => []), delete: jest.fn() };
     promosRepo = { findOneBy: jest.fn(async () => null) };
     waitlistRepo = { update: jest.fn(async () => ({ affected: 0 })) };
+    usersRepo = {
+      findOneByOrFail: jest.fn(async () => ({
+        id: 'user-1',
+        email: 'dmitry@example.com',
+      })),
+    };
+    reminders = {
+      schedule: jest.fn(async () => ({ status: 'SCHEDULED', dueAt: '2026-09-25T17:00:00Z' })),
+      cancel: jest.fn(async () => ({ status: 'CANCELLED' })),
+    };
     rabbit = { publish: jest.fn() };
     stream = { emit: jest.fn() };
     seatStream = { emit: jest.fn() };
@@ -228,6 +247,9 @@ describe('BookingsService (unit)', () => {
         { provide: getRepositoryToken(Promo), useValue: promosRepo },
         // create() гасит запись листа ожидания — фейку достаточно update
         { provide: getRepositoryToken(WaitlistEntry), useValue: waitlistRepo },
+        // email адресата напоминания
+        { provide: getRepositoryToken(User), useValue: usersRepo },
+        { provide: RemindersClient, useValue: reminders },
         { provide: AmqpConnection, useValue: rabbit },
         { provide: BookingStream, useValue: stream },
         { provide: SeatStream, useValue: seatStream },
@@ -1130,6 +1152,73 @@ describe('BookingsService (unit)', () => {
       );
     });
 
+    it('CONFIRMED с будущим сеансом планирует напоминание (email владельца)', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue(bookingFixture());
+      // фикстурный сеанс давно прошёл — подменяем будущим
+      sessionsRepo.findOneByOrFail.mockResolvedValue({
+        ...sessionFixture,
+        startsAt: new Date(Date.now() + 3 * 60 * 60 * 1000),
+      });
+
+      await service.handleProcessed({
+        bookingId: 'booking-1',
+        status: 'CONFIRMED',
+        message: 'Оплата прошла',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:00:05Z',
+      });
+      await flushAsync();
+
+      expect(reminders.schedule).toHaveBeenCalledWith({
+        bookingId: 'booking-1',
+        userId: 'user-1',
+        email: 'dmitry@example.com',
+        movieId: 'movie-1',
+        movieTitle: 'Рекурсия',
+        hall: 'IMAX',
+        sessionAt: expect.any(String),
+        seats: ['5-7', '5-8', '5-9'],
+      });
+    });
+
+    it('сеанс уже прошёл — напоминание не планируется', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue(bookingFixture());
+      // фикстура: startsAt 2026-09-05 — в прошлом
+
+      await service.handleProcessed({
+        bookingId: 'booking-1',
+        status: 'CONFIRMED',
+        message: 'Оплата прошла',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:00:05Z',
+      });
+      await flushAsync();
+
+      expect(reminders.schedule).not.toHaveBeenCalled();
+    });
+
+    it('недоступность reminder-сервиса не валит вердикт', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue(bookingFixture());
+      sessionsRepo.findOneByOrFail.mockResolvedValue({
+        ...sessionFixture,
+        startsAt: new Date(Date.now() + 3 * 60 * 60 * 1000),
+      });
+      reminders.schedule.mockRejectedValueOnce(new Error('UNAVAILABLE'));
+
+      await expect(
+        service.handleProcessed({
+          bookingId: 'booking-1',
+          status: 'CONFIRMED',
+          message: 'Оплата прошла',
+          processedBy: 'go-worker-1',
+          processedAt: '2026-09-03T12:00:05Z',
+        }),
+      ).resolves.toBeUndefined();
+      await flushAsync();
+
+      expect(bookingsRepo.save).toHaveBeenCalledTimes(1);
+    });
+
     it('пропускает вердикт по бронь не в PENDING (ределивери/EXPIRED)', async () => {
       bookingsRepo.findOneByOrFail.mockResolvedValue({
         ...bookingFixture(),
@@ -1292,6 +1381,36 @@ describe('BookingsService (unit)', () => {
       expect(occupancyRepo.delete).toHaveBeenCalledWith({
         bookingId: 'booking-1',
       });
+    });
+
+    it('CANCELLED — гасит напоминание брони', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue(cancellingFixture());
+
+      await service.handleRefunded({
+        bookingId: 'booking-1',
+        status: 'CANCELLED',
+        message: 'Возврат 1200 ₽ зачислен',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:05:00Z',
+      });
+      await flushAsync();
+
+      expect(reminders.cancel).toHaveBeenCalledWith('booking-1');
+    });
+
+    it('REFUND_FAILED — напоминание продолжает ждать сеанса', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue(cancellingFixture());
+
+      await service.handleRefunded({
+        bookingId: 'booking-1',
+        status: 'REFUND_FAILED',
+        message: 'Банк отклонил возврат',
+        processedBy: 'go-worker-1',
+        processedAt: '2026-09-03T12:05:00Z',
+      });
+      await flushAsync();
+
+      expect(reminders.cancel).not.toHaveBeenCalled();
     });
 
     it('REFUND_FAILED — откатывает в CONFIRMED, места держит', async () => {

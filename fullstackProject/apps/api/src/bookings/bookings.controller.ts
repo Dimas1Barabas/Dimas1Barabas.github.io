@@ -177,7 +177,8 @@ export class BookingsController {
     summary: 'SSE-стрим броней (демо-табло)',
     description:
       'text/event-stream: событие `booking` с каждой мутацией брони, ' +
-      '`waitlist` — «место освободилось» голове листа ожидания ' +
+      '`waitlist` — «место освободилось» голове листа ожидания, ' +
+      '`reminder` — «скоро сеанс» по подтверждённой брони ' +
       '(клиент матчит payload.userId по себе), heartbeat `ping` каждые 25 c. ' +
       'try-it-out здесь не покажет поток — смотрите вкладку Network или `curl -N`.',
   })
@@ -188,6 +189,9 @@ export class BookingsController {
       ),
       this.bus.waitlist$.pipe(
         map((payload) => ({ type: 'waitlist', data: payload })),
+      ),
+      this.bus.reminder$.pipe(
+        map((payload) => ({ type: 'reminder', data: payload })),
       ),
       interval(PING_MS).pipe(map(() => ({ type: 'ping', data: '' }))),
     );

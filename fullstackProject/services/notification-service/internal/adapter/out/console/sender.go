@@ -35,6 +35,10 @@ func (s *Sender) Send(_ context.Context, n domain.Notification) error {
 		// в листе ожидания адресат тоже настоящий email (в BookingID)
 		to = n.BookingID
 		ref = "лист ожидания"
+	case domain.KindSessionReminder:
+		// напоминание о сеансе шлётся на email зрителя (в BookingID)
+		to = n.BookingID
+		ref = "напоминание о сеансе"
 	}
 	s.logger.Printf("╭─ ✉ email → %s\n│ тема: %s\n│ тело: %s\n╰─ %s · %s",
 		to, n.Title, n.Body, ref, n.CreatedAt.Format("15:04:05"))

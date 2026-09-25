@@ -25,10 +25,20 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Booking } from '../src/bookings/booking.entity';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { Promo } from '../src/promos/promo.entity';
+import { RemindersClient } from '../src/reminders/reminders.client';
+import { User } from '../src/users/user.entity';
 import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { sseFrames, waitForSseEvent } from './sse';
+
+/** gRPC-клиент напоминаний: вердиктные хуки зовут его fire-and-forget */
+function remindersFake() {
+  return {
+    schedule: jest.fn(async () => ({ status: 'SCHEDULED', dueAt: '2026-09-25T17:00:00Z' })),
+    cancel: jest.fn(async () => ({ status: 'CANCELLED' })),
+  };
+}
 
 /**
  * Интеграционный тест: реальный HTTP-стек Nest (роутинг, ValidationPipe,
@@ -382,6 +392,9 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         { provide: getRepositoryToken(Promo), useValue: promosRepo },
         // create() гасит запись листа ожидания — фейку достаточно update
         { provide: getRepositoryToken(WaitlistEntry), useValue: { update: jest.fn(async () => ({ affected: 0 })) } },
+        // email адресата «письма»-напоминания + gRPC-клиент reminder'ов
+        { provide: getRepositoryToken(User), useValue: { findOneByOrFail: jest.fn() } },
+        { provide: RemindersClient, useValue: remindersFake() },
         { provide: AmqpConnection, useValue: { publish: rabbitPublish, connected: true } },
         {
           provide: DataSource,

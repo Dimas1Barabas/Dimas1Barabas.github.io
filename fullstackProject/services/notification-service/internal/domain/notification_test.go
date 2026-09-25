@@ -23,6 +23,7 @@ func TestNewFromOutcome(t *testing.T) {
 		{"EXPIRED", KindExpired, "Время оплаты истекло"},
 		{"PASSWORD_RESET", KindPasswordReset, "Сброс пароля"},
 		{"WAITLIST_SEAT", KindWaitlistSeat, "Место освободилось"},
+		{"SESSION_REMINDER", KindSessionReminder, "Скоро сеанс"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.verdict, func(t *testing.T) {
