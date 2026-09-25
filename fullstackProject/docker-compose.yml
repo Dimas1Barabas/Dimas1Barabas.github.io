@@ -66,6 +66,8 @@ services:
       # напоминания: gRPC-адрес reminder-сервиса (вызовы fire-and-forget,
       # недоступность не валит вердикты брони)
       GRPC_REMINDER_URL: reminder:8086
+      # Тарификатор: gRPC-адрес цен (недоступность — базовая цена афиши)
+      GRPC_PRICING_URL: pricing:8088
     ports:
       - '13000:3000'
     depends_on:
@@ -78,6 +80,8 @@ services:
       recommendation:
         condition: service_started
       reminder:
+        condition: service_started
+      pricing:
         condition: service_started
 
   worker:

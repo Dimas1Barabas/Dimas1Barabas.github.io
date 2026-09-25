@@ -4,6 +4,7 @@ import { BonusTransaction } from '../bonus/bonus-transaction.entity';
 import { Movie } from '../movies/movie.entity';
 import { Promo } from '../promos/promo.entity';
 import { Session } from '../movies/session.entity';
+import { PricingClient } from '../pricing/pricing.client';
 import { rabbitMqModule } from '../rabbit/rabbitmq.config';
 import { RemindersClient } from '../reminders/reminders.client';
 import { User } from '../users/user.entity';
@@ -16,6 +17,7 @@ import { BookingsService } from './bookings.service';
 import { SeatMapGateway } from './seat-map.gateway';
 import { SeatOccupancy } from './seat-occupancy.entity';
 import { SeatsController } from './seats.controller';
+import { SessionPriceController } from './session-price.controller';
 import { SeatStream } from './seat-stream';
 
 @Module({
@@ -38,10 +40,10 @@ import { SeatStream } from './seat-stream';
     ]),
     rabbitMqModule,
   ],
-  controllers: [BookingsController, SeatsController],
+  controllers: [BookingsController, SeatsController, SessionPriceController],
   // SeatStream + SeatMapGateway — живая карта мест по WS: та же нора,
   // что и данные занятости (BookingsService), экспортировать наружу не нужно
-  providers: [BookingsService, BookingsConsumer, BookingStream, SeatStream, SeatMapGateway, RemindersClient],
+  providers: [BookingsService, BookingsConsumer, BookingStream, SeatStream, SeatMapGateway, RemindersClient, PricingClient],
   // BookingStream нужен и waitlist-консьюмеру: тот же SSE-эндпоинт,
   // второй канал событий — см. waitlist.module; RemindersClient —
   // вердиктным хукам (schedule/cancel), а RemindersModule импортирует

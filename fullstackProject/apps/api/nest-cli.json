@@ -12,6 +12,10 @@
       {
         "include": "reminders/proto/*.proto",
         "outDir": "dist"
+      },
+      {
+        "include": "pricing/proto/*.proto",
+        "outDir": "dist"
       }
     ]
   }

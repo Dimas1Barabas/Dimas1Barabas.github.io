@@ -32,6 +32,7 @@ import { Session } from '../movies/session.entity';
 import {
   RecommendationBookingEvent,
 } from '../recommendations/recommendation-events';
+import { PricingClient } from '../pricing/pricing.client';
 import { RemindersClient } from '../reminders/reminders.client';
 import { User } from '../users/user.entity';
 import {
@@ -66,6 +67,10 @@ import {
 } from './hall';
 import { SeatOccupancy } from './seat-occupancy.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import {
+  PriceFactorDto,
+  SessionQuoteDto,
+} from './dto/session-quote.dto';
 import {
   TicketDto,
   TicketVerifyResultDto,
@@ -152,6 +157,7 @@ export class BookingsService {
     private readonly stream: BookingStream,
     private readonly seatStream: SeatStream,
     private readonly reminders: RemindersClient,
+    private readonly pricing: PricingClient,
   ) {}
 
   /**
@@ -201,6 +207,51 @@ export class BookingsService {
     return { movie, session };
   }
 
+  /**
+   * Цена места сеанса у Тарификатора. Спрос сервис копит сам из событий
+   * брони, сюда приезжает только расписание и ёмкость зала. Любой сбой —
+   * деградация на базовую цену афиши с warn: бронь не должна ломаться
+   * из-за ценообразования (паритет — напоминания у вердиктов).
+   */
+  private async quoteSession(
+    session: Session,
+    movie: Movie,
+  ): Promise<{ priceRub: number; factors: PriceFactorDto[]; dynamic: boolean }> {
+    try {
+      const res = await this.pricing.quote({
+        sessionId: session.id,
+        sessionAt: session.startsAt.toISOString(),
+        basePriceRub: movie.priceRub,
+        capacity: HALL_CAPACITY,
+      });
+      const priceRub = Number(res.priceRub ?? Number.NaN);
+      if (!Number.isFinite(priceRub) || priceRub <= 0) {
+        throw new Error(`некорректная цена в ответе: ${res.priceRub}`);
+      }
+      return { priceRub, factors: res.factors ?? [], dynamic: true };
+    } catch (err) {
+      this.logger.warn(
+        `Тарификатор недоступен, сеанс ${session.id} — базовая цена ${movie.priceRub} ₽: ${String(err)}`,
+      );
+      return { priceRub: movie.priceRub, factors: [], dynamic: false };
+    }
+  }
+
+  /** Витрина цены сеанса: GET /api/sessions/:sessionId/price */
+  async sessionPrice(sessionId: string): Promise<SessionQuoteDto> {
+    const session = await this.sessions.findOneByOrFail({ id: sessionId });
+    const movie = await this.movies.findOneByOrFail({ id: session.movieId });
+    const quote = await this.quoteSession(session, movie);
+    return {
+      sessionId,
+      sessionAt: session.startsAt.toISOString(),
+      basePriceRub: movie.priceRub,
+      priceRub: quote.priceRub,
+      factors: quote.factors,
+      dynamic: quote.dynamic,
+    };
+  }
+
   /** событие «готова к проведению оплаты» — публикуется при pay() */
   private createdEventOf(
     booking: Booking,
@@ -227,6 +278,9 @@ export class BookingsService {
    * его ровно окно оплаты и по TTL (dead-letter) отдаёт в
    * «booking.payment.timeout» — оттуда её подхватывает Go-воркер.
    *
+   * Цена места — у Тарификатора (gRPC), спрашиваем до транзакции:
+   * сетевой вызов не должен держать её открытой; в чек ложится цена
+   * момента брони. Недоступность сервиса — базовая цена афиши.
    * Владелец и имя покупателя — из JWT: customerName в теле опционален.
    * Фильм выводится из сеанса — истина о привязке хранится в одном месте.
    * Бронь и занятость мест пишутся одной транзакцией; уникальный
@@ -236,6 +290,16 @@ export class BookingsService {
   async create(dto: CreateBookingDto, user: AuthUser): Promise<BookingDto> {
     const seats = normalizeSeats(dto.seats);
     const customerName = (dto.customerName ?? user.name).trim();
+
+    // квот до транзакции: сетевой вызов не должен держать её открытой;
+    // в чек ложится цена момента брони, факт брони её фиксирует
+    const quoteSession = await this.sessions.findOneByOrFail({
+      id: dto.sessionId,
+    });
+    const quoteMovie = await this.movies.findOneByOrFail({
+      id: quoteSession.movieId,
+    });
+    const quote = await this.quoteSession(quoteSession, quoteMovie);
 
     let booking: Booking;
     let movie: Movie;
@@ -257,7 +321,7 @@ export class BookingsService {
           customerName,
           userId: user.id,
           seats,
-          totalRub: computeTotal(found.priceRub, seats),
+          totalRub: computeTotal(quote.priceRub, seats),
           status: 'PENDING_PAYMENT',
           expiresAt: new Date(Date.now() + paymentTimeoutMs()),
         });
@@ -304,6 +368,8 @@ export class BookingsService {
 
     const waitEvent: BookingPaymentWaitEvent = {
       bookingId: booking.id,
+      sessionId: booking.sessionId,
+      seatsCount: booking.seats.length,
       totalRub: booking.totalRub,
       expiresAt: booking.expiresAt!.toISOString(),
     };
@@ -312,7 +378,7 @@ export class BookingsService {
     this.seatStream.emit({ sessionId: booking.sessionId });
     this.rabbit.publish('cinema', 'booking.payment.wait', waitEvent);
     this.logger.log(
-      `Бронь ${booking.id} (${movie.title}, ${session.hall} ${session.startsAt.toISOString()}, места ${booking.seats.join(', ')}) ждёт оплаты до ${waitEvent.expiresAt}`,
+      `Бронь ${booking.id} (${movie.title}, ${session.hall} ${session.startsAt.toISOString()}, места ${booking.seats.join(', ')}, ${quote.priceRub} ₽/место ${quote.dynamic ? '(тарификатор)' : '(базовая — тарификатор недоступен)'}) ждёт оплаты до ${waitEvent.expiresAt}`,
     );
     await this.push(booking, movie, session);
 

@@ -25,6 +25,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Booking } from '../src/bookings/booking.entity';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { Promo } from '../src/promos/promo.entity';
+import { PricingClient } from '../src/pricing/pricing.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
 import { User } from '../src/users/user.entity';
 import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
@@ -37,6 +38,13 @@ function remindersFake() {
   return {
     schedule: jest.fn(async () => ({ status: 'SCHEDULED', dueAt: '2026-09-25T17:00:00Z' })),
     cancel: jest.fn(async () => ({ status: 'CANCELLED' })),
+  };
+}
+
+/** gRPC-клиент Тарификатора: базовая цена без факторов (ценовые кейсы — в pricing.int) */
+function pricingFake() {
+  return {
+    quote: jest.fn(async (input: { basePriceRub: number }) => ({ priceRub: input.basePriceRub, basePriceRub: input.basePriceRub, factors: [], occupied: 0, capacity: 80 })),
   };
 }
 
@@ -395,6 +403,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         // email адресата «письма»-напоминания + gRPC-клиент reminder'ов
         { provide: getRepositoryToken(User), useValue: { findOneByOrFail: jest.fn() } },
         { provide: RemindersClient, useValue: remindersFake() },
+        { provide: PricingClient, useValue: pricingFake() },
         { provide: AmqpConnection, useValue: { publish: rabbitPublish, connected: true } },
         {
           provide: DataSource,

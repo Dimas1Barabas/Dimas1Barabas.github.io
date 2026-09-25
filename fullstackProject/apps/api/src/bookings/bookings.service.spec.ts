@@ -12,6 +12,7 @@ import { AuthUser } from '../auth/auth-user';
 import { BonusTransaction } from '../bonus/bonus-transaction.entity';
 import { Movie } from '../movies/movie.entity';
 import { Promo } from '../promos/promo.entity';
+import { PricingClient } from '../pricing/pricing.client';
 import { RemindersClient } from '../reminders/reminders.client';
 import { User } from '../users/user.entity';
 import { WaitlistEntry } from '../waitlist/waitlist.entity';
@@ -102,6 +103,8 @@ describe('BookingsService (unit)', () => {
   let usersRepo: { findOneByOrFail: jest.Mock };
   /** gRPC-клиент напоминаний: спаем schedule/call'ы вердиктных хуков */
   let reminders: { schedule: jest.Mock; cancel: jest.Mock };
+  /** gRPC-клиент Тарификатора: по умолчанию отвечает базовой ценой */
+  let pricing: { quote: jest.Mock };
   let rabbit: { publish: jest.Mock };
   /** SSE-шина: спаем, что после мутаций ушли события */
   let stream: { emit: jest.Mock };
@@ -154,6 +157,17 @@ describe('BookingsService (unit)', () => {
     reminders = {
       schedule: jest.fn(async () => ({ status: 'SCHEDULED', dueAt: '2026-09-25T17:00:00Z' })),
       cancel: jest.fn(async () => ({ status: 'CANCELLED' })),
+    };
+    // Тарификатор по умолчанию «прозрачен»: базовая цена без факторов —
+    // кейсы ценообразования переключают мок точечно
+    pricing = {
+      quote: jest.fn(async () => ({
+        priceRub: movieFixture.priceRub,
+        basePriceRub: movieFixture.priceRub,
+        factors: [],
+        occupied: 0,
+        capacity: 80,
+      })),
     };
     rabbit = { publish: jest.fn() };
     stream = { emit: jest.fn() };
@@ -250,6 +264,7 @@ describe('BookingsService (unit)', () => {
         // email адресата напоминания
         { provide: getRepositoryToken(User), useValue: usersRepo },
         { provide: RemindersClient, useValue: reminders },
+        { provide: PricingClient, useValue: pricing },
         { provide: AmqpConnection, useValue: rabbit },
         { provide: BookingStream, useValue: stream },
         { provide: SeatStream, useValue: seatStream },
@@ -362,6 +377,55 @@ describe('BookingsService (unit)', () => {
       });
     });
 
+    it('цена брони — от Тарификатора: квот с факторами до транзакции', async () => {
+      pricing.quote.mockResolvedValueOnce({
+        priceRub: 480, // вечер +20%
+        basePriceRub: 400,
+        factors: [{ code: 'evening', label: 'вечерний прайм +20%', percent: 20 }],
+        occupied: 12,
+        capacity: 80,
+      });
+
+      const result = await service.create(
+        { sessionId: 'session-1', customerName: 'Дмитрий', seats: ['5-7', '5-8'] },
+        authUser,
+      );
+
+      expect(pricing.quote).toHaveBeenCalledWith({
+        sessionId: 'session-1',
+        sessionAt: sessionFixture.startsAt.toISOString(),
+        basePriceRub: 400,
+        capacity: 80,
+      });
+      expect(result.totalRub).toBe(960); // 480 × 2
+      // спрос Тарификатора: wait-событие несёт сеанс и число мест
+      const event = rabbit.publish.mock.calls[0][2];
+      expect(event).toMatchObject({ sessionId: 'session-1', seatsCount: 2 });
+    });
+
+    it('недоступность Тарификатора — базовая цена, бронь жива', async () => {
+      pricing.quote.mockRejectedValueOnce(new Error('deadline exceeded'));
+
+      const result = await service.create(
+        { sessionId: 'session-1', customerName: 'Дмитрий', seats: ['5-7'] },
+        authUser,
+      );
+
+      expect(result.totalRub).toBe(400); // база афиши × 1 место
+      expect(result.status).toBe('PENDING_PAYMENT');
+    });
+
+    it('мусор в ответе Тарификатора — тоже базовая цена', async () => {
+      pricing.quote.mockResolvedValueOnce({ priceRub: -50 });
+
+      const result = await service.create(
+        { sessionId: 'session-1', seats: ['5-7'] },
+        authUser,
+      );
+
+      expect(result.totalRub).toBe(400);
+    });
+
     it('обрезает пробелы вокруг имени', async () => {
       const result = await service.create(
         {
@@ -405,6 +469,45 @@ describe('BookingsService (unit)', () => {
       );
       // событие в очередь не ушло
       expect(rabbit.publish).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sessionPrice', () => {
+    it('витрина цены: факторы и dynamic=true, когда Тарификатор ответил', async () => {
+      pricing.quote.mockResolvedValueOnce({
+        priceRub: 550,
+        basePriceRub: 400,
+        factors: [
+          { code: 'evening', label: 'вечерний прайм +20%', percent: 20 },
+          { code: 'demand_high', label: 'спрос высокий +10%', percent: 10 },
+        ],
+        occupied: 45,
+        capacity: 80,
+      });
+
+      const dto = await service.sessionPrice('session-1');
+
+      expect(dto).toMatchObject({
+        sessionId: 'session-1',
+        sessionAt: sessionFixture.startsAt.toISOString(),
+        basePriceRub: 400,
+        priceRub: 550,
+        dynamic: true,
+      });
+      expect(dto.factors).toHaveLength(2);
+    });
+
+    it('недоступность Тарификатора — dynamic=false и базовая цена', async () => {
+      pricing.quote.mockRejectedValueOnce(new Error('unavailable'));
+
+      const dto = await service.sessionPrice('session-1');
+
+      expect(dto).toMatchObject({
+        priceRub: 400,
+        basePriceRub: 400,
+        dynamic: false,
+      });
+      expect(dto.factors).toEqual([]);
     });
   });
 

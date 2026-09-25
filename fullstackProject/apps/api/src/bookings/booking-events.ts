@@ -5,10 +5,14 @@
  * Сообщение «тикает» в очереди без потребителей ровно окно оплаты
  * (x-message-ttl) и падает dead-letter'ом в «booking.payment.timeout» —
  * его гасит Go-воркер. Воркеру нужен только bookingId; totalRub/expiresAt —
- * для человекочитаемого инспекта в UI RabbitMQ.
+ * для человекочитаемого инспекта в UI RabbitMQ. sessionId + seatsCount
+ * читает Тарификатор: бронь создана — места ушли в резерв, спрос вырос.
  */
 export interface BookingPaymentWaitEvent {
   bookingId: string;
+  sessionId: string;
+  /** сколько мест держит бронь — изменение спроса Тарификатора */
+  seatsCount: number;
   totalRub: number;
   /** дедлайн оплаты, ISO */
   expiresAt: string;

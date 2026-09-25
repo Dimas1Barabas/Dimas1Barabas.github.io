@@ -13,6 +13,7 @@ import { BonusTransaction } from '../src/bonus/bonus-transaction.entity';
 import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Promo } from '../src/promos/promo.entity';
+import { PricingClient } from '../src/pricing/pricing.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
 import { RemindersConsumer } from '../src/reminders/reminders.consumer';
 import { User } from '../src/users/user.entity';
@@ -141,6 +142,8 @@ describe('Reminders (integration)', () => {
         SeatStream,
         RemindersConsumer,
         { provide: RemindersClient, useValue: reminders },
+        // Тарификатор: базовая цена без факторов (ценовые кейсы — в pricing.int)
+        { provide: PricingClient, useValue: { quote: jest.fn(async (input: { basePriceRub: number }) => ({ priceRub: input.basePriceRub, basePriceRub: input.basePriceRub, factors: [], occupied: 0, capacity: 80 })) } },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         {
           provide: getRepositoryToken(Movie),
