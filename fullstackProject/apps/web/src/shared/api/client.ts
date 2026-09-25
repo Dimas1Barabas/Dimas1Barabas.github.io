@@ -18,6 +18,7 @@ import type {
   ResetPasswordPayload,
   Review,
   SeatMap,
+  SessionQuote,
   Ticket,
   UpdateProfilePayload,
   User,
@@ -172,6 +173,9 @@ export const api = {
   /** карта занятости зала сеанса (без кэша — всегда свежая) */
   seatMap: (sessionId: string) =>
     request<SeatMap>(`/sessions/${sessionId}/seats`),
+  /** цена места сеанса с раскладкой факторов (dynamic=false — базовая) */
+  sessionQuote: (sessionId: string) =>
+    request<SessionQuote>(`/sessions/${sessionId}/price`),
   createBooking: (payload: CreateBookingPayload) =>
     request<Booking>('/bookings', {
       method: 'POST',

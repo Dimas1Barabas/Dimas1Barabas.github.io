@@ -56,6 +56,29 @@ export interface SeatErrorFrame {
 
 export type SeatFrame = SeatSnapshotFrame | SeatErrorFrame;
 
+/** фактор раскладки цены — как PriceFactor Тарификатора (gRPC) */
+export interface SessionPriceFactor {
+  code: string;
+  /** «вечерний прайм +20%» — подпись идентична Go-домену */
+  label: string;
+  /** вклад фактора, %: −20 … +25 */
+  percent: number;
+}
+
+/**
+ * Цена места сеанса — GET /api/sessions/:id/price. dynamic=false —
+ * Тарификатор недоступен, показываем базовую цену (деградация, не ошибка).
+ */
+export interface SessionQuote {
+  sessionId: string;
+  sessionAt: string;
+  basePriceRub: number;
+  /** после факторов, кратно 10 ₽ */
+  priceRub: number;
+  factors: SessionPriceFactor[];
+  dynamic: boolean;
+}
+
 export interface Booking {
   id: string;
   movieId: string;

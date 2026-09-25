@@ -70,7 +70,13 @@ describe('waitlist store: демо-режим', () => {
 
   it('join неполного сеанса → false и текст ошибки из тела ApiError', async () => {
     const waitlist = useWaitlistStore();
-    const sessionId = demoEngine.movies().data[0].sessions[0].id;
+    // ближайший будущий сеанс: ночной прогон не должен упираться
+    // в «сегодня, 19:00» — тот уже начался и лист ожидания закрыт
+    const movie = demoEngine.movies().data[0];
+    const sessionId = (
+      movie.sessions.find((s) => Date.parse(s.startsAt) > Date.now()) ??
+      movie.sessions[0]
+    ).id;
 
     const refused = await waitlist.join(sessionId);
     expect(refused).toBe(false);

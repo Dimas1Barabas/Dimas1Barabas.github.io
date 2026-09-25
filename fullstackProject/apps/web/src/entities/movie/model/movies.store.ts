@@ -6,6 +6,7 @@ import type {
   Movie,
   SeatFrame,
   SeatMap,
+  SessionQuote,
 } from '@/shared/api/types';
 import { useAppStore } from '@/shared/api/app-mode';
 
@@ -19,6 +20,9 @@ export const useMoviesStore = defineStore('movies', {
     /** карта занятости зала выбранного фильма (для модалки брони) */
     seatMap: null as SeatMap | null,
     seatsLoading: false,
+    /** цена места выбранного сеанса — витрина Тарификатора */
+    quote: null as SessionQuote | null,
+    quoteLoading: false,
     /** ws-поток живой карты: сеанс подписки и ручной реконнект
      *  (браузерный WebSocket, в отличие от EventSource, сам не вернётся) */
     seatSessionId: null as string | null,
@@ -70,6 +74,28 @@ export const useMoviesStore = defineStore('movies', {
             : await api.seatMap(sessionId);
       } finally {
         this.seatsLoading = false;
+      }
+    },
+
+    /**
+     * Цена места сеанса: live — витрина Тарификатора за gRPC (недоступность
+     * приходит как dynamic=false с базовой ценой, это не ошибка запроса),
+     * демо — зеркало правил движка. Перечитывается при смене сеанса
+     * и когда живая карта меняет заполненность (спрос — фактор цены).
+     */
+    async loadQuote(sessionId: string): Promise<void> {
+      this.quoteLoading = true;
+      const app = useAppStore();
+      try {
+        this.quote =
+          app.mode === 'demo'
+            ? demoEngine.quote(sessionId)
+            : await api.sessionQuote(sessionId);
+      } catch {
+        // сеть умерла — модалка покажет базовую цену афиши
+        this.quote = null;
+      } finally {
+        this.quoteLoading = false;
       }
     },
 

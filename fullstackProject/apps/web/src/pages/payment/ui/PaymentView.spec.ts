@@ -21,12 +21,20 @@ function freeSeat(map: SeatMap): string {
   throw new Error('зал заполнен');
 }
 
-/** неоплаченная демо-бронь — как если бы её только что создали из модалки */
+/** неоплаченная демо-бронь — как если бы её только что создали из модалки.
+ *  Сеанс — ближайший будущий: сумма приехала от Тарификатора (время суток
+ *  и спрос — факторы), арифметика тестов выводится из booking.totalRub */
 function createUnpaid() {
-  const session = demoEngine.movies().data[0].sessions[0];
+  const movie = demoEngine.movies().data[0];
+  const session =
+    movie.sessions.find((x) => Date.parse(x.startsAt) > Date.now()) ??
+    movie.sessions[0];
   const seat = freeSeat(demoEngine.seatMap(session.id));
   return demoEngine.create({ sessionId: session.id, customerName: 'Плательщик', seats: [seat] });
 }
+
+/** 10% CINE10 от суммы — как promoDiscount движка (round) */
+const cine10 = (total: number) => Math.round((total * 10) / 100);
 
 async function mountPay(bookingId: string) {
   const pinia = createPinia();
@@ -148,10 +156,11 @@ describe('PaymentView', () => {
       const applied = wrapper.find('.promo-applied');
       expect(applied.exists()).toBe(true);
       expect(applied.text()).toContain('CINE10');
-      // 450 − 10% = 45 скидка, 405 к оплате
-      expect(applied.find('.promo-applied__base').text()).toContain('450');
-      expect(applied.find('.promo-applied__discount').text()).toContain('45');
-      expect(wrapper.find('.pay-actions .btn').text()).toContain('405');
+      // скидка 10% и итог — от суммы брони (цена места — от Тарификатора)
+      const discount = cine10(booking.totalRub);
+      expect(applied.find('.promo-applied__base').text()).toContain(String(booking.totalRub));
+      expect(applied.find('.promo-applied__discount').text()).toContain(String(discount));
+      expect(wrapper.find('.pay-actions .btn').text()).toContain(String(booking.totalRub - discount));
     });
 
     it('неизвестный и истёкший код — подсказки без применения', async () => {
@@ -176,7 +185,7 @@ describe('PaymentView', () => {
       await flushPromises();
 
       expect(wrapper.find('.promo-applied').exists()).toBe(false);
-      expect(wrapper.find('.pay-actions .btn').text()).toContain('450');
+      expect(wrapper.find('.pay-actions .btn').text()).toContain(String(booking.totalRub));
     });
 
     it('код исчерпали между применением и оплатой: подсказка, бронь payable', async () => {
@@ -187,7 +196,10 @@ describe('PaymentView', () => {
       expect(wrapper.find('.promo-applied').exists()).toBe(true);
 
       // «другой зритель» успевает забрать последнюю активацию
-      const session = demoEngine.movies().data[0].sessions[0];
+      const first = demoEngine.movies().data[0];
+      const session =
+        first.sessions.find((x) => Date.parse(x.startsAt) > Date.now()) ??
+        first.sessions[0];
       const rival = demoEngine.create({
         sessionId: session.id,
         customerName: 'Соперник',
@@ -201,7 +213,7 @@ describe('PaymentView', () => {
       expect(wrapper.text()).toContain('Лимит активаций промокода исчерпан');
       expect(wrapper.find('.promo-applied').exists()).toBe(false);
       // транзакция откатилась: сумма базовая, бронь всё ещё ждёт оплаты
-      expect(wrapper.find('.pay-actions .btn').text()).toContain('450');
+      expect(wrapper.find('.pay-actions .btn').text()).toContain(String(booking.totalRub));
       expect(wrapper.text()).toContain('оплата в течение');
     });
 
@@ -209,6 +221,8 @@ describe('PaymentView', () => {
       const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
       const booking = createUnpaid();
       const wrapper = await mountPay(booking.id);
+      // сумма до оплаты: pay() мутирует бронь на месте (итог — в сообщении)
+      const total = booking.totalRub;
 
       await applyCode(wrapper, 'cine10');
       await wrapper.find('.pay-actions .btn').trigger('click');
@@ -219,8 +233,8 @@ describe('PaymentView', () => {
       randomSpy.mockRestore();
 
       expect(wrapper.text()).toContain('Оплата прошла');
-      // 405 ₽ — уже скидочная сумма в сообщении «воркера»
-      expect(wrapper.text()).toContain('405');
+      // скидочная сумма — уже в сообщении «воркера»
+      expect(wrapper.text()).toContain(String(total - cine10(total)));
     });
   });
 
@@ -232,20 +246,21 @@ describe('PaymentView', () => {
     }
 
     it('блок виден с балансом сида; чекбокс включает максимум', async () => {
-      const booking = createUnpaid(); // 450 ₽
+      const booking = createUnpaid();
       const wrapper = await mountPay(booking.id);
 
       const block = wrapper.find('.pay-bonus');
       expect(block.exists()).toBe(true);
       expect(block.text()).toContain('350 на счету');
       // до включения итог не меняется
-      expect(wrapper.find('.pay-actions .btn').text()).toContain('450');
+      expect(wrapper.find('.pay-actions .btn').text()).toContain(String(booking.totalRub));
 
       await enableBonus(wrapper);
 
-      // лимит — половина чека: floor(450/2) = 225
-      expect((wrapper.find('.pay-bonus__input').element as HTMLInputElement).value).toBe('225');
-      expect(wrapper.find('.pay-actions .btn').text()).toContain('225');
+      // лимит — половина чека (цена места — от Тарификатора)
+      const limit = Math.floor(booking.totalRub / 2);
+      expect((wrapper.find('.pay-bonus__input').element as HTMLInputElement).value).toBe(String(limit));
+      expect(wrapper.find('.pay-actions .btn').text()).toContain(String(booking.totalRub - limit));
     });
 
     it('ручной ввод зажимается потолком половины чека', async () => {
@@ -253,11 +268,12 @@ describe('PaymentView', () => {
       const wrapper = await mountPay(booking.id);
 
       await enableBonus(wrapper);
-      await wrapper.find('.pay-bonus__input').setValue('400');
+      await wrapper.find('.pay-bonus__input').setValue(String(booking.totalRub));
       await flushPromises();
 
-      // 400 > 225 — спишем только лимит
-      expect(wrapper.find('.pay-actions .btn').text()).toContain('225');
+      // больше лимита — спишем только лимит
+      const limit = Math.floor(booking.totalRub / 2);
+      expect(wrapper.find('.pay-actions .btn').text()).toContain(String(booking.totalRub - limit));
     });
 
     it('можно списать меньше максимума — итог пересчитывается', async () => {
@@ -268,28 +284,31 @@ describe('PaymentView', () => {
       await wrapper.find('.pay-bonus__input').setValue('100');
       await flushPromises();
 
-      expect(wrapper.find('.pay-actions .btn').text()).toContain('350');
+      expect(wrapper.find('.pay-actions .btn').text()).toContain(String(booking.totalRub - 100));
     });
 
     it('промо сужает потолок бонусов: половина от суммы со скидкой', async () => {
       const booking = createUnpaid();
       const wrapper = await mountPay(booking.id);
 
-      // CINE10: 450 − 10% = 405; потолок бонусов = floor(405/2) = 202
+      // CINE10: сначала скидка, потом половина остатка — потолок бонусов
       await wrapper.find('.pay-promo__input').setValue('cine10');
       await wrapper.find('.pay-promo .btn').trigger('click');
       await flushPromises();
       await enableBonus(wrapper);
 
-      expect((wrapper.find('.pay-bonus__input').element as HTMLInputElement).value).toBe('202');
-      // 405 − 202 = 203 к оплате
-      expect(wrapper.find('.pay-actions .btn').text()).toContain('203');
+      const afterPromo = booking.totalRub - cine10(booking.totalRub);
+      const limit = Math.floor(afterPromo / 2);
+      expect((wrapper.find('.pay-bonus__input').element as HTMLInputElement).value).toBe(String(limit));
+      expect(wrapper.find('.pay-actions .btn').text()).toContain(String(afterPromo - limit));
     });
 
     it('оплата с бонусами: вердикт с финальной суммой, счёт списан', async () => {
       const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
       const booking = createUnpaid();
       const wrapper = await mountPay(booking.id);
+      // сумма до оплаты: pay() мутирует бронь на месте (итог — в сообщении)
+      const total = booking.totalRub;
 
       await enableBonus(wrapper);
       await wrapper.find('.pay-bonus__input').setValue('200');
@@ -301,10 +320,11 @@ describe('PaymentView', () => {
       randomSpy.mockRestore();
 
       expect(wrapper.text()).toContain('Оплата прошла');
-      // 450 − 200 бонусов = 250 ₽ — финальная сумма в сообщении «воркера»
-      expect(wrapper.text()).toContain('250');
-      // 350 − 200 + кэшбэк floor(250 × 5%) = 162
-      expect(demoEngine.myBonuses().balance).toBe(162);
+      // финальная сумма — в сообщении «воркера»
+      const final = total - 200;
+      expect(wrapper.text()).toContain(String(final));
+      // 350 − 200 + кэшбэк floor(final × 5%)
+      expect(demoEngine.myBonuses().balance).toBe(150 + Math.floor(final * 0.05));
     });
   });
 });

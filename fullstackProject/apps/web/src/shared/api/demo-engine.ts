@@ -20,6 +20,7 @@ import type {
   ReminderStreamEvent,
   Review,
   SeatMap,
+  SessionQuote,
   Ticket,
   TicketVerifyResult,
   UpdateProfilePayload,
@@ -39,6 +40,7 @@ import {
   isValidSeat,
 } from '@/shared/lib/hall';
 import { BONUS_SPEND_LIMIT, cashbackFor } from '@/shared/lib/bonus';
+import { quoteSession } from '@/shared/lib/pricing';
 import {
   rankRecommendations,
   type RecSignal,
@@ -761,6 +763,25 @@ class DemoEngine {
   }
 
   /**
+   * Цена места сеанса — зеркало GET /api/sessions/:id/price: правила
+   * Тарификатора (shared/lib/pricing — векторы сверены с Go-тестами),
+   * занятость — та же карта, что видит покупатель. В демо Тарификатор
+   * «всегда доступен»: dynamic=true.
+   */
+  quote(sessionId: string): SessionQuote {
+    const found = this.findSession(sessionId);
+    if (!found) throw new Error('Сеанс не найден');
+    const q = quoteSession({
+      sessionId,
+      startsAt: found.session.startsAt,
+      basePriceRub: found.movie.priceRub,
+      occupied: this.occupiedFor(sessionId).size,
+      capacity: HALL_CAPACITY,
+    });
+    return { ...q, sessionAt: found.session.startsAt, dynamic: true };
+  }
+
+  /**
    * Живая карта в демо: «другой зритель» занимает или освобождает место,
    * пока открыта модалка выбора. Занимает только свободное — не сиды
    * и не выбор локального пользователя (avoid); освобождает — только
@@ -1012,6 +1033,10 @@ class DemoEngine {
         seatsTaken,
       }));
     }
+    // цена места — квот «Тарификатора» до занятия мест: чек фиксирует
+    // цену момента брони (как create() в API — квот до транзакции)
+    const quote = this.quote(session.id);
+
     seats.forEach((s) => occupied.add(s));
 
     const booking: Booking = {
@@ -1027,7 +1052,7 @@ class DemoEngine {
       // демо-режим без токенов — владелец не привязывается (как брони до авторизации в API)
       userId: null,
       seats,
-      totalRub: movie.priceRub * seats.length,
+      totalRub: quote.priceRub * seats.length,
       promoCode: null,
       discountRub: null,
       bonusSpent: null,

@@ -50,10 +50,14 @@ const upcoming = computed(() =>
 const selectedSession = computed(
   () => upcoming.value.find((s) => s.id === selectedSessionId.value) ?? null,
 );
+/** квот Тарификатора выбранного сеанса (null — сети нет, покажем базу) */
+const quote = computed(() => moviesStore.quote);
+/** цена места: квот → база афиши (фолбэк и демо, и деградация live) */
+const seatPrice = computed(() =>
+  quote.value?.priceRub ?? props.movie?.priceRub ?? 0,
+);
 const total = computed(() =>
-  props.movie && seatMap.value
-    ? props.movie.priceRub * selected.value.length
-    : 0,
+  props.movie && seatMap.value ? seatPrice.value * selected.value.length : 0,
 );
 
 /** ёмкость и заполненность зала — для мини-бара занятости */
@@ -174,6 +178,7 @@ watch(
       selectedSessionId.value = upcomingSessions(movie.sessions)[0]?.id ?? null;
       if (selectedSessionId.value) {
         void moviesStore.loadSeats(selectedSessionId.value);
+        void moviesStore.loadQuote(selectedSessionId.value);
         moviesStore.startSeatStream(
           selectedSessionId.value,
           // демо-«зрители» не занимают места из-под локального выбора
@@ -190,11 +195,12 @@ watch(
   { immediate: true },
 );
 
-// смена сеанса — своя карта занятости и пустой выбор мест
+// смена сеанса — своя карта занятости, цена и пустой выбор мест
 watch(selectedSessionId, (sessionId) => {
   selected.value = [];
   if (sessionId) {
     void moviesStore.loadSeats(sessionId);
+    void moviesStore.loadQuote(sessionId);
     moviesStore.startSeatStream(sessionId, () => selected.value);
   }
 });
@@ -232,6 +238,21 @@ watch(seatMap, (map) => {
 
 // страховка: компонент размонтирован (ушли со страницы с открытой модалкой)
 onUnmounted(() => moviesStore.stopSeatStream());
+
+/**
+ * Заполненность зала дышит (живая карта) — спрос фактор цены, квот
+ * перечитывается. Смена сеанса сюда не попадает: её квот грузит
+ * watch(selectedSessionId), двойной запрос не нужен.
+ */
+watch(
+  () => [seatMap.value?.sessionId, seatMap.value?.occupied.length] as const,
+  ([sessionId], [prevSession]) => {
+    if (!sessionId || sessionId !== selectedSessionId.value) return;
+    if (sessionId === prevSession && moviesStore.quote) {
+      void moviesStore.loadQuote(sessionId);
+    }
+  },
+);
 </script>
 
 <template>
@@ -322,6 +343,33 @@ onUnmounted(() => moviesStore.stopSeatStream());
             <p v-else class="modal__login-hint">
               Будущих сеансов нет — бронирование закрыто.
             </p>
+
+            <!-- цена места: квот Тарификатора с раскладкой факторов;
+                 цена фиксируется в момент создания брони -->
+            <div v-if="seatPrice" class="price" data-testid="session-price">
+              <span class="price__seat">
+                Место: {{ formatPrice(seatPrice) }}
+                <s
+                  v-if="quote && quote.priceRub !== quote.basePriceRub"
+                  class="price__base"
+                >{{ formatPrice(quote.basePriceRub) }}</s>
+              </span>
+              <span
+                v-for="factor in quote?.factors ?? []"
+                :key="factor.code"
+                class="price__factor"
+                :class="
+                  factor.percent < 0
+                    ? 'price__factor--down'
+                    : 'price__factor--up'
+                "
+              >{{ factor.label }}</span>
+              <span
+                v-if="quote && !quote.dynamic"
+                class="price__fallback"
+                title="Тарификатор недоступен — показываем базовую цену афиши"
+              >базовая цена</span>
+            </div>
 
             <div class="field">
               <span class="field__label">Места (максимум 8)</span>
@@ -497,6 +545,52 @@ onUnmounted(() => moviesStore.stopSeatStream());
 
 .modal__login-hint a {
   color: inherit;
+}
+
+/* цена места: квот Тарификатора + чипы сработавших факторов */
+.price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 0.92rem;
+}
+
+.price__seat {
+  font-weight: 600;
+}
+
+.price__base {
+  margin-left: 6px;
+  color: var(--text-muted, #9aa4b2);
+  font-weight: 400;
+}
+
+.price__factor {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  border: 1px solid transparent;
+}
+
+.price__factor--up {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.price__factor--down {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.price__fallback {
+  color: var(--text-muted, #9aa4b2);
+  font-size: 0.8rem;
+  border-bottom: 1px dotted var(--text-muted, #9aa4b2);
+  cursor: help;
 }
 
 /* аншлаг: вместо карты мест — CTA листа ожидания */

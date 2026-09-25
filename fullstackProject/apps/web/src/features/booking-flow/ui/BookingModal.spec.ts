@@ -45,6 +45,7 @@ function mountModal() {
   const moviesStore = useMoviesStore();
   appStore.mode = 'demo';
   moviesStore.loadSeats = vi.fn();
+  moviesStore.loadQuote = vi.fn();
   moviesStore.seatMap = seatMap;
 
   const wrapper = mount(BookingModal, {
@@ -63,6 +64,7 @@ function mountFullModal(entry?: Partial<MyWaitlistEntry>) {
   const waitlistStore = useWaitlistStore();
   appStore.mode = 'demo';
   moviesStore.loadSeats = vi.fn();
+  moviesStore.loadQuote = vi.fn();
   moviesStore.seatMap = {
     ...seatMap,
     occupied: [
@@ -239,6 +241,88 @@ describe('BookingModal', () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 's-1', seats: ['1-2'] }),
     );
+  });
+});
+
+describe('BookingModal: цена сеанса (Тарификатор)', () => {
+  it('квот с факторами: чипы раскладки, зачёркнутая база и итог от цены места', async () => {
+    const { wrapper, moviesStore } = mountModal();
+    moviesStore.quote = {
+      sessionId: 's-1',
+      sessionAt: movie.sessions[0].startsAt,
+      basePriceRub: 400,
+      priceRub: 480,
+      factors: [{ code: 'evening', label: 'вечерний прайм +20%', percent: 20 }],
+      dynamic: true,
+    };
+    await nextTick();
+
+    const price = wrapper.find('[data-testid="session-price"]');
+    expect(price.text()).toContain('480');
+    expect(price.text()).toContain('400'); // зачёркнутая база
+    expect(price.text()).toContain('вечерний прайм +20%');
+    expect(price.find('.price__fallback').exists()).toBe(false);
+
+    // итог = цена места × выбор: 480 × 2
+    const free = wrapper.findAll('button.hall__seat:not([disabled])');
+    await free[0].trigger('click');
+    await free[2].trigger('click');
+    expect(wrapper.find('.modal__total').text()).toContain('960');
+  });
+
+  it('скидочный фактор — зелёный чип, надбавка — янтарный', async () => {
+    const { wrapper, moviesStore } = mountModal();
+    moviesStore.quote = {
+      sessionId: 's-1',
+      sessionAt: movie.sessions[0].startsAt,
+      basePriceRub: 400,
+      priceRub: 288,
+      factors: [
+        { code: 'morning', label: 'утренний сеанс −20%', percent: -20 },
+        { code: 'demand_low', label: 'зал почти пуст −10%', percent: -10 },
+      ],
+      dynamic: true,
+    };
+    await nextTick();
+
+    expect(wrapper.findAll('.price__factor--down')).toHaveLength(2);
+    expect(wrapper.findAll('.price__factor--up')).toHaveLength(0);
+  });
+
+  it('dynamic=false — бейдж «базовая цена», итог от базы афиши', async () => {
+    const { wrapper, moviesStore } = mountModal();
+    moviesStore.quote = {
+      sessionId: 's-1',
+      sessionAt: movie.sessions[0].startsAt,
+      basePriceRub: 400,
+      priceRub: 400,
+      factors: [],
+      dynamic: false,
+    };
+    await nextTick();
+
+    expect(wrapper.find('.price__fallback').exists()).toBe(true);
+    const free = wrapper.findAll('button.hall__seat:not([disabled])');
+    await free[0].trigger('click');
+    expect(wrapper.find('.modal__total').text()).toContain('400');
+  });
+
+  it('квота нет (сеть умерла) — итог от базовой цены афиши', async () => {
+    const { wrapper, moviesStore } = mountModal();
+    moviesStore.quote = null;
+    await nextTick();
+
+    const free = wrapper.findAll('button.hall__seat:not([disabled])');
+    await free[0].trigger('click');
+    await free[2].trigger('click');
+    expect(wrapper.find('.modal__total').text()).toContain('800'); // 400 × 2
+  });
+
+  it('смена сеанса перезагружает квот', async () => {
+    const { wrapper, moviesStore } = mountModal();
+    const chips = wrapper.findAll('.session-chip');
+    await chips[1].trigger('click'); // s-2
+    expect(moviesStore.loadQuote).toHaveBeenCalledWith('s-2');
   });
 });
 

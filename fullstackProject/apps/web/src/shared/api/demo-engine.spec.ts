@@ -32,10 +32,19 @@ function firstFreeSeats(map: SeatMap, count: number): string[] {
   return seats;
 }
 
-/** первый фильм афиши и его первый сеанс — рабочая пара для большинства тестов */
+/** цена места сеанса «до брони» — квот Тарификатора, как в live */
+function seatPriceOf(sessionId: string): number {
+  return demoEngine.quote(sessionId).priceRub;
+}
+
+/** первый фильм афиши и его ближайший будущий сеанс — рабочая пара
+ *  для большинства тестов (ночной прогон не должен упираться в «сегодня,
+ *  19:00» — сеанс уже начался, waitlist закрыт, цена посчитана иначе) */
 function firstSession() {
   const movie = demoEngine.movies().data[0];
-  const session = movie.sessions[0];
+  const session =
+    movie.sessions.find((s) => Date.parse(s.startsAt) > Date.now()) ??
+    movie.sessions[0];
   if (!session) throw new Error('в демо-фикстуре нет сеансов');
   return { movie, session };
 }
@@ -87,9 +96,51 @@ describe('demoEngine', () => {
     expect(() => demoEngine.seatMap('нет-такого')).toThrow();
   });
 
-  it('create: PENDING_PAYMENT с местами и дедлайном; pay → вердикт «воркера»', async () => {
+  it('quote: раскладка Тарификатора — база афиши, цена кратна 10, dynamic', () => {
     const { movie, session } = firstSession();
+    const q = demoEngine.quote(session.id);
+
+    expect(q.sessionId).toBe(session.id);
+    expect(q.sessionAt).toBe(session.startsAt);
+    expect(q.basePriceRub).toBe(movie.priceRub);
+    expect(q.priceRub % 10).toBe(0);
+    expect(q.dynamic).toBe(true); // в демо Тарификатор «всегда доступен»
+    const codes = q.factors.map((f) => f.code);
+    for (const code of codes) {
+      expect([
+        'morning',
+        'evening',
+        'weekend',
+        'demand_low',
+        'demand_high',
+        'demand_full',
+      ]).toContain(code);
+    }
+  });
+
+  it('quote: неизвестный сеанс — ошибка', () => {
+    expect(() => demoEngine.quote('нет-такого')).toThrow();
+  });
+
+  it('спрос подрос — квот дорожает: фактор заполненности следует карте', () => {
+    const { session } = firstSession();
+    const before = demoEngine.quote(session.id);
+    // догоняем занятость до «высокого спроса»: за половину ёмкости
+    const map = demoEngine.seatMap(session.id);
+    const need = Math.max(Math.ceil(80 * 0.5) - map.occupied.length + 1, 1);
+    const seats = firstFreeSeats(map, need);
+    demoEngine.create({ sessionId: session.id, customerName: 'Толпа', seats });
+
+    const after = demoEngine.quote(session.id);
+    expect(after.factors.map((f) => f.code)).toContain('demand_high');
+    expect(after.priceRub).toBeGreaterThan(before.priceRub);
+  });
+
+  it('create: PENDING_PAYMENT с местами и дедлайном; pay → вердикт «воркера»', async () => {
+    const { session } = firstSession();
     const seats = firstFreeSeats(demoEngine.seatMap(session.id), 3);
+    // чек = квот Тарификатора на момент брони × места (цена места — не база)
+    const price = seatPriceOf(session.id);
     // 0.1 < SUCCESS_RATE → «воркер» подтверждает оплату (и тайминг 1,36 с)
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
     const booking = demoEngine.create({
@@ -100,7 +151,7 @@ describe('demoEngine', () => {
 
     expect(booking.status).toBe('PENDING_PAYMENT');
     expect(booking.seats).toEqual(seats);
-    expect(booking.totalRub).toBe(movie.priceRub * 3);
+    expect(booking.totalRub).toBe(price * 3);
     expect(booking.sessionId).toBe(session.id);
     expect(booking.sessionAt).toBe(session.startsAt);
     expect(booking.hall).toBe(session.hall);
@@ -787,10 +838,10 @@ describe('demoEngine', () => {
   describe('промокоды', () => {
     /** неоплаченная бронь на 2 места первого фильма */
     function unpaidBooking() {
-      const { movie, session } = firstSession();
+      const { session } = firstSession();
       const seats = firstFreeSeats(demoEngine.seatMap(session.id), 2);
       return {
-        total: movie.priceRub * 2,
+        total: seatPriceOf(session.id) * 2,
         booking: demoEngine.create({
           sessionId: session.id,
           customerName: 'Промо',
@@ -962,8 +1013,9 @@ describe('demoEngine', () => {
 
     it('pay с бонусами: списание до вердикта, кэшбэк 5% от финальной суммы', async () => {
       const spy = happyRandom();
-      const { movie, session } = firstSession();
-      expect(movie.priceRub).toBeGreaterThanOrEqual(200);
+      const { session } = firstSession();
+      const price = seatPriceOf(session.id);
+      expect(price).toBeGreaterThanOrEqual(200);
       const booking = demoEngine.create({
         sessionId: session.id,
         customerName: 'Тест',
@@ -972,7 +1024,7 @@ describe('demoEngine', () => {
       const spend = 100; // ≤ половины чека и ≤ баланса 350
 
       const paid = demoEngine.pay(booking.id, undefined, spend);
-      expect(paid.totalRub).toBe(movie.priceRub - spend);
+      expect(paid.totalRub).toBe(price - spend);
       expect(paid.bonusSpent).toBe(spend);
       expect(demoEngine.myBonuses().balance).toBe(250);
 
@@ -981,7 +1033,7 @@ describe('demoEngine', () => {
       const done = demoEngine.list()[0];
       expect(done.status).toBe('CONFIRMED');
       // кэшбэк 5% от финальной суммы, floor
-      const cashback = Math.floor((movie.priceRub - spend) * 0.05);
+      const cashback = Math.floor((price - spend) * 0.05);
       expect(demoEngine.myBonuses().balance).toBe(250 + cashback);
       expect(demoEngine.myBonuses().transactions[0]).toMatchObject({
         kind: 'accrual',
@@ -992,13 +1044,13 @@ describe('demoEngine', () => {
     });
 
     it('больше половины чека — 409 bonusOverLimit, бронь осталась payable', () => {
-      const { movie, session } = firstSession();
+      const { session } = firstSession();
       const booking = demoEngine.create({
         sessionId: session.id,
         customerName: 'Тест',
         seats: [freeSeat(demoEngine.seatMap(session.id))],
       });
-      const tooMuch = Math.floor(movie.priceRub / 2) + 1;
+      const tooMuch = Math.floor(booking.totalRub / 2) + 1;
 
       try {
         demoEngine.pay(booking.id, undefined, tooMuch);
@@ -1058,7 +1110,7 @@ describe('demoEngine', () => {
 
     it('отмена CONFIRMED-брони: разворот — списанное вернулось, кэшбэк погасился', async () => {
       const spy = happyRandom();
-      const { movie, session } = firstSession();
+      const { session } = firstSession();
       const booking = demoEngine.create({
         sessionId: session.id,
         customerName: 'Тест',
@@ -1072,7 +1124,7 @@ describe('demoEngine', () => {
       spy.mockRestore();
 
       const account = demoEngine.myBonuses();
-      const cashback = Math.floor((movie.priceRub - 100) * 0.05);
+      const cashback = Math.floor((booking.totalRub - 100) * 0.05);
       // 350 − 100 + кэшбэк + 100 (refund) − кэшбэк (clawback) = 350
       expect(account.balance).toBe(350);
       const reasons = account.transactions
