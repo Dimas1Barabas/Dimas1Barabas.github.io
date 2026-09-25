@@ -48,6 +48,7 @@ docker compose up --build
 | worker (Go) | http://localhost:8081/stats | счётчики оплат и возвратов |
 | notification (Go) | http://localhost:18082/notifications | история «email»-уведомлений, гексагон |
 | recommendation (Go, gRPC) | localhost:18084 (gRPC, reflection для grpcurl); http://localhost:18085/profile?userId=… | «КиноСоветник»: профили зрителей, витрина жанровых весов |
+| reminder (Go, gRPC) | localhost:18086 (gRPC, reflection); http://localhost:18087/reminders | напоминания «скоро сеанс»: витрина очереди и отправленных писем |
 | PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications + cine_recommendations |
 | Redis | localhost:6379 | кэш фильмов, TTL 60 c |
 
@@ -126,7 +127,7 @@ docker compose exec postgres dropdb -U cine cine_empty
 Три уровня, фронт и бэк:
 
 ```bash
-# фронт: vitest (328 тестов) — форматтеры, зал, sha256/HMAC (векторы FIPS/RFC
+# фронт: vitest (336 тестов) — форматтеры, зал, sha256/HMAC (векторы FIPS/RFC
 # и сверка с node:crypto), зеркальная логика QR-билетов, демо-движок
 # (включая отзывы, сид-брони аналитики, симуляцию аккаунта, промокоды,
 # билеты со сканером, очередь аншлага, «других зрителей» живой карты
@@ -144,7 +145,7 @@ docker compose exec postgres dropdb -U cine cine_empty
 # среза (eslint-plugin-boundaries, политика — в eslint.config.js)
 cd apps/web && npm run lint && npm test
 
-# API: юнит (247 тестов) — логика брони, места/конфликт, pay/expire/cancel,
+# API: юнит (254 теста) — логика брони, места/конфликт, pay/expire/cancel,
 # SSE, кэш, расписание сеансов, health, пользователи/посев админа,
 # JWT-логин, retry/parking, отзывы (право/дубль/агрегаты/удаление),
 # промокоды (скидка-математика, превью, атомарное списание в оплате,
@@ -158,7 +159,7 @@ cd apps/web && npm run lint && npm test
 # и forgot/reset пароля
 cd apps/api && npm test
 
-# API: интеграционные (166) — полный HTTP-стек Nest (роутинг, ValidationPipe,
+# API: интеграционные (169) — полный HTTP-стек Nest (роутинг, ValidationPipe,
 # контроллеры → сервисы → фейковые Postgres/RabbitMQ/Redis на Map),
 # включая 409-конфликт мест, изоляцию мест между сеансами, контракт /pay,
 # экспирацию резерва, сагу отмены, SSE-стрим по живому HTTP,
@@ -199,6 +200,9 @@ cd apps/api && npm run test:integration
 # swagger-документация /docs и /docs-json; КиноСоветник: 401 без токена,
 # холодный старт/недоступность — не ошибка, полный цикл «CONFIRMED-бронь
 # → сигнал → профиль → фильм выпал из топа» опросом с дедлайном;
+# напоминания: полный цикл «сеанс через 3 минуты → CONFIRMED → письмо
+# session_reminder адресату + SSE-кадр reminder + витрина SENT» опросом
+# с дедлайном, и негатив «возврат гасит — письма нет»;
 # если стек не поднят — корректно пропускается с предупреждением)
 cd apps/api && npm run test:e2e
 
@@ -222,6 +226,14 @@ cd services/notification-service && go test ./...
 # без стенда скипается), gRPC-сервер через bufconn (холодный старт,
 # профиль, лимит, InvalidArgument), HTTP-витрина на httptest
 cd services/recommendation-service && go test ./...
+
+# напоминания: домен (due-математика, валидация, текст письма),
+# Scheduler на стабах (publish-сбой повторит тик, cancel до due,
+# упущенное окно — «на сейчас»), память-стор (дедуп по booking_id,
+# условные статусы), postgres против живого PG (скип без стенда),
+# gRPC через bufconn (InvalidArgument прошлого сеанса, MISSING),
+# HTTP-витрина, контракт amqp-издателя без брокера
+cd services/reminder-service && go test ./...
 ```
 
 База стенда для e2e переопределяется через `E2E_BASE_URL` (по умолчанию
@@ -231,7 +243,7 @@ CI (GitHub Actions, workflow в корне репо `.github/workflows/cinebooki
 на пуш/PR по `fullstackProject/` гоняет герметичные уровни: web —
 typecheck + vitest + build, api — юнит + интеграционные + build,
 worker и notification — go test (live-тесты уведомлений скипаются:
-в раннере нет Postgres), recommendation — go test КиноСоветника
+в раннере нет Postgres), recommendation и reminder — go test
 (live-PG точно так же скипается). E2e остаётся локальным: ему нужен живой
 docker-стенд.
 
@@ -691,6 +703,52 @@ WebSocket: `@nestjs/platform-ws` на бэкенде, нативный `WebSocke
   витрина профиля `:18085/profile?userId=…` — видно, какие жанры
   накопил зритель; compose-сеть ходит в `recommendation:8084`.
 
+### Напоминания о сеансе (reminder-service)
+
+Второй gRPC-сервис волны: подтверждённая бронь получает «письмо»
+«скоро сеанс» за окно до начала. Контракт `proto/reminder.proto`
+(пакет `cine.reminders.v1`) — `Schedule`/`Cancel`, ключ идемпотентности
+`bookingId`.
+
+- **Планирование — вердиктным хуком**: `handleProcessed` при
+  `CONFIRMED` с владельцем и будущим сеансом звонит `Schedule`
+  (email подтягивает репозиторием, как waitlist) — fire-and-forget:
+  недоступность сервиса или прошедший сеанс не портят вердикт,
+  максимум warn в логе. `handleRefunded` в ветке `CANCELLED` гасит
+  напоминание (`Cancel`); `REFUND_FAILED`-откат письмо не трогает —
+  бронь снова CONFIRMED, ждать сеанса продолжается. Известная гонка:
+  возврат позже due может получить уже ушедшее письмо (задокументировано).
+- **Сервис (гексагон по лекалу КиноСоветника)** хранит очередь в своей
+  БД `cine_reminders`: `uq(booking_id)` гасит редоставления вердикта,
+  статусы `SCHEDULED → SENT/CANCELLED` меняются условными UPDATE,
+  частичный индекс `(due_at) WHERE status='SCHEDULED'` держит тикер
+  дешёвым. Тикер (`REMINDER_TICK_SECONDS`) находит наступившие,
+  публикует событие и только потом ставит `SENT` — сбой публикации
+  повторит следующий тик, письмо не теряется. Retry-очередей нет:
+  ретрай здесь — сам тикер.
+- **Due-математика**: `due = сеанс − REMINDER_LEAD_MINUTES`
+  (дефолт 120; стенд — 2 минуты). Окно упущено (бронь подтвердили
+  позже) — письмо «на сейчас»: поздно лучше, чем никогда.
+  Текст письма собирает домен Go (`LetterText`), форматулировка —
+  часть фичи, как заголовки notification-service.
+- **Доставка — одно событие, два читателя**: rk `user.session.reminder`
+  в обмене `cinema`. notification-service превращает его в письмо
+  (`kind session_reminder`, «Скоро сеанс», адресат — email зрителя);
+  API консьюмит той же очередью событий (`api.reminder.sent` с retry/
+  parking) и эмитит **SSE-кадр `reminder`** без email (стрим публичен) —
+  «моё» фильтрует клиент по `userId`, как у waitlist.
+- **UI**: баннер «Скоро сеанс» в «Моих билетах» (фильм, зал, время,
+  ваши места; «Показать QR» — экран билетов брони, «Позже» — dismiss);
+  демо-зеркало баннера в «Бронированиях» для демо-гостя.
+- **Демо на Pages**: движок взводит таймер при CONFIRMED-вердикте —
+  то же окно 2 минуты, но задержка зажата в 3–60 c (сид-сеансы дальние,
+  а письмо должно прийти за один визит); возврат гасит таймер,
+  REFUND_FAILED-откат — нет, `reset` чистит. Паритет веток — как
+  у живого SSE.
+- Стенд: gRPC `:18086` (reflection), витрина `:18087/reminders` —
+  очередь и отправленные письма (email не светим — адресат виден
+  в истории notification-service).
+
 ### Админ-аналитика
 
 `GET /api/admin/stats` — дашборд владельца кинотеатра. Только роль admin
@@ -754,6 +812,11 @@ services/
   notification-service/ Go, гексагональная архитектура: domain + service
                        в центре, адаптеры in (amqp, httpapi) / out (console,
                        memory, postgres) за портами; /notifications /stats
+  recommendation-service/ Go, гексагон «КиноСоветника»: сигналы из RabbitMQ,
+                       скоринг в домене, gRPC Recommendations + HTTP-витрина
+  reminder-service/    Go, гексагон напоминаний: gRPC Schedule/Cancel,
+                       тикер отправки, amqp-издатель user.session.reminder,
+                       память/postgres, HTTP-витрина /reminders
 ```
 
 ### Фронт: Feature-Sliced Design
@@ -802,6 +865,10 @@ WebSocket, но с «другими зрителями»: пока модалк�
 живёт блок «Вам понравится» — сид-история «зрителя» даёт профиль сразу,
 а вердикты броней и отзывы дописывают сигналы, и топ пересчитывается
 тем же алгоритмом, что в Go-сервисе (зеркало `shared/lib/recommendation`).
+Напоминания «скоро сеанс» — живой таймер движка: после CONFIRMED-вердикта
+«письмо» приходит в пределах минуты (окно демо — 2 минуты с клэмпом
+задержки), в «Бронированиях» всплывает баннер с кнопкой к QR-билетам,
+а возврат билетов его гасит.
 Интерфейс — продуктовый, без служебных пометок о стеке и режиме:
 вся архитектура и схема запуска описаны в этом README. Витрина —
 скелетоны загрузки, жанр-фильтры, карта зала с баром занятости,
@@ -840,6 +907,13 @@ e2e берёт окно из `E2E_PAYMENT_TIMEOUT_MS` (дефолт 120 000 = с
 «письме»: дефолт `http://localhost:18080/#/reset-password` (фронт стенда).
 Историю уведомлений для e2e-сброса задаёт `E2E_NOTIF_URL`
 (дефолт `http://localhost:18082`).
+
+Напоминания: API ходит по `GRPC_REMINDER_URL` (compose — `reminder:8086`,
+dev-дефолт `localhost:18086`) с дедлайном `GRPC_REMINDER_TIMEOUT_MS`
+(3 c). Окно и тикер — у сервиса: `REMINDER_LEAD_MINUTES` (дефолт 120,
+стенд 2 — чтобы письмо было видно руками и в e2e) и
+`REMINDER_TICK_SECONDS` (дефолт 30, стенд 5). Витрину для e2e задаёт
+`E2E_REMINDER_URL` (дефолт `http://localhost:18087`).
 
 ## Заметки
 

@@ -32,6 +32,8 @@
 | `apps/api` | NestJS 11, TypeORM, ioredis, @golevelup/nestjs-rabbitmq | REST + SSE, транзакции, кэш, события |
 | `apps/web` | Vue 3, Vite, Pinia | SPA: каталог, карта зала, брони, демо-режим |
 | `services/ticket-worker` | Go, amqp091 | «платёжный шлюз»: оплата и возвраты |
+| `services/recommendation-service` | Go, gRPC | «КиноСоветник»: профили зрителей, персональный топ афиши |
+| `services/reminder-service` | Go, gRPC + amqp091 | напоминания «скоро сеанс»: расписание, письма |
 | Инфраструктура | PostgreSQL 16, Redis 7, RabbitMQ 3.13, nginx | docker compose стенд |
 
 Ключевые бизнес-потоки:
@@ -43,6 +45,9 @@
    (возврат 0,8–1,6 c, ~90% успеха) либо откат в `CONFIRMED` при отказе банка.
 3. **Живые обновления**: SSE `/api/bookings/stream` — событие `booking` на
    каждую мутацию, heartbeat `ping` каждые 25 c, resync по переподключению.
+4. **Напоминания**: CONFIRMED-бронь → gRPC Schedule (email, сеанс) →
+   тикер в момент «сеанс − окно» → письмо notification-service + SSE-кадр
+   `reminder` зрителю; возврат билетов гасит.
 
 ## 3. Границы тестирования
 

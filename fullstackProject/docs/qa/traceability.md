@@ -66,15 +66,21 @@
 | FR-58 | Хранилище и надёжность потребления: своя БД cine_recommendations; uq(dedup_key) гасит редоставления; retry/parking на каждый rk; битые события — poison в parking | High | TC-REC-007 | ✅ go (live-PG со скипами) |
 | FR-59 | gRPC-контракт и сервер: cine.recommendations.v1 в proto/ монорепо, buf-кодоген (генерат коммитится), proto-loader в рантайме у API; без userId — InvalidArgument; reflection для grpcurl | High | TC-REC-001, TC-REC-002 | ✅ go (bufconn), int |
 | FR-60 | Фасад и UI: GET /recommendations/my за JWT; кэш Redis 60 c гасится консьюмером сигналов; недоступность сервиса — 200 unavailable, не ошибка; блок «Вам понравится» на главной вошедшим, клик — модалка мест; демо-паритет зеркалом алгоритма | High | TC-REC-001, TC-REC-008 | ✅ int, e2e, web + ✋ витрина Pages |
+| FR-61 | Планирование: handleProcessed (CONFIRMED + владелец + будущий сеанс) → gRPC Schedule с email владельца; fire-and-forget — недоступность сервиса не валит вердикты; прошедший сеанс не планируется | High | TC-REM-001, TC-REM-002 | ✅ unit, int, e2e |
+| FR-62 | Отмена: handleRefunded только в ветке CANCELLED → gRPC Cancel; REFUND_FAILED (откат в CONFIRMED) напоминание не трогает; MISSING — идемпотентный ответ; гонка cancel-vs-due допущена | High | TC-REM-004 | ✅ unit, int, e2e |
+| FR-63 | Сервис и хранилище: гексагон по лекалу, своя БД cine_reminders (embedded schema), uq(booking_id) гасит редоставления, статусы SCHEDULED→SENT/CANCELLED условными UPDATE, частичный индекс due | High | TC-REM-005 | ✅ go (live-PG со скипами) |
+| FR-64 | Доставка: тикер REMINDER_TICK_SECONDS; due = сеанс − REMINDER_LEAD_MINUTES (упущенное окно — «на сейчас»); сбой публикации повторит тик (SENT только после publish); событие user.session.reminder с текстом письма из домена | High | TC-REM-003, TC-REM-006 | ✅ go |
+| FR-65 | Письмо notification-service: rk в топологии с retry/parking, вердикт SESSION_REMINDER → kind session_reminder «Скоро сеанс», адресат email едет в BookingID; без email — poison | High | TC-REM-007 | ✅ go, e2e |
+| FR-66 | UI и демо: SSE-кадр reminder без email, фильтр «своё» по storedUser; баннер «Скоро сеанс» (QR deep-link, dismiss) в «Моих билетах» и демо-зеркало в «Бронированиях»; демо-движок: таймер при CONFIRMED, окно 2 мин с clamp 3–60 c, гашение при возврате, reset чистит | Medium | TC-REM-008, TC-REM-009 | ✅ int, web + ✋ витрина Pages |
 
 ## Покрытие по уровням
 
 | Уровень | Покрывает требования |
 |---|---|
-| Юнит (api + web) | FR-2, FR-5, FR-8, FR-10, FR-11, FR-12 (шина), FR-13 (ping), FR-15, FR-16, FR-19, FR-20, FR-21, FR-23, FR-24, FR-25, FR-27, FR-28, FR-30, FR-31, FR-32, FR-33, FR-34, FR-35, FR-37…FR-41, FR-44, FR-45, FR-48, FR-49, FR-51…FR-54, FR-56, FR-57 |
-| Интеграционные | FR-1…FR-6, FR-8…FR-12, FR-18…FR-25, FR-27…FR-35, FR-37…FR-39, FR-41, FR-43…FR-48, FR-51, FR-52, FR-54, FR-55, FR-56, FR-59, FR-60 |
-| E2E (стенд) | FR-4, FR-7, FR-9, FR-10, FR-12, FR-18, FR-19, FR-20, FR-22, FR-23, FR-24, FR-25, FR-27…FR-30, FR-32, FR-34, FR-35, FR-37, FR-38, FR-39, FR-41, FR-43, FR-45, FR-46, FR-47, FR-48, FR-51, FR-52, FR-56, FR-60 |
-| Ручные (стенд/UX) | FR-13 (reconnect глазами), FR-14, FR-17, FR-26 (дашборд глазами), FR-30 (письмо глазами), FR-36 (витрина демо), FR-42 (витрина демо), FR-48 (два окна глазами), FR-49 (обрыв на стенде), FR-50 (витрина демо), FR-55 (витрина демо), FR-60 (витрина демо, grpcurl) |
+| Юнит (api + web) | FR-2, FR-5, FR-8, FR-10, FR-11, FR-12 (шина), FR-13 (ping), FR-15, FR-16, FR-19, FR-20, FR-21, FR-23, FR-24, FR-25, FR-27, FR-28, FR-30, FR-31, FR-32, FR-33, FR-34, FR-35, FR-37…FR-41, FR-44, FR-45, FR-48, FR-49, FR-51…FR-54, FR-56, FR-57, FR-61, FR-63, FR-64 |
+| Интеграционные | FR-1…FR-6, FR-8…FR-12, FR-18…FR-25, FR-27…FR-35, FR-37…FR-39, FR-41, FR-43…FR-48, FR-51, FR-52, FR-54, FR-55, FR-56, FR-59, FR-60, FR-61, FR-62, FR-65, FR-66 |
+| E2E (стенд) | FR-4, FR-7, FR-9, FR-10, FR-12, FR-18, FR-19, FR-20, FR-22, FR-23, FR-24, FR-25, FR-27…FR-30, FR-32, FR-34, FR-35, FR-37, FR-38, FR-39, FR-41, FR-43, FR-45, FR-46, FR-47, FR-48, FR-51, FR-52, FR-56, FR-60, FR-61, FR-62, FR-65 |
+| Ручные (стенд/UX) | FR-13 (reconnect глазами), FR-14, FR-17, FR-26 (дашборд глазами), FR-30 (письмо глазами), FR-36 (витрина демо), FR-42 (витрина демо), FR-48 (два окна глазами), FR-49 (обрыв на стенде), FR-50 (витрина демо), FR-55 (витрина демо), FR-60 (витрина демо, grpcurl), FR-63 (витрина :18087, grpcurl), FR-66 (баннер демо, гонка cancel-vs-due) |
 
 Вывод: все High-требования покрыты хотя бы одним уровнем; ручные проверки
 (FR-14, FR-17) обязательны в предрелизной проходке по чек-листам CL-6/CL-8.
