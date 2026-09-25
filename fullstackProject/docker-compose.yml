@@ -157,6 +157,29 @@ services:
       postgres:
         condition: service_healthy
 
+  # гексагональный Go-сервис «Тарификатор»: спрос на сеанс копит из
+  # событий брони (booking.payment.wait / waitlist.seat.released),
+  # цену места с факторами времени суток/выходного/заполненности
+  # отдаёт по gRPC; проекция и история квотов — в собственной БД
+  # cine_prices. TZ — «часы кинотеатра» для правил времени суток
+  pricing:
+    build: ./services/pricing-service
+    environment:
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+      GRPC_ADDR: :8088
+      HTTP_ADDR: :8089
+      STORAGE: postgres
+      DATABASE_URL: postgres://cine:cine@postgres:5432/cine_prices
+      TZ: Europe/Moscow
+    ports:
+      - '18088:8088' # gRPC Pricing (API ходит внутри сети; хост-порт — для grpcurl)
+      - '18089:8089' # /health, /prices, /demand — витрина квотов и спроса
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
   web:
     build: ./apps/web
     ports:

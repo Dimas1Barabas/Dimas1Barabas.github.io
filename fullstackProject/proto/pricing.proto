@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+// Pricing — gRPC-контракт «Тарификатора»: сервиса динамических цен.
+// Общий контракт API (NestJS) и pricing-service (Go): proto-loader
+// на стороне Node читает этот файл в рантайме, Go-сторона использует
+// сгенерированный код (scripts/protogen.sh -> internal/pb).
+package cine.pricing.v1;
+
+option go_package = "pricing-service/internal/pb;cinepb";
+
+// Сервис цен: API спрашивает цену места сеанса при создании брони
+// и для витрины выбора. Спрос сервис копит сам — из событий брони
+// в RabbitMQ (booking.payment.wait / waitlist.seat.released).
+service Pricing {
+  // Цена одного места сеанса с раскладкой факторов. Состояние
+  // вне запроса — только проекция спроса, ошибки гасятся
+  // fallback'ом на базовую цену на стороне вызывающего.
+  rpc Quote (QuoteRequest) returns (QuoteResponse);
+}
+
+message QuoteRequest {
+  string session_id = 1;    // uuid сеанса — ключ проекции спроса
+  string session_at = 2;    // момент сеанса, RFC3339 (правила времени)
+  int32 base_price_rub = 3; // базовая цена фильма из афиши, ₽/место
+  int32 capacity = 4;       // ёмкость зала (геометрия общая, 8×10)
+}
+
+// Фактор цены: слагаемое раскладки. Отсутствие фактора — множитель 1.
+message PriceFactor {
+  string code = 1;   // morning | evening | weekend | demand_low | demand_high | demand_full
+  string label = 2;  // человекочитаемо: «вечерний прайм +20%»
+  int32 percent = 3; // вклад фактора, %: −20 … +25
+}
+
+message QuoteResponse {
+  int32 price_rub = 1;      // цена места после факторов, кратно 10 ₽
+  int32 base_price_rub = 2; // базовая цена для сравнения
+  repeated PriceFactor factors = 3; // применённые факторы (может быть пусто)
+  int32 occupied = 4;       // занятые места проекции спроса
+  int32 capacity = 5;       // ёмкость зала из запроса
+}

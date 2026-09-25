@@ -6,6 +6,8 @@
 #   worker       — go test
 #   notification — go test (гексагональный сервис уведомлений)
 #   recommendation — go test (КиноСоветник: gRPC-рекомендации)
+#   reminder     — go test (напоминания о сеансах)
+#   pricing      — go test (Тарификатор: динамические цены)
 #
 # E2E против живого docker-стенда в CI не гоняем: он требует поднятия
 # всего compose-окружения и остаётся локальным (`npm run test:e2e`
@@ -128,5 +130,39 @@ jobs:
         with:
           go-version-file: fullstackProject/services/recommendation-service/go.mod
           cache-dependency-path: fullstackProject/services/recommendation-service/go.sum
+
+      - run: go test ./...
+
+  reminder:
+    name: reminder — go test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: fullstackProject/services/reminder-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: fullstackProject/services/reminder-service/go.mod
+          cache-dependency-path: fullstackProject/services/reminder-service/go.sum
+
+      - run: go test ./...
+
+  pricing:
+    name: pricing — go test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: fullstackProject/services/pricing-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: fullstackProject/services/pricing-service/go.mod
+          cache-dependency-path: fullstackProject/services/pricing-service/go.sum
 
       - run: go test ./...
