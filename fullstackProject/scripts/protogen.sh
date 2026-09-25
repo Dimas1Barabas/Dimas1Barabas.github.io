@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Кодоген gRPC-контрактов: proto/*.proto -> services/recommendation-service/internal/pb/*.pb.go
+# Кодоген gRPC-контрактов: proto/*.proto -> services/*/internal/pb/*.pb.go
+# (какой контракт в какой сервис — разводит include в proto/buf.gen.yaml)
 #
 # Инструменты (buf + плагины protoc-gen-go*) ставятся через `go install`
 # в GOPATH/bin при отсутствии — protoc-бинарь не нужен вовсе.
@@ -18,10 +19,14 @@ command -v protoc-gen-go-grpc >/dev/null || go install google.golang.org/grpc/cm
 command -v buf >/dev/null || go install github.com/bufbuild/buf/cmd/buf@latest
 
 cd "$root/proto"
-buf generate
-echo "OK: proto -> services/recommendation-service/internal/pb/"
+buf generate --template buf.gen.yaml --path recommendation.proto
+buf generate --template buf.gen.reminder.yaml --path reminder.proto
+echo "OK: proto -> services/recommendation-service/internal/pb/, services/reminder-service/internal/pb/"
 
-# копия контракта для NestJS-стороны: proto-loader читает .proto в рантайме
+# копии контрактов для NestJS-стороны: proto-loader читает .proto в рантайме
 cp "$root/proto/recommendation.proto" \
    "$root/apps/api/src/recommendations/proto/recommendation.proto"
-echo "OK: proto -> apps/api/src/recommendations/proto/"
+mkdir -p "$root/apps/api/src/reminders/proto"
+cp "$root/proto/reminder.proto" \
+   "$root/apps/api/src/reminders/proto/reminder.proto"
+echo "OK: proto -> apps/api/src/recommendations/proto/, apps/api/src/reminders/proto/"

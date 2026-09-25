@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+// Reminder — gRPC-контракт сервиса напоминаний о сеансах.
+// Общий контракт API (NestJS) и reminder-service (Go): proto-loader
+// на стороне Node читает этот файл в рантайме, Go-сторона использует
+// сгенерированный код (scripts/protogen.sh -> internal/pb).
+package cine.reminders.v1;
+
+option go_package = "reminder-service/internal/pb;cinepb";
+
+// Сервис напоминаний: API планирует письмо при подтверждении брони
+// и гасит при возврате билетов. Момент наступает внутри сервиса
+// (тикер), доставка — событием user.session.reminder в RabbitMQ.
+service Reminders {
+  // Запланировать напоминание на сеанс (идемпотентно по bookingId).
+  rpc Schedule (ScheduleRequest) returns (ScheduleResponse);
+  // Погасить напоминание брони (возврат билетов). Отсутствующее — не ошибка.
+  rpc Cancel (CancelRequest) returns (CancelResponse);
+}
+
+message ScheduleRequest {
+  string booking_id = 1;     // uuid брони — ключ идемпотентности
+  string user_id = 2;        // uuid зрителя (владелец брони)
+  string email = 3;          // адресат «письма»-напоминания
+  string movie_id = 4;       // uuid фильма
+  string movie_title = 5;    // для текста письма и витрины
+  string hall = 6;           // зал сеанса
+  string session_at = 7;     // момент сеанса, RFC3339
+  repeated string seats = 8; // места брони
+}
+
+message ScheduleResponse {
+  string status = 1; // SCHEDULED
+  string due_at = 2; // момент отправки письма (сеанс − окно), RFC3339
+}
+
+message CancelRequest {
+  string booking_id = 1;
+}
+
+message CancelResponse {
+  string status = 1; // CANCELLED | MISSING
+}

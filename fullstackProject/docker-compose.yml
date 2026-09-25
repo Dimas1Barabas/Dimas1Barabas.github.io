@@ -63,6 +63,9 @@ services:
       # КиноСоветник: gRPC-адрес сервиса рекомендаций внутри сети compose
       # (соединение ленивое — API стартует и без него, блок просто скрывается)
       GRPC_RECOMMENDATION_URL: recommendation:8084
+      # напоминания: gRPC-адрес reminder-сервиса (вызовы fire-and-forget,
+      # недоступность не валит вердикты брони)
+      GRPC_REMINDER_URL: reminder:8086
     ports:
       - '13000:3000'
     depends_on:
@@ -73,6 +76,8 @@ services:
       rabbitmq:
         condition: service_healthy
       recommendation:
+        condition: service_started
+      reminder:
         condition: service_started
 
   worker:
@@ -121,6 +126,31 @@ services:
     ports:
       - '18084:8084' # gRPC Recommendations (API ходит внутри сети; хост-порт — для grpcurl)
       - '18085:8085' # /health и /profile?userId= — витрина профиля зрителя
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # гексагональный Go-сервис напоминаний: подтверждённая бронь →
+  # gRPC Schedule (гасит Cancel при возврате), тикер в момент
+  # «сеанс − окно» публикует user.session.reminder в обмен cinema;
+  # очередь напоминаний — в собственной БД cine_reminders
+  reminder:
+    build: ./services/reminder-service
+    environment:
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+      GRPC_ADDR: :8086
+      HTTP_ADDR: :8087
+      STORAGE: postgres
+      DATABASE_URL: postgres://cine:cine@postgres:5432/cine_reminders
+      # окно напоминания: прод-семантика «за 2 часа»; стенду нужны
+      # минуты, чтобы письмо было видно руками и в e2e
+      REMINDER_LEAD_MINUTES: '2'
+      REMINDER_TICK_SECONDS: '5'
+    ports:
+      - '18086:8086' # gRPC Reminders (API ходит внутри сети; хост-порт — для grpcurl)
+      - '18087:8087' # /health и /reminders — витрина очереди напоминаний
     depends_on:
       rabbitmq:
         condition: service_healthy

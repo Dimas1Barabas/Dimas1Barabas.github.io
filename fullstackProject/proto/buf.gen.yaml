@@ -1,5 +1,9 @@
-# Конфиг кодогена buf: proto/*.proto -> Go-код сервиса.
+# Конфиг кодогена buf: proto/*.proto -> Go-код сервисов.
+# Контракт сервиса → свой шаблон; вызовы со --path фильтром в scripts/protogen.sh.
 # Запуск (ставит плагины в GOPATH/bin при отсутствии): scripts/protogen.sh
+#
+# Этот шаблон — КиноСоветник:
+#   buf generate --template buf.gen.yaml --path recommendation.proto
 version: v2
 plugins:
   - local: protoc-gen-go
