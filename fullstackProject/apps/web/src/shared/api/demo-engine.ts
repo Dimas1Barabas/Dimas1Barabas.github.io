@@ -17,6 +17,7 @@ import type {
   PromoPreview,
   RecommendationsDto,
   RegisterPayload,
+  ReminderStreamEvent,
   Review,
   SeatMap,
   Ticket,
@@ -105,6 +106,12 @@ const REFUND_MAX_MS = 1600;
 export const DEMO_PAYMENT_TIMEOUT_MS = 120_000;
 /** кэшбэк демо — как дефолт BONUS_CASHBACK_PERCENT у API */
 const DEMO_CASHBACK_PERCENT = 5;
+/** окно напоминания демо — паритет с REMINDER_LEAD_MINUTES стенда (2 мин) */
+const DEMO_REMINDER_LEAD_MS = 120_000;
+/** …но задержку зажимаем в 3–60 с: сид-сеансы через часы и дни,
+ *  а письмо должно прийти за один визит в демо */
+const REMINDER_DELAY_MIN_MS = 3_000;
+const REMINDER_DELAY_MAX_MS = 60_000;
 
 /** сид бонусного счёта: история прошлых броней «гостя демо», баланс 350 */
 function seedBonusLedger(): BonusTransaction[] {
@@ -505,6 +512,10 @@ class DemoEngine {
   private bonusSeq = seedBonusLedger().length;
   /** сигналы КиноСоветника: бронь CONFIRMED = «смотрел», отзыв = «оценил» */
   private signals: RecSignal[] = seedSignals();
+  /** напоминания «скоро сеанс»: отправленные письма, свежими сверху */
+  private remindersSent: ReminderStreamEvent[] = [];
+  /** bookingId → таймер напоминания (как SCHEDULED-записи Go-сервиса) */
+  private reminderTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   /** «access-токен» демо-сессии — не JWT, просто маркер для стора */
   static readonly SESSION_TOKEN = 'demo-session';
@@ -532,6 +543,9 @@ class DemoEngine {
   reset(): void {
     this.expiryTimers.forEach((t) => clearTimeout(t));
     this.expiryTimers.clear();
+    this.reminderTimers.forEach((t) => clearTimeout(t));
+    this.reminderTimers.clear();
+    this.remindersSent = [];
     this.occupied.clear();
     this.viewerSeats.clear();
     this.reviews = seedReviews();
@@ -1159,6 +1173,9 @@ class DemoEngine {
             dedupKey: `booking:${booking.id}`,
           });
         }
+        // напоминание «скоро сеанс» — как ScheduleReminder gRPC в API:
+        // письмо взводится вердиктом CONFIRMED, гасится возвратом
+        this.armReminder(booking);
       } else {
         // оплата не прошла — места возвращаются в продажу (как в API),
         // списанные бонусы возвращаются на счёт
@@ -1176,6 +1193,43 @@ class DemoEngine {
       }
       this.notify();
     }, delay);
+  }
+
+  /**
+   * Напоминание «скоро сеанс» — зеркало ScheduleReminder gRPC: таймер
+   * на «сеанс − окно»; упущенное окно — не раньше минимума, дальний
+   * сеанс — не позже максимума (сид-сеансы через часы и дни, а письмо
+   * должно прийти за один визит в демо). Сработавший таймер проверяет
+   * статус: возврат к этому моменту письмо уже погасил.
+   */
+  private armReminder(booking: Booking): void {
+    const sessionAt = Date.parse(booking.sessionAt);
+    if (!Number.isFinite(sessionAt) || sessionAt <= Date.now()) return; // сеанс прошёл
+    const delay = Math.min(
+      Math.max(sessionAt - DEMO_REMINDER_LEAD_MS - Date.now(), REMINDER_DELAY_MIN_MS),
+      REMINDER_DELAY_MAX_MS,
+    );
+    const timer = setTimeout(() => {
+      this.reminderTimers.delete(booking.id);
+      if (booking.status !== 'CONFIRMED') return; // письмо погашено возвратом
+      this.remindersSent.unshift({
+        userId: booking.userId ?? DEMO_GUEST_ID,
+        bookingId: booking.id,
+        movieId: booking.movieId,
+        movieTitle: booking.movieTitle,
+        hall: booking.hall,
+        sessionAt: booking.sessionAt,
+        seats: [...booking.seats],
+        remindedAt: new Date().toISOString(),
+      });
+      this.notify();
+    }, delay);
+    this.reminderTimers.set(booking.id, timer);
+  }
+
+  /** отправленные напоминания — копии, свежими сверху (стор витрины) */
+  reminders(): ReminderStreamEvent[] {
+    return this.remindersSent.map((r) => ({ ...r, seats: [...r.seats] }));
   }
 
   /**
@@ -1231,6 +1285,13 @@ class DemoEngine {
         booking.seats.forEach((s) => occupiedSet.delete(s));
         this.releaseWaitlist(booking.sessionId);
         this.reverseBookingBonuses(booking);
+        // билеты вернулись — напоминание гасим (как Cancel gRPC в API);
+        // REFUND_FAILED-откат ниже по коду сюда не попадает — письмо ждёт
+        const reminder = this.reminderTimers.get(booking.id);
+        if (reminder) {
+          clearTimeout(reminder);
+          this.reminderTimers.delete(booking.id);
+        }
       }
       this.notify();
     }, delay);

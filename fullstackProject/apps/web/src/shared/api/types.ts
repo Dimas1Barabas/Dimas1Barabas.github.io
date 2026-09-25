@@ -361,6 +361,18 @@ export interface WaitlistStreamEvent {
   notifiedAt: string;
 }
 
+/** «скоро сеанс» — SSE-событие reminder (фильтрация «моё» на клиенте) */
+export interface ReminderStreamEvent {
+  userId: string;
+  bookingId: string;
+  movieId: string;
+  movieTitle: string;
+  hall: string;
+  sessionAt: string;
+  seats: string[];
+  remindedAt: string;
+}
+
 /** направления движений бонусного счёта: accrual — начисление, spend — списание */
 export type BonusKind = 'accrual' | 'spend';
 

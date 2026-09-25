@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import StatusBadge from '@/entities/booking/ui/StatusBadge.vue';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useBookingsStore } from '@/entities/booking/model/store';
+import ReminderBanner from '@/entities/reminder/ui/ReminderBanner.vue';
+import { useReminderStore } from '@/entities/reminder/model/store';
 import { useWaitlistStore } from '@/entities/waitlist/model/store';
 import {
   formatPrice,
@@ -13,6 +15,7 @@ import {
 
 const store = useBookingsStore();
 const waitlist = useWaitlistStore();
+const reminder = useReminderStore();
 const app = useAppStore();
 const now = ref(Date.now());
 let tick: ReturnType<typeof setInterval> | null = null;
@@ -23,13 +26,18 @@ onMounted(() => {
   if (app.mode === 'demo') {
     waitlist.startListening();
     void waitlist.refresh();
+    // и его напоминания «скоро сеанс» — письма движка, как SSE в live
+    reminder.startListening();
   }
   tick = setInterval(() => (now.value = Date.now()), 1000);
 });
 
 onUnmounted(() => {
   store.stopListening();
-  if (app.mode === 'demo') waitlist.stopListening();
+  if (app.mode === 'demo') {
+    waitlist.stopListening();
+    reminder.stopListening();
+  }
   if (tick) clearInterval(tick);
 });
 
@@ -106,6 +114,13 @@ function isCancelling(id: string): boolean {
         Выбрать места
       </RouterLink>
     </div>
+
+    <!-- демо-зеркало письма «скоро сеанс» (в live живёт в «Моих билетах») -->
+    <ReminderBanner
+      v-if="app.mode === 'demo' && reminder.lastReminded"
+      :event="reminder.lastReminded"
+      @dismiss="reminder.dismissReminded()"
+    />
 
     <div v-if="app.mode === 'demo' && waitlist.entries.length" class="waitlist-strip">
       <span class="page-sub">Лист ожидания (демо):</span>

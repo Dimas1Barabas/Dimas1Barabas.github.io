@@ -5,6 +5,8 @@ import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useBookingsStore } from '@/entities/booking/model/store';
 import { useBonusStore } from '@/entities/bonus/model/store';
+import ReminderBanner from '@/entities/reminder/ui/ReminderBanner.vue';
+import { useReminderStore } from '@/entities/reminder/model/store';
 import { useWaitlistStore } from '@/entities/waitlist/model/store';
 import type { BonusReason } from '@/shared/api/types';
 import {
@@ -18,6 +20,7 @@ const auth = useAuthStore();
 const store = useBookingsStore();
 const bonuses = useBonusStore();
 const waitlist = useWaitlistStore();
+const reminder = useReminderStore();
 
 /** кабинет живёт только при живом API и вошедшем пользователе */
 const allowed = computed(() => app.mode === 'live' && auth.isAuthed);
@@ -39,6 +42,8 @@ onMounted(() => {
   // лист ожидания: событие `waitlist` того же стрима + свежие записи
   waitlist.startListening();
   void waitlist.refresh();
+  // напоминания: событие `reminder` того же стрима («скоро сеанс»)
+  reminder.startListening();
   // бонусный счёт: кэшбэк придет с вердиктом, развороты — с возвратом
   void bonuses.refresh();
 });
@@ -55,6 +60,7 @@ onUnmounted(() => {
   if (allowed.value) {
     store.stopListening();
     waitlist.stopListening();
+    reminder.stopListening();
   }
 });
 
@@ -115,6 +121,13 @@ async function cancel(id: string): Promise<void> {
           </button>
         </div>
       </div>
+
+      <!-- письмо «скоро сеанс»: подтверждённая бронь, сеанс уже близко -->
+      <ReminderBanner
+        v-if="reminder.lastReminded"
+        :event="reminder.lastReminded"
+        @dismiss="reminder.dismissReminded()"
+      />
 
       <div v-if="waitlist.entries.length" class="waitlist-list">
         <h2 class="waitlist-list__title">Лист ожидания</h2>
