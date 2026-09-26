@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { ApiError } from '@/shared/api/client';
+import { ApiError, retryAfterFrom } from '@/shared/api/client';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
+import { useCooldown } from '@/shared/lib/use-cooldown';
 
 const router = useRouter();
 const appStore = useAppStore();
@@ -15,6 +16,8 @@ const password = ref('');
 const name = ref('');
 const submitting = ref(false);
 const error = ref<string | null>(null);
+/** кулдаун после 429 Привратника: корзина входа (5/мин на email) пуста */
+const { cooldownSec, startCooldown } = useCooldown();
 
 /** 401/409 у API несут человекочитаемый message — показываем его */
 function apiMessage(err: unknown): string | null {
@@ -30,7 +33,7 @@ function apiMessage(err: unknown): string | null {
 }
 
 async function submit(): Promise<void> {
-  if (submitting.value) return;
+  if (submitting.value || cooldownSec.value > 0) return;
   submitting.value = true;
   error.value = null;
   try {
@@ -47,9 +50,17 @@ async function submit(): Promise<void> {
     }
     void router.push('/');
   } catch (err) {
-    error.value =
-      apiMessage(err) ??
-      (err instanceof Error ? err.message : 'Не получилось, попробуйте ещё раз');
+    const retryAfter = retryAfterFrom(err);
+    if (retryAfter !== null) {
+      // Привратник исчерпал корзину входа (брутфорс-лимит 5/мин на email) —
+      // неверные попытки тоже списывают токены, ждём retryAfterSec из тела
+      startCooldown(retryAfter);
+      error.value = `Слишком много попыток входа — подождите ${retryAfter} с`;
+    } else {
+      error.value =
+        apiMessage(err) ??
+        (err instanceof Error ? err.message : 'Не получилось, попробуйте ещё раз');
+    }
   } finally {
     submitting.value = false;
   }
@@ -110,13 +121,19 @@ async function submit(): Promise<void> {
 
       <p v-if="error" class="auth-error">{{ error }}</p>
 
-      <button class="btn" type="submit" :disabled="submitting">
+      <button
+        class="btn"
+        type="submit"
+        :disabled="submitting || cooldownSec > 0"
+      >
         {{
           submitting
             ? 'Отправляем…'
-            : mode === 'login'
-              ? 'Войти'
-              : 'Зарегистрироваться'
+            : cooldownSec
+              ? `Подождите ${cooldownSec} с`
+              : mode === 'login'
+                ? 'Войти'
+                : 'Зарегистрироваться'
         }}
       </button>
 

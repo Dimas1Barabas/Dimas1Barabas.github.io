@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import type { Booking, Movie } from '@/shared/api/types';
-import { ApiError } from '@/shared/api/client';
+import { ApiError, retryAfterFrom } from '@/shared/api/client';
 import {
   formatDayShort,
   formatPrice,
@@ -9,6 +9,7 @@ import {
   formatSeats,
   formatTime,
 } from '@/shared/lib/format';
+import { useCooldown } from '@/shared/lib/use-cooldown';
 import { upcomingSessions } from '@/entities/movie/lib/sessions';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
@@ -32,6 +33,8 @@ const selected = ref<string[]>([]);
 const selectedSessionId = ref<string | null>(null);
 const submitting = ref(false);
 const error = ref<string | null>(null);
+/** кулдаун после 429 Привратника: пока тикает — кнопка брони заморожена */
+const { cooldownSec, startCooldown } = useCooldown();
 /** сам диалог — фокусируем при открытии, чтобы Esc закрывал без клика */
 const modalEl = ref<HTMLElement | null>(null);
 
@@ -120,7 +123,7 @@ async function leaveQueue(): Promise<void> {
 }
 
 async function submit(): Promise<void> {
-  if (!props.movie || submitting.value) return;
+  if (!props.movie || submitting.value || cooldownSec.value > 0) return;
   if (needLogin.value) {
     error.value = 'Войдите, чтобы забронировать — бронь оформляется на ваш профиль';
     return;
@@ -148,7 +151,13 @@ async function submit(): Promise<void> {
     });
     emit('created', booking);
   } catch (err) {
-    if (err instanceof ApiError && err.status === 409) {
+    const retryAfter = retryAfterFrom(err);
+    if (retryAfter !== null) {
+      // Привратник исчерпал корзину брони (10/мин на юзера) — форма
+      // замораживается на retryAfterSec из тела ответа
+      startCooldown(retryAfter);
+      error.value = `Слишком много броней — подождите ${retryAfter} с и попробуйте снова`;
+    } else if (err instanceof ApiError && err.status === 409) {
       // место успели занять прямо под выбором — обновляем карту
       const taken = seatsTakenFrom(err);
       error.value = taken.length
@@ -511,7 +520,9 @@ watch(
                 class="btn"
                 :class="{ 'btn--loading': submitting }"
                 type="button"
-                :disabled="submitting || !selectedSessionId || !selected.length"
+                :disabled="
+                  submitting || cooldownSec > 0 || !selectedSessionId || !selected.length
+                "
                 :aria-busy="submitting || undefined"
                 @click="submit"
               >
@@ -523,9 +534,11 @@ watch(
                 {{
                   submitting
                     ? 'Отправляем…'
-                    : selected.length
-                      ? 'Забронировать'
-                      : 'Выберите места'
+                    : cooldownSec
+                      ? `Подождите ${cooldownSec} с`
+                      : selected.length
+                        ? 'Забронировать'
+                        : 'Выберите места'
                 }}
               </button>
             </div>

@@ -56,6 +56,24 @@ export class ApiError extends Error {
   }
 }
 
+/** retryAfterSec из тела 429-ответа Привратника (код rateLimited); нет — null */
+export function retryAfterFrom(err: unknown): number | null {
+  if (err instanceof ApiError) {
+    try {
+      const body = JSON.parse(err.body) as {
+        code?: string;
+        retryAfterSec?: unknown;
+      };
+      if (body.code === 'rateLimited' && typeof body.retryAfterSec === 'number') {
+        return Math.max(1, Math.ceil(body.retryAfterSec));
+      }
+    } catch {
+      /* тело не JSON — не наш отказ */
+    }
+  }
+  return null;
+}
+
 /** сохранённый accessToken (после login) или null */
 export function storedToken(): string | null {
   try {

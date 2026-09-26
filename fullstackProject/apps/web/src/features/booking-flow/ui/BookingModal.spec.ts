@@ -1,8 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type { Booking, Movie, SeatMap } from '@/shared/api/types';
+import { ApiError } from '@/shared/api/client';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useBookingsStore } from '@/entities/booking/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
@@ -427,5 +428,141 @@ describe('BookingModal: аншлаг — лист ожидания', () => {
 
     wrapper.unmount();
     expect(stop).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('BookingModal: Привратник — лимит броней (429)', () => {
+  /**
+   * Как mountModal, но без живой карты: фейковые таймеры отсчёта не должны
+   * раскачивать демо-«зрителей» — кулдаун тестируется в изоляции.
+   */
+  function mountNoStream() {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const appStore = useAppStore();
+    const moviesStore = useMoviesStore();
+    appStore.mode = 'demo';
+    moviesStore.loadSeats = vi.fn();
+    moviesStore.loadQuote = vi.fn();
+    moviesStore.seatMap = seatMap;
+    moviesStore.startSeatStream = vi.fn();
+    moviesStore.stopSeatStream = vi.fn();
+
+    const wrapper = mount(BookingModal, {
+      props: { movie },
+      global: { plugins: [pinia], stubs: { Teleport: true } },
+    });
+    return { wrapper, moviesStore };
+  }
+
+  /** тело 429 Привратника — зеркально RateLimitGuard API и демо-движку */
+  const rateLimited = (retryAfterSec: number) =>
+    new ApiError(
+      'HTTP 429',
+      429,
+      JSON.stringify({
+        statusCode: 429,
+        error: 'Too Many Requests',
+        message: 'Слишком часто — попробуйте позже',
+        code: 'rateLimited',
+        retryAfterSec,
+      }),
+    );
+
+  /** успешная бронь для mockResolvedValue */
+  const created: Booking = {
+    id: 'b-1',
+    movieId: 'm-1',
+    movieTitle: 'Рекурсия',
+    movieHue: 275,
+    movieGenreIcon: '👻',
+    sessionId: 's-1',
+    sessionAt: new Date(2030, 0, 10, 19, 0).toISOString(),
+    hall: 'IMAX',
+    customerName: 'Дима',
+    userId: null,
+    seats: ['1-2'],
+    totalRub: 400,
+    promoCode: null,
+    discountRub: null,
+    bonusSpent: null,
+    status: 'PENDING_PAYMENT',
+    expiresAt: new Date(Date.now() + 120_000).toISOString(),
+    message: null,
+    processedBy: null,
+    processedAt: null,
+    createdAt: '2026-09-12T10:00:00Z',
+  };
+
+  /** демо спрашивает имя: заполняем, выбираем место, жмём бронь */
+  async function attempt(wrapper: ReturnType<typeof mountNoStream>['wrapper']) {
+    await wrapper.find('input.field__input').setValue('Дима');
+    await wrapper.findAll('button.hall__seat:not([disabled])')[0].trigger('click');
+    await wrapper.find('.modal__actions .btn:not(.btn--ghost)').trigger('click');
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('429 замораживает кнопку на retryAfterSec, отсчёт — прямо в подписи', async () => {
+    const { wrapper } = mountNoStream();
+    const bookingsStore = useBookingsStore();
+    bookingsStore.create = vi.fn().mockRejectedValue(rateLimited(7));
+
+    await attempt(wrapper);
+    const submit = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+
+    expect(wrapper.text()).toContain('Слишком много броней');
+    expect(wrapper.text()).toContain('подождите 7 с');
+    expect(submit.attributes('disabled')).toBeDefined();
+    expect(submit.text()).toContain('Подождите 7');
+
+    vi.advanceTimersByTime(3000);
+    await nextTick();
+    expect(submit.text()).toContain('Подождите 4');
+
+    vi.advanceTimersByTime(4000);
+    await nextTick();
+    // кулдаун кончился — выбор мест жив, кнопка снова «Забронировать»
+    expect(submit.attributes('disabled')).toBeUndefined();
+    expect(submit.text()).toContain('Забронировать');
+  });
+
+  it('по окончании кулдауна бронь создаётся повторной отправкой', async () => {
+    const { wrapper } = mountNoStream();
+    const bookingsStore = useBookingsStore();
+    const create = vi.fn()
+      .mockRejectedValueOnce(rateLimited(5))
+      .mockResolvedValue(created);
+    bookingsStore.create = create;
+
+    await attempt(wrapper);
+    vi.advanceTimersByTime(5000);
+    await nextTick();
+
+    await wrapper.find('.modal__actions .btn:not(.btn--ghost)').trigger('click');
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(wrapper.emitted('created')).toHaveLength(1);
+  });
+
+  it('429 без кода rateLimited — обычная ошибка, кнопка не замораживается', async () => {
+    const { wrapper } = mountNoStream();
+    const bookingsStore = useBookingsStore();
+    bookingsStore.create = vi.fn().mockRejectedValue(
+      new ApiError('HTTP 429', 429, JSON.stringify({ message: 'Slow down' })),
+    );
+
+    await attempt(wrapper);
+    const submit = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+
+    expect(submit.text()).not.toContain('Подождите');
+    expect(submit.attributes('disabled')).toBeUndefined();
+    // общий текст ветки — конструктор ApiError, не тело
+    expect(wrapper.text()).toContain('HTTP 429');
   });
 });
