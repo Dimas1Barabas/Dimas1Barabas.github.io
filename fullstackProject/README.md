@@ -50,7 +50,8 @@ docker compose up --build
 | recommendation (Go, gRPC) | localhost:18084 (gRPC, reflection для grpcurl); http://localhost:18085/profile?userId=… | «КиноСоветник»: профили зрителей, витрина жанровых весов |
 | reminder (Go, gRPC) | localhost:18086 (gRPC, reflection); http://localhost:18087/reminders | напоминания «скоро сеанс»: витрина очереди и отправленных писем |
 | pricing (Go, gRPC) | localhost:18088 (gRPC, reflection); http://localhost:18089/prices | «Тарификатор»: история квотов с раскладкой факторов, проекция спроса |
-| PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications + cine_recommendations + cine_reminders + cine_prices |
+| ratelimiter (Go, gRPC) | localhost:18090 (gRPC, reflection); http://localhost:18091/buckets | «Привратник»: витрина token-корзин лимитов (бронь, вход) |
+| PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications + cine_recommendations + cine_reminders + cine_prices + cine_ratekeeper |
 | Redis | localhost:6379 | кэш фильмов, TTL 60 c |
 
 Host-порты 13000/15432/18080 выбраны, чтобы не конфликтовать

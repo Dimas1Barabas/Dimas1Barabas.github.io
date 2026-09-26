@@ -8,6 +8,7 @@
 #   recommendation — go test (КиноСоветник: gRPC-рекомендации)
 #   reminder     — go test (напоминания о сеансах)
 #   pricing      — go test (Тарификатор: динамические цены)
+#   ratelimiter  — go test (Привратник: лимиты частоты)
 #
 # E2E против живого docker-стенда в CI не гоняем: он требует поднятия
 # всего compose-окружения и остаётся локальным (`npm run test:e2e`
@@ -164,5 +165,22 @@ jobs:
         with:
           go-version-file: fullstackProject/services/pricing-service/go.mod
           cache-dependency-path: fullstackProject/services/pricing-service/go.sum
+
+      - run: go test ./...
+
+  ratelimiter:
+    name: ratelimiter — go test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: fullstackProject/services/ratelimiter-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: fullstackProject/services/ratelimiter-service/go.mod
+          cache-dependency-path: fullstackProject/services/ratelimiter-service/go.sum
 
       - run: go test ./...

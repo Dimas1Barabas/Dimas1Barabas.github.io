@@ -68,6 +68,9 @@ services:
       GRPC_REMINDER_URL: reminder:8086
       # Тарификатор: gRPC-адрес цен (недоступность — базовая цена афиши)
       GRPC_PRICING_URL: pricing:8088
+      # Привратник: gRPC-адрес лимитов (недоступность — fail-open,
+      # запрос проходит без проверки)
+      GRPC_RATELIMITER_URL: ratelimiter:8090
     ports:
       - '13000:3000'
     depends_on:
@@ -82,6 +85,8 @@ services:
       reminder:
         condition: service_started
       pricing:
+        condition: service_started
+      ratelimiter:
         condition: service_started
 
   worker:
@@ -181,6 +186,28 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # гексагональный Go-сервис «Привратник»: лимиты частоты действий
+  # (token bucket: бронь и вход) по gRPC Check; корзины — в собственной
+  # БД cine_ratekeeper. Сервис чисто синхронный — брокер не нужен.
+  # Лимит брони на стенде отпущен шире продуктового (30 вместо 10/мин):
+  # e2e-сьют сам создаёт больше десяти броней в минуту одним ботовским
+  # пользователем; честные 10/мин — дефолты сервиса и демо-движка Pages
+  ratelimiter:
+    build: ./services/ratelimiter-service
+    environment:
+      GRPC_ADDR: :8090
+      HTTP_ADDR: :8091
+      STORAGE: postgres
+      DATABASE_URL: postgres://cine:cine@postgres:5432/cine_ratekeeper
+      RATE_BOOKINGS_PER_MIN: '30'
+      RATE_LOGIN_PER_MIN: '5'
+    ports:
+      - '18090:8090' # gRPC RateLimiter (API ходит внутри сети; хост-порт — для grpcurl)
+      - '18091:8091' # /health, /buckets — витрина корзин
+    depends_on:
       postgres:
         condition: service_healthy
 
