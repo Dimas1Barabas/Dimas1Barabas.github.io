@@ -22,6 +22,7 @@ cd "$root/proto"
 buf generate --template buf.gen.yaml --path recommendation.proto
 buf generate --template buf.gen.reminder.yaml --path reminder.proto
 buf generate --template buf.gen.pricing.yaml --path pricing.proto
+buf generate --template buf.gen.ratelimiter.yaml --path ratelimiter.proto
 echo "OK: proto -> services/*/internal/pb/"
 
 # копии контрактов для NestJS-стороны: proto-loader читает .proto в рантайме
@@ -33,4 +34,7 @@ cp "$root/proto/reminder.proto" \
 mkdir -p "$root/apps/api/src/pricing/proto"
 cp "$root/proto/pricing.proto" \
    "$root/apps/api/src/pricing/proto/pricing.proto"
-echo "OK: proto -> apps/api/src/{recommendations,reminders,pricing}/proto/"
+mkdir -p "$root/apps/api/src/ratelimiter/proto"
+cp "$root/proto/ratelimiter.proto" \
+   "$root/apps/api/src/ratelimiter/proto/ratelimiter.proto"
+echo "OK: proto -> apps/api/src/{recommendations,reminders,pricing,ratelimiter}/proto/"

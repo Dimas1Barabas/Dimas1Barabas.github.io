@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+// RateLimiter — gRPC-контракт «Привратника»: сервиса лимитов частоты.
+// Общий контракт API (NestJS) и ratelimiter-service (Go): proto-loader
+// на стороне Node читает этот файл в рантайме, Go-сторона использует
+// сгенерированный код (scripts/protogen.sh -> internal/pb).
+// Политики (ёмкость/долив по действию) живут в самом сервисе —
+// вызывающий присылает только действие и ключ клиента.
+package cine.ratelimiter.v1;
+
+option go_package = "ratelimiter-service/internal/pb;cinepb";
+
+// Сервис лимитов: гварды API спрашивают один токен token-корзины
+// до допуска действия (создание брони, вход). Отказ — не ошибка RPC:
+// allowed=false + retry_after_ms, чтобы вызывающий мог погасить
+// падение сервиса fallback'ом (fail-open на стороне API).
+service RateLimiter {
+  rpc Check (CheckRateRequest) returns (CheckRateResponse);
+}
+
+message CheckRateRequest {
+  string action = 1; // bookings.create | auth.login
+  string key = 2;    // кто спрашивает: user id / email / ip
+}
+
+message CheckRateResponse {
+  bool  allowed        = 1; // снят ли токен
+  int32 retry_after_ms = 2; // сколько ждать при allowed=false
+  int32 remaining      = 3; // целых токенов после решения
+  int32 limit          = 4; // предел в минуту (политика сервиса)
+  int32 capacity       = 5; // burst-ёмкость корзины
+}

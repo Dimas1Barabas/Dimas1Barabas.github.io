@@ -16,6 +16,10 @@
       {
         "include": "pricing/proto/*.proto",
         "outDir": "dist"
+      },
+      {
+        "include": "ratelimiter/proto/*.proto",
+        "outDir": "dist"
       }
     ]
   }
