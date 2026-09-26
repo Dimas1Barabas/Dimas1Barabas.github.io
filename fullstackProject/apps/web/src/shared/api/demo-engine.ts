@@ -294,6 +294,9 @@ const DEMO_MOVIES: Movie[] = DEMO_MOVIE_SEEDS.map((m) => ({
 /** «текущий пользователь» демо: авторизации нет, все его отзывы — гостевые */
 const DEMO_GUEST_ID = 'demo-guest';
 const DEMO_GUEST_NAME = 'Гость';
+/** паритет с политиками Привратника (RATE_*_PER_MIN Go-сервиса) */
+const DEMO_RATE_BOOKINGS_PER_MIN = 10;
+const DEMO_RATE_LOGIN_PER_MIN = 5;
 
 /** сид-отзывы: у части фильмов, от «других зрителей» */
 const DEMO_REVIEW_SEEDS: {
@@ -514,6 +517,8 @@ class DemoEngine {
   private bonusSeq = seedBonusLedger().length;
   /** сигналы КиноСоветника: бронь CONFIRMED = «смотрел», отзыв = «оценил» */
   private signals: RecSignal[] = seedSignals();
+  /** token-корзины лимитов «Привратника» — то же зеркало, что в Go-домене */
+  private rateBuckets = new Map<string, { tokens: number; updatedAt: number }>();
   /** напоминания «скоро сеанс»: отправленные письма, свежими сверху */
   private remindersSent: ReminderStreamEvent[] = [];
   /** bookingId → таймер напоминания (как SCHEDULED-записи Go-сервиса) */
@@ -541,6 +546,37 @@ class DemoEngine {
     this.listeners.forEach((cb) => cb());
   }
 
+  /**
+   * token bucket в миниатюре — та же арифметика, что в domain.Check
+   * Go-сервиса Привратника: первому визиту — полный бак, равномерный
+   * долив perMin/60 в секунду, отказ токен не списывает. Отказ —
+   * ApiError 429 с retryAfterSec, зеркально RateLimitGuard API.
+   */
+  private takeToken(action: string, key: string, perMin: number): void {
+    const now = Date.now();
+    const id = `${action}:${key}`;
+    const b = this.rateBuckets.get(id) ?? { tokens: perMin, updatedAt: now };
+    b.tokens = Math.min(perMin, b.tokens + ((now - b.updatedAt) / 1000) * (perMin / 60));
+    b.updatedAt = now;
+    this.rateBuckets.set(id, b);
+    if (b.tokens >= 1) {
+      b.tokens -= 1;
+      return;
+    }
+    const retryAfterSec = Math.max(1, Math.ceil((1 - b.tokens) / (perMin / 60)));
+    throw new ApiError(
+      'HTTP 429',
+      429,
+      JSON.stringify({
+        statusCode: 429,
+        error: 'Too Many Requests',
+        message: 'Слишком часто — попробуйте позже',
+        code: 'rateLimited',
+        retryAfterSec,
+      }),
+    );
+  }
+
   /** сброс состояния (тесты) */
   reset(): void {
     this.expiryTimers.forEach((t) => clearTimeout(t));
@@ -550,6 +586,7 @@ class DemoEngine {
     this.remindersSent = [];
     this.occupied.clear();
     this.viewerSeats.clear();
+    this.rateBuckets.clear();
     this.reviews = seedReviews();
     this.account = null;
     this.session = null;
@@ -571,6 +608,9 @@ class DemoEngine {
   /** вход: любой email до первой регистрации; после — сверка пароля (401) */
   login(email: string, password: string): LoginResult {
     const normalized = email.trim().toLowerCase();
+    // лимит до проверки пароля — как гвард API: неверные попытки тоже
+    // едят корзину, брутфорс исчерпывает её раньше подбора
+    this.takeToken('auth.login', normalized, DEMO_RATE_LOGIN_PER_MIN);
     if (
       this.account &&
       (this.account.email !== normalized || this.account.password !== password)
@@ -1009,6 +1049,12 @@ class DemoEngine {
   }
 
   create(payload: CreateBookingPayload): Booking {
+    // лимит первым делом — как гвард API до валидации тела: 429 бьёт 400/409
+    this.takeToken(
+      'bookings.create',
+      this.session?.id ?? DEMO_GUEST_ID,
+      DEMO_RATE_BOOKINGS_PER_MIN,
+    );
     const found = this.findSession(payload.sessionId);
     if (!found) throw new Error('Сеанс не найден');
     const { movie, session } = found;
