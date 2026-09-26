@@ -38,7 +38,7 @@ ID: TC-MOV-002
 
 ID: TC-BKG-001
 Название: Успешное создание брони (happy path)
-Приоритет/Тип: High / Ф          Автотест: http.int.spec.ts + live.e2e.spec.ts
+Приоритет/Тип: High / Ф          Автотест: http.int.spec.ts + bookings.e2e.spec.ts
 Предусловия: фильм существует, места ["5-7","5-8"] свободны
 Шаги:
   1. POST /api/bookings {movieId, customerName:"Дмитрий", seats:["5-7","5-8"]}
@@ -73,7 +73,7 @@ ID: TC-BKG-003
 
 ID: TC-BKG-004
 Название: Гонка за одно место
-Приоритет/Тип: High / К          Автотест: http.int.spec.ts + demoEngine.spec.ts
+Приоритет/Тип: High / К          Автотест: http.int.spec.ts + demo-bookings.spec.ts
 Предусловия: место 4-4 свободно
 Шаги:
   1. Клиент А бронирует 4-4 -> 201
@@ -103,7 +103,7 @@ processedBy="go-worker-1"; места свободны — повторная б
 
 ID: TC-CAN-001
 Название: Успешная отмена — возврат прошёл
-Приоритет/Тип: High / Ф          Автотест: http.int.spec.ts + live.e2e.spec.ts
+Приоритет/Тип: High / Ф          Автотест: http.int.spec.ts + bookings.e2e.spec.ts
 Предусловия: бронь в CONFIRMED, места заняты
 Шаги:
   1. POST /api/bookings/:id/cancel
@@ -154,7 +154,7 @@ ID: TC-CAN-004
 
 ID: TC-CAN-005
 Название: Банк отказал в возврате — откат в CONFIRMED
-Приоритет/Тип: High / Ф          Автотест: http.int.spec.ts + demoEngine.spec.ts
+Приоритет/Тип: High / Ф          Автотест: http.int.spec.ts + demo-bookings.spec.ts
 Предусловия: бронь в CANCELLING; параметр стенда REFUND_SUCCESS_RATE=0
 Шаги:
   1. Дождаться booking.refunded со статусом REFUND_FAILED
@@ -192,7 +192,7 @@ ID: TC-SSE-001
 
 ID: TC-SSE-002
 Название: Вердикт воркера приходит в стрим без опроса
-Приоритет/Тип: High / Ф          Автотест: live.e2e.spec.ts
+Приоритет/Тип: High / Ф          Автотест: bookings.e2e.spec.ts
 Предусловия: стенд поднят, стрим открыт
 Шаги:
   1. Создать бронь
@@ -234,7 +234,7 @@ ID: TC-SSE-004
 
 ID: TC-DMO-001
 Название: Паритет демо-режима с живым стеком
-Приоритет/Тип: Medium / Ф        Автотест: apps/web/src/api/demoEngine.spec.ts
+Приоритет/Тип: Medium / Ф        Автотест: apps/web/src/api/demo-bookings.spec.ts
 Предусловия: открыт GitHub Pages-демо при недоступном API
 Шаги:
   1. Убедиться в баннере «демо-режим»
@@ -248,7 +248,7 @@ ID: TC-DMO-001
 
 ID: TC-REV-001
 Название: Отзыв без подтверждённой брони
-Приоритет/Тип: High / Н         Автотест: reviews.int.spec.ts + live.e2e.spec.ts
+Приоритет/Тип: High / Н         Автотест: reviews.int.spec.ts + reviews.e2e.spec.ts
 Предусловия: зарегистрирован пользователь без броней на фильм
 Шаги:
   1. POST /api/movies/:id/reviews {rating:5, text>=10 симв.}
@@ -272,7 +272,7 @@ ID: TC-REV-002
 
 ID: TC-REV-003
 Название: Валидация оценки и текста
-Приоритет/Тип: Medium / Н,Г      Автотест: reviews.int.spec.ts + demoEngine.spec.ts
+Приоритет/Тип: Medium / Н,Г      Автотест: reviews.int.spec.ts + demo-reviews.spec.ts
 Шаги:
   1. POST с rating:6 / 0 / без поля
   2. Текст короче 10 и длиннее 1000 символов
@@ -284,7 +284,7 @@ ID: TC-REV-003
 
 ID: TC-REV-004
 Название: Отзыв после брони и рейтинг в каталоге
-Приоритет/Тип: High / Ф          Автотест: reviews.int.spec.ts + live.e2e.spec.ts
+Приоритет/Тип: High / Ф          Автотест: reviews.int.spec.ts + reviews.e2e.spec.ts
 Предусловия: у пользователя есть CONFIRMED-бронь на фильм
 Шаги:
   1. POST /api/movies/:id/reviews
@@ -310,7 +310,7 @@ ID: TC-REV-005
 
 ID: TC-REV-006
 Название: Рейтинг на карточках и демо-паритет
-Приоритет/Тип: Medium / Ф        Автотест: components.spec.ts + demoEngine.spec.ts
+Приоритет/Тип: Medium / Ф        Автотест: components.spec.ts + demo-reviews.spec.ts
 Предусловия: открыта афиша
 Шаги:
   1. Сверить звёзды/среднюю на карточке с отзывами фильма
@@ -325,7 +325,7 @@ ID: TC-REV-006
 
 ID: TC-STA-001
 Название: Доступ к аналитике — только роль admin
-Приоритет/Тип: High / Н        Автотест: admin.int.spec.ts + live.e2e.spec.ts
+Приоритет/Тип: High / Н        Автотест: admin.int.spec.ts + admin.e2e.spec.ts
 Предусловия: зарегистрирован обычный пользователь; админ сеется при старте
 Шаги:
   1. GET /api/admin/stats без токена
@@ -385,7 +385,7 @@ ID: TC-STA-004
 
 ID: TC-STA-005
 Название: Демо-паритет — сиды, топ, кэш и доступ без прав
-Приоритет/Тип: Medium / UI     Автотест: demoEngine.spec.ts + AdminStatsView.spec.ts
+Приоритет/Тип: Medium / UI     Автотест: demo-admin-stats.spec.ts + AdminStatsView.spec.ts
 Предусловия: открыт GitHub Pages-демо при недоступном API
 Шаги:
   1. Открыть /#/admin/stats без входа
@@ -427,7 +427,7 @@ ID: TC-INF-002
 
 ID: TC-ACC-001
 Название: Refresh-ротация продлевает сессию без повторного входа
-Приоритет/Тип: High / Функциональный        Автотест: tokens.service.spec.ts, auth.int.spec.ts, live.e2e.spec.ts, web client.spec.ts
+Приоритет/Тип: High / Функциональный        Автотест: tokens.service.spec.ts, auth.int.spec.ts, auth.e2e.spec.ts, web client.spec.ts
 Шаги:
   1. POST /api/auth/refresh с cookie cine.refresh
   2. Проверить ответ и новую куку
@@ -441,7 +441,7 @@ ID: TC-ACC-001
 
 ID: TC-ACC-002
 Название: Переиспользование отозванного refresh ревокает все сессии
-Приоритет/Тип: High / Конкурентность        Автотест: tokens.service.spec.ts, auth.int.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: High / Конкурентность        Автотест: tokens.service.spec.ts, auth.int.spec.ts, auth.e2e.spec.ts
 Шаги:
   1. Ротировать cookie-токен устройства A
   2. Использовать его повторно (старая копия)
@@ -468,7 +468,7 @@ ID: TC-ACC-003
 
 ID: TC-ACC-004
 Название: Профиль — имя/email со свежей JWT-парой в ответе
-Приоритет/Тип: High / Функциональный        Автотест: users.service.spec.ts, users.int.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: High / Функциональный        Автотест: users.service.spec.ts, users.int.spec.ts, account.e2e.spec.ts
 Шаги:
   1. PATCH /api/users/me {name}
   2. Раскрыть access из ответа
@@ -482,7 +482,7 @@ ID: TC-ACC-004
 
 ID: TC-ACC-005
 Название: Смена пароля — выход отовсюду, это устройство остаётся
-Приоритет/Тип: High / Функциональный        Автотест: users.int.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: High / Функциональный        Автотест: users.int.spec.ts, account.e2e.spec.ts
 Шаги:
   1. PUT /api/users/me/password {currentPassword,newPassword}
   2. POST /api/auth/refresh кукой «другого устройства»
@@ -497,7 +497,7 @@ ID: TC-ACC-005
 
 ID: TC-ACC-006
 Название: Запрос сброса не раскрывает существование email
-Приоритет/Тип: Medium / Негативный        Автотест: auth.service.spec.ts, auth.int.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: Medium / Негативный        Автотест: auth.service.spec.ts, auth.int.spec.ts, account.e2e.spec.ts
 Шаги:
   1. POST /api/auth/forgot-password для существующего email
   2. То же для выдуманного
@@ -510,7 +510,7 @@ ID: TC-ACC-006
 
 ID: TC-ACC-007
 Название: Полный цикл восстановления по ссылке из «письма»
-Приоритет/Тип: High / Функциональный        Автотест: live.e2e.spec.ts (graceful-skip без стенда), auth.int.spec.ts
+Приоритет/Тип: High / Функциональный        Автотест: account.e2e.spec.ts (graceful-skip без стенда), auth.int.spec.ts
 Шаги:
   1. POST /api/auth/forgot-password
   2. Взять ссылку из «письма» (:18082/notifications, kind password_reset)
@@ -543,7 +543,7 @@ ID: TC-ACC-008
 
 ID: TC-PRM-001
 Название: Админ создаёт промокод, код нормализуется
-Приоритет/Тип: High / Функциональный        Автотест: promos.service.spec.ts, promos.int.spec.ts, live.e2e.spec.ts, web AdminView.spec.ts
+Приоритет/Тип: High / Функциональный        Автотест: promos.service.spec.ts, promos.int.spec.ts, promos.e2e.spec.ts, web AdminView.spec.ts
 Предусловия: админ авторизован
 Шаги:
   1. POST /api/promos с кодом в нижнем регистре
@@ -556,7 +556,7 @@ ID: TC-PRM-001
 
 ID: TC-PRM-002
 Название: Дубль кода — 409 promoExists
-Приоритет/Тип: High / Негативный        Автотест: promos.service.spec.ts, promos.int.spec.ts, web demo-engine.spec.ts
+Приоритет/Тип: High / Негативный        Автотест: promos.service.spec.ts, promos.int.spec.ts, web demo-promos.spec.ts
 Предусловия: код уже существует
 Шаги:
   1. POST /api/promos с тем же кодом в другом регистре
@@ -612,7 +612,7 @@ ID: TC-PRM-005
 
 ID: TC-PRM-006
 Название: Оплата с промокодом — скидка в totalRub, воркер списывает её
-Приоритет/Тип: High / Функциональный        Автотест: bookings.service.spec.ts, promos.int.spec.ts, live.e2e.spec.ts, web PaymentView.spec.ts
+Приоритет/Тип: High / Функциональный        Автотест: bookings.pay.spec.ts, promos.int.spec.ts, promos.e2e.spec.ts, web PaymentView.spec.ts
 Предусловия: бронь в PENDING_PAYMENT, код активен
 Шаги:
   1. POST /api/bookings/:id/pay {promoCode}
@@ -626,7 +626,7 @@ booking.created воркеру — со скидочной суммой; usedCou
 
 ID: TC-PRM-007
 Название: Гонка за последний код — откат транзакции оплаты
-Приоритет/Тип: High / Конкурентность        Автотест: bookings.service.spec.ts, promos.int.spec.ts (ROLLBACK-фейк), live.e2e.spec.ts, web PaymentView.spec.ts
+Приоритет/Тип: High / Конкурентность        Автотест: bookings.pay.spec.ts, promos.int.spec.ts (ROLLBACK-фейк), promos.e2e.spec.ts, web PaymentView.spec.ts
 Предусловия: у кода последняя активация, две брони в PENDING_PAYMENT
 Шаги:
   1. Оплатить первую бронь кодом (успех)
@@ -640,7 +640,7 @@ ID: TC-PRM-007
 
 ID: TC-PRM-008
 Название: Демо-паритет промокодов на Pages
-Приоритет/Тип: Medium / Функциональный        Автотест: web demo-engine.spec.ts, promos.store.spec.ts, AdminView.spec.ts
+Приоритет/Тип: Medium / Функциональный        Автотест: web demo-promos.spec.ts, promos.store.spec.ts, AdminView.spec.ts
 Предусловия: демка на GitHub Pages
 Шаги:
   1. Забронировать места, применить CINE10 на /pay
@@ -656,7 +656,7 @@ ID: TC-PRM-008
 
 ID: TC-QR-001
 Название: Выдача билетов по CONFIRMED-брони
-Приоритет/Тип: High / Функциональный        Автотест: bookings.service.spec.ts, tickets.int.spec.ts, live.e2e.spec.ts, web tickets.store.spec.ts, TicketView.spec.ts
+Приоритет/Тип: High / Функциональный        Автотест: bookings.tickets.spec.ts, tickets.int.spec.ts, tickets.e2e.spec.ts, web tickets.store.spec.ts, TicketView.spec.ts
 Предусловия: бронь в CONFIRMED на 2+ мест
 Шаги:
   1. GET /api/bookings/:id/tickets
@@ -669,7 +669,7 @@ TK-XXXXXX, контекст фильма/сеанса/гостя); повтор�
 
 ID: TC-QR-002
 Название: Не-CONFIRMED бронь: 409 bookingNotConfirmed, сага гасит билеты
-Приоритет/Тип: High / Негативный        Автотест: bookings.service.spec.ts, tickets.int.spec.ts, live.e2e.spec.ts, web demo-engine.spec.ts
+Приоритет/Тип: High / Негативный        Автотест: bookings.tickets.spec.ts, tickets.int.spec.ts, tickets.e2e.spec.ts, web demo-tickets.spec.ts
 Предусловия: брони в PENDING_PAYMENT и CANCELLED; CONFIRMED-бронь перед отменой
 Шаги:
   1. Запросить билеты ждущей брони
@@ -683,7 +683,7 @@ CANCELLED — 409; при REFUND_FAILED (откат в CONFIRMED) билеты �
 
 ID: TC-QR-003
 Название: Чужому владельцу билеты не выдаются
-Приоритет/Тип: High / Негативный        Автотест: bookings.service.spec.ts, tickets.int.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: High / Негативный        Автотест: bookings.tickets.spec.ts, tickets.int.spec.ts, tickets.e2e.spec.ts
 Предусловия: бронь пользователя A, JWT пользователя B
 Шаги:
   1. GET /api/bookings/:id/tickets токеном B
@@ -709,7 +709,7 @@ ID: TC-QR-004
 
 ID: TC-QR-005
 Название: Сканер: честный QR — valid с контекстом
-Приоритет/Тип: High / Функциональный        Автотест: bookings.service.spec.ts, tickets.int.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: High / Функциональный        Автотест: bookings.tickets.spec.ts, tickets.int.spec.ts, tickets.e2e.spec.ts
 Предусловия: CONFIRMED-бронь на будущий сеанс, QR-строка из полей билета, JWT админа
 Шаги:
   1. POST /api/bookings/tickets/verify админом
@@ -722,7 +722,7 @@ ID: TC-QR-005
 
 ID: TC-QR-006
 Название: Сканер: подделка и мусор отвергаются подписью
-Приоритет/Тип: High / Негативный        Автотест: bookings.service.spec.ts, tickets.int.spec.ts, live.e2e.spec.ts, web demo-engine.spec.ts
+Приоритет/Тип: High / Негативный        Автотест: bookings.tickets.spec.ts, tickets.int.spec.ts, tickets.e2e.spec.ts, web demo-tickets.spec.ts
 Предусловия: валидный билет; изменённая подпись; строка чужого формата
 Шаги:
   1. verify с перевёрнутой подписью
@@ -735,7 +735,7 @@ ID: TC-QR-006
 
 ID: TC-QR-007
 Название: Сканер: бронь/место/сеанс — вердикты с причиной
-Приоритет/Тип: High / Негативный        Автотест: bookings.service.spec.ts, tickets.int.spec.ts, web demo-engine.spec.ts
+Приоритет/Тип: High / Негативный        Автотест: bookings.tickets.spec.ts, tickets.int.spec.ts, web demo-tickets.spec.ts
 Предусловия: честно подписанные QR несуществующей брони, отменённой брони, чужого
 места, прошедшего сеанса
 Шаги:
@@ -748,7 +748,7 @@ sessionPassed — каждый 200 с причиной и контекстом, 
 
 ID: TC-QR-008
 Название: Экран «на вход в зал» и демо-паритет
-Приоритет/Тип: Medium / Функциональный        Автотест: web TicketView.spec.ts, QrCode.spec.ts, demo-engine.spec.ts, tickets.store.spec.ts
+Приоритет/Тип: Medium / Функциональный        Автотест: web TicketView.spec.ts, QrCode.spec.ts, demo-tickets.spec.ts, tickets.store.spec.ts
 Предусловия: демка на GitHub Pages или стенд
 Шаги:
   1. Оплатить бронь → перейти «Показать QR-билеты»
@@ -763,7 +763,7 @@ Esc закрывает; объяснение про подтверждённую
 
 ID: TC-WL-001
 Название: Вход в очередь на полный сеанс (happy path)
-Приоритет/Тип: High / Функциональный        Автотест: waitlist.int.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: High / Функциональный        Автотест: waitlist.int.spec.ts, waitlist.e2e.spec.ts
 Предусловия: сеанс полон (free=0); пользователь с JWT в очереди не состоит
 Шаги:
   1. POST /api/waitlist/:sessionId с Bearer-JWT
@@ -777,7 +777,7 @@ ID: TC-WL-001
 
 ID: TC-WL-002
 Название: Гварды входа — токен, сеанс, полнота, дубль
-Приоритет/Тип: High / Негативный, Граничный        Автотест: waitlist.int.spec.ts, live.e2e.spec.ts, web demo-engine.spec.ts
+Приоритет/Тип: High / Негативный, Граничный        Автотест: waitlist.int.spec.ts, waitlist.e2e.spec.ts, web demo-waitlist.spec.ts
 Предусловия: полный сеанс; обычный сеанс со свободными местами; начавшийся сеанс
 Шаги:
   1. POST /api/waitlist/:sessionId без Authorization
@@ -838,7 +838,7 @@ ID: TC-WL-005
 
 ID: TC-WL-006
 Название: Бронь уведомлённого гасит его запись
-Приоритет/Тип: High / Конкурентный        Автотест: waitlist.int.spec.ts, live.e2e.spec.ts, web demo-engine.spec.ts
+Приоритет/Тип: High / Конкурентный        Автотест: waitlist.int.spec.ts, waitlist.e2e.spec.ts, web demo-waitlist.spec.ts
 Предусловия: пользователь только что получил NOTIFIED, место ещё свободно
 Шаги:
   1. POST /api/bookings на освободившееся место
@@ -852,7 +852,7 @@ ID: TC-WL-006
 
 ID: TC-WL-007
 Название: E2E — полный зал, SSE-событие, два уведомления подряд
-Приоритет/Тип: High / Конкурентный        Автотест: live.e2e.spec.ts
+Приоритет/Тип: High / Конкурентный        Автотест: waitlist.e2e.spec.ts
 Предусловия: поднятый стенд; JWT админа
 Шаги:
   1. Админ создаёт фильм с одним сеансом; 10 броней по 8 мест — зал полон
@@ -870,7 +870,7 @@ ID: TC-WL-007
 
 ID: TC-WL-008
 Название: Письмо «место освободилось» и витрина UI
-Приоритет/Тип: Medium / Функциональный        Автотест: live.e2e.spec.ts, go notification, web BookingModal.spec.ts, waitlist store.spec.ts, demo-engine.spec.ts
+Приоритет/Тип: Medium / Функциональный        Автотест: waitlist.e2e.spec.ts, go notification, web BookingModal.spec.ts, waitlist store.spec.ts, demo-waitlist.spec.ts
 Предусловия: стенд с notification-service или демка на GitHub Pages
 Шаги:
   1. Освободить место при очереди → :18082/notifications?bookingId=<email>
@@ -901,7 +901,7 @@ error-кадр + close 1008; мусор/неизвестный type — error-к
 
 ID: TC-WS-002
 Название: Чужая покупка мгновенно серееет
-Приоритет/Тип: High / Конкурентный        Автотест: seats-stream.int.spec.ts, live.e2e.spec.ts, web BookingModal.spec.ts
+Приоритет/Тип: High / Конкурентный        Автотест: seats-stream.int.spec.ts, seats-stream.e2e.spec.ts, web BookingModal.spec.ts
 Предусловия: два клиента открыли выбор мест одного сеанса; у второго выбрано место, которое займут
 Шаги:
   1. Первый клиент бронирует место (POST /bookings)
@@ -915,7 +915,7 @@ ID: TC-WS-002
 
 ID: TC-WS-003
 Название: Освобождение мест видно сразу
-Приоритет/Тип: High / Функциональный        Автотест: bookings.service.spec.ts, seats-stream.int.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: High / Функциональный        Автотест: bookings.streams.spec.ts, seats-stream.int.spec.ts, seats-stream.e2e.spec.ts
 Предусловия: подписка на сеанс; бронь в PENDING_PAYMENT
 Шаги:
   1. Отмена неоплаченной
@@ -960,7 +960,7 @@ onopen → subscribe заново + полный resync loadSeats; стоп гл
 
 ID: TC-WS-006
 Название: Демо-«зрители» живой карты на Pages
-Приоритет/Тип: Medium / Функциональный        Автотест: demo-engine.spec.ts, web movies.store.spec.ts
+Приоритет/Тип: Medium / Функциональный        Автотест: demo-viewers.spec.ts, web movies.store.spec.ts
 Предусловия: демка на GitHub Pages, модалка выбора мест открыта
 Шаги:
   1. Ждать ~15 c
@@ -976,7 +976,7 @@ ID: TC-WS-006
 
 ID: TC-BON-001
 Название: Счёт — 401 без токена и пустой баланс нового пользователя
-Приоритет/Тип: High / Ф, Н       Автотест: bonus.int.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: High / Ф, Н       Автотест: bonus.int.spec.ts, bonus.e2e.spec.ts
 Предусловия: зарегистрирован пользователь без броней
 Шаги:
   1. GET /api/bonuses/my без Authorization
@@ -986,7 +986,7 @@ ID: TC-BON-001
 
 ID: TC-BON-002
 Название: Списание при оплате — лимит половины чека и баланс
-Приоритет/Тип: High / Ф, Г       Автотест: bookings.service.spec.ts, bonus.int.spec.ts, web PaymentView.spec.ts
+Приоритет/Тип: High / Ф, Г       Автотест: bookings.pay, bookings.verdicts.spec.ts, bonus.int.spec.ts, web PaymentView.spec.ts
 Предусловия: бронь в PENDING_PAYMENT; на счету достаточно бонусов
 Шаги:
   1. pay useBonuses=floor(сумма/2)
@@ -1000,7 +1000,7 @@ spend-строка payment, воркеру финальная сумма. 2) 409
 
 ID: TC-BON-003
 Название: Гостевая бронь без владельца — 409 bonusUnavailable
-Приоритет/Тип: Medium / Н        Автотест: bookings.service.spec.ts, bonus.int.spec.ts
+Приоритет/Тип: Medium / Н        Автотест: bookings.pay, bookings.verdicts.spec.ts, bonus.int.spec.ts
 Предусловия: бронь с user_id=null (создана до авторизации)
 Шаги:
   1. POST /bookings/:id/pay {useBonuses:100} за JWT
@@ -1010,7 +1010,7 @@ ID: TC-BON-003
 
 ID: TC-BON-004
 Название: Гонка балансом — контрольный пересчёт не уводит счёт в минус
-Приоритет/Тип: High / К          Автотест: bookings.service.spec.ts
+Приоритет/Тип: High / К          Автотест: bookings.pay, bookings.verdicts.spec.ts
 Предусловия: баланс 300; две параллельные оплаты по 200
 Шаги:
   1. Предпроверка проходит, вставляется spend-строка
@@ -1022,7 +1022,7 @@ ID: TC-BON-004
 
 ID: TC-BON-005
 Название: Кэшбэк при CONFIRMED — floor от финала, одна операция на бронь
-Приоритет/Тип: High / Ф          Автотест: bookings.service.spec.ts, bonus.int.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: High / Ф          Автотест: bookings.pay, bookings.verdicts.spec.ts, bonus.int.spec.ts, bonus.e2e.spec.ts
 Предусловия: оплаченная бронь в PENDING, у брони есть владелец
 Шаги:
   1. Дождаться вердикта CONFIRMED
@@ -1036,7 +1036,7 @@ ID: TC-BON-005
 
 ID: TC-BON-006
 Название: FAILED-вердикт возвращает списанное
-Приоритет/Тип: High / Ф          Автотест: bookings.service.spec.ts, bonus.int.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: High / Ф          Автотест: bookings.pay, bookings.verdicts.spec.ts, bonus.int.spec.ts, bonus.e2e.spec.ts
 Предусловия: бронь оплачена с useBonuses; воркер отклоняет платёж
 Шаги:
   1. Дождаться FAILED
@@ -1047,7 +1047,7 @@ ID: TC-BON-006
 
 ID: TC-BON-007
 Название: Возврат брони — реверс: refund списанного и clawback кэшбэка
-Приоритет/Тип: High / Ф, Г       Автотест: bookings.service.spec.ts, bonus.int.spec.ts, demo-engine.spec.ts
+Приоритет/Тип: High / Ф, Г       Автотест: bookings.pay, bookings.verdicts.spec.ts, bonus.int.spec.ts, demo-bonus.spec.ts
 Предусловия: CONFIRMED-бронь с кэшбэком/списанием; сага возврата запущена
 Шаги:
   1. Дождаться CANCELLED
@@ -1060,7 +1060,7 @@ REFUND_FAILED бонусы не трогает
 
 ID: TC-BON-008
 Название: Счёт в UI и демо-паритет
-Приоритет/Тип: Medium / Ф        Автотест: web PaymentView.spec.ts, MyBookingsView.spec.ts, demo-engine.spec.ts
+Приоритет/Тип: Medium / Ф        Автотест: web PaymentView.spec.ts, MyBookingsView.spec.ts, demo-bonus.spec.ts
 Предусловия: экраны /pay и /my; демка на Pages
 Шаги:
   1. Чекбокс «Списать бонусы» и ввод вручную
@@ -1076,7 +1076,7 @@ ID: TC-BON-008
 
 ID: TC-REC-001
 Название: GET /recommendations/my — 401 без токена и холодный старт нового зрителя
-Приоритет/Тип: High / Ф, Н       Автотест: recommendations.int.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: High / Ф, Н       Автотест: recommendations.int.spec.ts, recommendations.e2e.spec.ts
 Предусловия: зарегистрирован пользователь без броней
 Шаги:
   1. GET /api/recommendations/my без Authorization
@@ -1118,7 +1118,7 @@ ID: TC-REC-004
 
 ID: TC-REC-005
 Название: Сигнал брони — CONFIRMED публикует событие с dedup, гостевая — нет
-Приоритет/Тип: High / Ф       Автотест: bookings.service.spec.ts, live.e2e.spec.ts
+Приоритет/Тип: High / Ф       Автотест: bookings.verdicts.spec.ts, recommendations.e2e.spec.ts
 Предусловия: бронь в PENDING с владельцем; гостевая отдельно
 Шаги:
   1. Дождаться вердикта CONFIRMED
@@ -1166,7 +1166,7 @@ ID: TC-REC-008
 
 ID: TC-REM-001
 Название: Планирование — CONFIRMED с будущим сеансом → Schedule с email
-Приоритет/Тип: High / Ф       Автотест: bookings.service.spec.ts, reminders.int.spec.ts, e2e
+Приоритет/Тип: High / Ф       Автотест: bookings.verdicts.spec.ts, reminders.int.spec.ts, e2e
 Предусловия: воркер и reminder-сервис работают; сеанс в будущем
 Шаги:
   1. Бронь + оплата до CONFIRMED
@@ -1177,7 +1177,7 @@ ID: TC-REM-001
 
 ID: TC-REM-002
 Название: Прошедший сеанс не планируется; недоступность не валит вердикт
-Приоритет/Тип: High / Н       Автотест: bookings.service.spec.ts, grpcapi server_test.go
+Приоритет/Тип: High / Н       Автотест: bookings.verdicts.spec.ts, grpcapi server_test.go
 Предусловия: бронь CONFIRMED по начавшемуся сеансу (гонка вердикта)
 Шаги:
   1. Вердикт по прошедшему сеансу
@@ -1199,7 +1199,7 @@ ID: TC-REM-003
 
 ID: TC-REM-004
 Название: Отмена — CANCELLED гасит; REFUND_FAILED письмо не трогает
-Приоритет/Тип: High / Ф       Автотест: bookings.service.spec.ts, reminders.int.spec.ts, e2e
+Приоритет/Тип: High / Ф       Автотест: bookings.verdicts.spec.ts, reminders.int.spec.ts, e2e
 Предусловия: SCHEDULED-напоминание; сага возврата
 Шаги:
   1. Отмена подтверждённой брони
@@ -1255,7 +1255,7 @@ ID: TC-REM-008
 
 ID: TC-REM-009
 Название: Баннер «Скоро сеанс» и демо-паритет (clamp окна)
-Приоритет/Тип: Medium / UI    Автотест: web store.spec.ts, demo-engine.spec.ts
+Приоритет/Тип: Medium / UI    Автотест: web store.spec.ts, demo-reminders.spec.ts
 Предусловия: вошедший зритель с CONFIRMED-бронью на близкий сеанс
 Шаги:
   1. Дождаться письма
@@ -1321,7 +1321,7 @@ ID: TC-PRC-004
 
 ID: TC-PRC-005
 Название: create() — квот до транзакции, чек фиксирует цену момента брони
-Приоритет/Тип: High / Ф       Автотест: unit bookings.service.spec.ts, int pricing.int.spec.ts, e2e
+Приоритет/Тип: High / Ф       Автотест: unit bookings.create.spec.ts, int pricing.int.spec.ts, e2e
 Предусловия: сеанс с известной ценой витрины
 Шаги:
   1. Бронь на k мест
@@ -1332,7 +1332,7 @@ ID: TC-PRC-005
 
 ID: TC-PRC-006
 Название: Деградация — мусор/отказ Тарификатора: базовая цена, бронь жива
-Приоритет/Тип: High / О       Автотест: unit bookings.service.spec.ts, pricing.client.spec.ts, int
+Приоритет/Тип: High / О       Автотест: unit bookings.create.spec.ts, pricing.client.spec.ts, int
 Предусловия: Тарификатор остановлен (или отдаёт мусор)
 Шаги:
   1. Бронь при лежащем сервисе
@@ -1371,7 +1371,7 @@ ID: TC-PRC-008
 
 ID: TC-PRC-009
 Название: Демо-паритет — движок квотит по занятости своей карты
-Приоритет/Тип: Medium / UI    Автотест: web demo-engine.spec.ts «quote: раскладка Тарификатора»
+Приоритет/Тип: Medium / UI    Автотест: web demo-catalog.spec.ts «quote: раскладка Тарификатора»
 Предусловия: демо-режим на Pages
 Шаги:
   1. Демо-бронь на k мест
@@ -1451,7 +1451,7 @@ ID: TC-RLM-005
 
 ID: TC-RLM-006
 Название: E2E стенд — корзина брони и брутфорс входа против живого HTTP
-Приоритет/Тип: High / e2e    Автотест: e2e live.e2e.spec.ts «Привратник: лимиты брони и входа»
+Приоритет/Тип: High / e2e    Автотест: e2e ratelimiter.e2e.spec.ts «Привратник: лимиты брони и входа»
 Предусловия: живой стенд; RATE_BOOKINGS_PER_MIN=30, RATE_LOGIN_PER_MIN=5;
   свежий пользователь
 Шаги:
@@ -1480,7 +1480,7 @@ ID: TC-RLM-007
 
 ID: TC-RLM-008
 Название: Демо-паритет — движок квотит той же арифметикой
-Приоритет/Тип: Medium / демо    Автотест: web demo-engine.spec.ts «Привратник (лимиты частоты)»
+Приоритет/Тип: Medium / демо    Автотест: web demo-ratelimits.spec.ts «Привратник (лимиты частоты)»
 Предусловия: демо-режим на Pages
 Шаги:
   1. 11-я бронь за минуту
