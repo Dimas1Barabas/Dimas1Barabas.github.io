@@ -9,10 +9,13 @@ import (
 
 // Bucket — состояние корзины клиента: остаток токенов и момент
 // последнего решения. nil-корзина = клиента видим впервые:
-// корзина считается полной (capacity).
+// корзина считается полной (capacity). LastTaken — вердикт последней
+// проверки: остаток 0.4 после списания неотличим от отказа с 0.4,
+// витрине нужен явный след.
 type Bucket struct {
 	Tokens    float64
 	UpdatedAt time.Time
+	LastTaken bool
 }
 
 // Decision — вердикт «снять токен».
@@ -40,10 +43,10 @@ func Check(b *Bucket, now time.Time, capacity, refillPerSec float64) (Bucket, De
 	tokens = math.Min(capacity, tokens+elapsed*refillPerSec)
 
 	if tokens >= 1 {
-		next := Bucket{Tokens: tokens - 1, UpdatedAt: now}
+		next := Bucket{Tokens: tokens - 1, UpdatedAt: now, LastTaken: true}
 		return next, Decision{Allowed: true, Remaining: next.Tokens}
 	}
-	next := Bucket{Tokens: tokens, UpdatedAt: now}
+	next := Bucket{Tokens: tokens, UpdatedAt: now, LastTaken: false}
 	return next, Decision{
 		Allowed:    false,
 		RetryAfter: RetryAfter(tokens, refillPerSec),
