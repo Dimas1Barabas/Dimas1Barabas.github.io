@@ -25,6 +25,7 @@ import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Promo } from '../src/promos/promo.entity';
 import { PricingClient } from '../src/pricing/pricing.client';
+import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
 import { User } from '../src/users/user.entity';
 import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
@@ -151,6 +152,7 @@ describe('QR-билеты: HTTP-интеграция (фейковые зави�
         { provide: RemindersClient, useValue: { schedule: jest.fn(async () => ({ status: 'SCHEDULED' })), cancel: jest.fn(async () => ({ status: 'CANCELLED' })) } },
         // Тарификатор: базовая цена без факторов (ценовые кейсы — в pricing.int)
         { provide: PricingClient, useValue: { quote: jest.fn(async (input: { basePriceRub: number }) => ({ priceRub: input.basePriceRub, basePriceRub: input.basePriceRub, factors: [], occupied: 0, capacity: 80 })) } },
+        { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
         { provide: AmqpConnection, useValue: { connected: true, publish: jest.fn() } },
         { provide: DataSource, useValue: { query: jest.fn(async () => [[], 0]) } },
         { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },

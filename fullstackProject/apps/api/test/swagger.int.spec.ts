@@ -9,6 +9,7 @@ import request from 'supertest';
 import { AdminController } from '../src/admin/admin.controller';
 import { AdminStatsService } from '../src/admin/admin-stats.service';
 import { AuthController } from '../src/auth/auth.controller';
+import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
@@ -56,6 +57,7 @@ describe('Swagger UI /api/docs (integration)', () => {
         HealthController,
       ],
       providers: [
+        { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
         { provide: MoviesService, useValue: {} },
         { provide: AdminStatsService, useValue: {} },
         { provide: BookingsService, useValue: {} },

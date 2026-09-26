@@ -1,4 +1,12 @@
-import { Body, Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -8,6 +16,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
@@ -16,6 +25,8 @@ import {
   clearRefreshCookie,
   setRefreshCookie,
 } from '../tokens/cookies';
+import { RateLimited } from '../ratelimiter/rate-limited.decorator';
+import { RateLimitGuard } from '../ratelimiter/rate-limit.guard';
 import { toUserDto, UserDto } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
 import { AuthUser } from './auth-user';
@@ -57,6 +68,8 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @RateLimited('auth.login')
   @ApiOperation({
     summary: 'Вход',
     description:
@@ -65,6 +78,11 @@ export class AuthController {
   })
   @ApiOkResponse({ type: LoginResult })
   @ApiUnauthorizedResponse({ description: 'Неверный email или пароль' })
+  @ApiTooManyRequestsResponse({
+    description:
+      'Слишком много попыток входа (брутфорс) — код rateLimited, ждать `retryAfterSec` ' +
+      '(заголовок Retry-After)',
+  })
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,

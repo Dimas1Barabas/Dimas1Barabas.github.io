@@ -15,6 +15,7 @@ import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Promo } from '../src/promos/promo.entity';
 import { PricingClient } from '../src/pricing/pricing.client';
+import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
 import { User } from '../src/users/user.entity';
 import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
@@ -116,6 +117,7 @@ describe('Pricing (integration)', () => {
         BookingStream,
         SeatStream,
         { provide: PricingClient, useValue: pricing },
+        { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
         { provide: RemindersClient, useValue: { schedule: jest.fn(), cancel: jest.fn() } },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         { provide: getRepositoryToken(Movie), useValue: { findOneByOrFail: jest.fn(async () => movieFixture) } },

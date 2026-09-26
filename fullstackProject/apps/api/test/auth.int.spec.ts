@@ -19,6 +19,7 @@ import { AuthController } from '../src/auth/auth.controller';
 import { AuthUser } from '../src/auth/auth-user';
 import { AuthService } from '../src/auth/auth.service';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
+import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { RefreshToken } from '../src/tokens/refresh-token.entity';
@@ -224,6 +225,8 @@ describe('POST /api/auth/* (integration)', () => {
         // как в app.module.ts: всё закрыто JWT по умолчанию, @Public открывает
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
+        // фейк Привратника: гвард лимитов на login() видит «всегда можно»
+        { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
         {
           provide: ConfigService,
           useValue: {

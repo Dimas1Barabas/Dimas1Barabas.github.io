@@ -9,6 +9,7 @@ import {
   Query,
   Req,
   Sse,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -20,12 +21,15 @@ import {
   ApiOperation,
   ApiQuery,
   ApiTags,
+  ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { interval, merge, map, Observable } from 'rxjs';
 import { AuthUser } from '../auth/auth-user';
 import { Public } from '../auth/public.decorator';
 import { Roles } from '../auth/roles.decorator';
+import { RateLimited } from '../ratelimiter/rate-limited.decorator';
+import { RateLimitGuard } from '../ratelimiter/rate-limit.guard';
 import { BookingDto } from './booking.entity';
 import { BookingStream } from './booking-stream';
 import { BookingsService } from './bookings.service';
@@ -48,6 +52,8 @@ export class BookingsController {
   /** покупает билет тот, кто предъявил токен: имя и владелец — из JWT */
   @Post()
   @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @RateLimited('bookings.create')
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Создать бронь (резерв мест)',
@@ -61,6 +67,11 @@ export class BookingsController {
   @ApiUnauthorizedResponse({ description: 'Нет JWT' })
   @ApiNotFoundResponse({ description: 'Сеанс не найден' })
   @ApiConflictResponse({ description: 'Места уже заняты — код seatsTaken, список в теле' })
+  @ApiTooManyRequestsResponse({
+    description:
+      'Лимит броней в минуту исчерпан — код rateLimited, ждать `retryAfterSec` ' +
+      '(заголовок Retry-After)',
+  })
   create(@Body() dto: CreateBookingDto, @Req() req: { user: AuthUser }) {
     return this.bookings.create(dto, req.user);
   }

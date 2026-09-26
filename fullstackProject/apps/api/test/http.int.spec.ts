@@ -26,6 +26,7 @@ import { Booking } from '../src/bookings/booking.entity';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { Promo } from '../src/promos/promo.entity';
 import { PricingClient } from '../src/pricing/pricing.client';
+import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
 import { User } from '../src/users/user.entity';
 import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
@@ -404,6 +405,7 @@ describe('CineBooking API: HTTP-интеграция (фейковые зави�
         { provide: getRepositoryToken(User), useValue: { findOneByOrFail: jest.fn() } },
         { provide: RemindersClient, useValue: remindersFake() },
         { provide: PricingClient, useValue: pricingFake() },
+        { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
         { provide: AmqpConnection, useValue: { publish: rabbitPublish, connected: true } },
         {
           provide: DataSource,

@@ -6,6 +6,7 @@ import { Promo } from '../promos/promo.entity';
 import { Session } from '../movies/session.entity';
 import { PricingClient } from '../pricing/pricing.client';
 import { rabbitMqModule } from '../rabbit/rabbitmq.config';
+import { RatelimiterModule } from '../ratelimiter/ratelimiter.module';
 import { RemindersClient } from '../reminders/reminders.client';
 import { User } from '../users/user.entity';
 import { WaitlistEntry } from '../waitlist/waitlist.entity';
@@ -38,6 +39,8 @@ import { SeatStream } from './seat-stream';
       BonusTransaction,
       User,
     ]),
+    // RatelimiterModule — гвард лимитов на create() (клиент gRPC общий)
+    RatelimiterModule,
     rabbitMqModule,
   ],
   controllers: [BookingsController, SeatsController, SessionPriceController],
