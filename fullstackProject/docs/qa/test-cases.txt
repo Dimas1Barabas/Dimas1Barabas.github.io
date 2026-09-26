@@ -167,7 +167,7 @@ ID: TC-CAN-005
 
 ID: TC-CAN-006
 Название: Идемпотентность consumer'а при ределивери
-Приоритет/Тип: Medium / О        Автотест: http.int.spec.ts + bookings.service.spec
+Приоритет/Тип: Medium / О        Автотест: http.int.spec.ts + bookings.verdicts.spec
 Предусловия: бронь уже CANCELLED, места освобождены
 Шаги: повторно вызвать обработку booking.refunded для той же брони
 Ожидаемый результат: событие пропущено без изменений в БД и без повторного
@@ -1151,7 +1151,7 @@ ID: TC-REC-007
 
 ID: TC-REC-008
 Название: Отказоустойчивость фасада и UI — unavailable не ошибка; кэш и демо
-Приоритет/Тип: High / О       Автотест: recommendations.int.spec.ts, web store/HomeView, demo-engine.spec
+Приоритет/Тип: High / О       Автотест: recommendations.int.spec.ts, web store/HomeView, demo-recommendations.spec
 Предусловия: вошедший зритель; сервис остановлен для ветки unavailable
 Шаги:
   1. Запросить топ при лежащем сервисе
