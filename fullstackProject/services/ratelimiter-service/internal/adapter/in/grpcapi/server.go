@@ -6,10 +6,12 @@ import (
 	"context"
 	"errors"
 	"math"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"ratelimiter-service/internal/adapter/out/prom"
 	"ratelimiter-service/internal/domain"
 	pb "ratelimiter-service/internal/pb"
 	"ratelimiter-service/internal/service"
@@ -21,10 +23,11 @@ type Server struct {
 	pb.UnimplementedRateLimiterServer
 	svc       *service.Limiter
 	policies  map[domain.Action]domain.Policy // для limit/capacity в ответе
+	metrics   *prom.Metrics
 }
 
-func New(svc *service.Limiter) *Server {
-	return &Server{svc: svc, policies: svc.Policies()}
+func New(svc *service.Limiter, metrics *prom.Metrics) *Server {
+	return &Server{svc: svc, policies: svc.Policies(), metrics: metrics}
 }
 
 // Check: снять токен корзины. Пустые поля — InvalidArgument; действие
@@ -39,13 +42,16 @@ func (s *Server) Check(ctx context.Context, req *pb.CheckRateRequest) (*pb.Check
 		return nil, status.Error(codes.InvalidArgument, "key обязателен")
 	}
 
+	startedAt := time.Now()
 	d, err := s.svc.Check(ctx, req.GetAction(), req.GetKey())
 	if err != nil {
 		if errors.Is(err, domain.ErrUnknownAction) {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
+		s.metrics.Error(req.GetAction())
 		return nil, status.Error(codes.Internal, "хранилище корзин недоступно")
 	}
+	s.metrics.Check(req.GetAction(), d.Allowed, time.Since(startedAt).Seconds())
 
 	p := s.policies[domain.Action(req.GetAction())]
 	return &pb.CheckRateResponse{

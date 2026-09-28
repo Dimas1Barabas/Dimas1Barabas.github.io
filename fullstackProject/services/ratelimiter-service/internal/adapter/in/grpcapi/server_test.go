@@ -3,6 +3,9 @@ package grpcapi
 import (
 	"context"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -12,24 +15,27 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"ratelimiter-service/internal/adapter/out/memory"
+	"ratelimiter-service/internal/adapter/out/prom"
 	"ratelimiter-service/internal/domain"
 	pb "ratelimiter-service/internal/pb"
 	"ratelimiter-service/internal/service"
 )
 
 // start поднимает сервер на bufconn-листенере и клиента к нему:
-// сквозной путь Check без сети, поверх памяти-стора.
-func start(t *testing.T) pb.RateLimiterClient {
+// сквозной путь Check без сети, поверх памяти-стора. Промо-счётчики
+// возвращаются наружу — тесты сверяют вердикты с выгрузкой.
+func start(t *testing.T) (pb.RateLimiterClient, *prom.Metrics) {
 	t.Helper()
 	policies := map[domain.Action]domain.Policy{
 		domain.ActionBookingsCreate: domain.PolicyOf(10),
 		domain.ActionAuthLogin:      domain.PolicyOf(5),
 	}
 	limiter := service.NewLimiter(memory.NewStore(), policies)
+	metrics := prom.New()
 
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
-	pb.RegisterRateLimiterServer(srv, New(limiter))
+	pb.RegisterRateLimiterServer(srv, New(limiter, metrics))
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 
@@ -43,7 +49,7 @@ func start(t *testing.T) pb.RateLimiterClient {
 		t.Fatalf("клиент bufconn: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	return pb.NewRateLimiterClient(conn)
+	return pb.NewRateLimiterClient(conn), metrics
 }
 
 func checkRequest() *pb.CheckRateRequest {
@@ -51,7 +57,7 @@ func checkRequest() *pb.CheckRateRequest {
 }
 
 func TestCheckBurstThenRefused(t *testing.T) {
-	client := start(t)
+	client, _ := start(t)
 	ctx := context.Background()
 
 	for i := 0; i < 10; i++ {
@@ -84,7 +90,7 @@ func TestCheckBurstThenRefused(t *testing.T) {
 }
 
 func TestCheckSeparateBuckets(t *testing.T) {
-	client := start(t)
+	client, _ := start(t)
 	ctx := context.Background()
 
 	// выжигаем корзину входа конкретного ящика
@@ -107,7 +113,7 @@ func TestCheckSeparateBuckets(t *testing.T) {
 }
 
 func TestCheckValidation(t *testing.T) {
-	client := start(t)
+	client, _ := start(t)
 	for _, tc := range []struct {
 		name string
 		mut  func(*pb.CheckRateRequest)
@@ -123,5 +129,34 @@ func TestCheckValidation(t *testing.T) {
 				t.Fatalf("код = %v, want InvalidArgument", status.Code(err))
 			}
 		})
+	}
+}
+
+// вердикты RPC обязаны отражаться в выгрузке Prometheus: burst 10
+// пропусков + один отказ по тому же действию
+func TestCheckMetricsMirrorVerdicts(t *testing.T) {
+	client, metrics := start(t)
+	ctx := context.Background()
+
+	for i := 0; i < 10; i++ {
+		if _, err := client.Check(ctx, checkRequest()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := client.Check(ctx, checkRequest()); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		`cine_ratelimiter_checks_total{action="bookings.create",decision="allowed"} 10`,
+		`cine_ratelimiter_checks_total{action="bookings.create",decision="denied"} 1`,
+		`cine_ratelimiter_check_duration_seconds_count{action="bookings.create"} 11`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("в выгрузке нет строки %q", want)
+		}
 	}
 }

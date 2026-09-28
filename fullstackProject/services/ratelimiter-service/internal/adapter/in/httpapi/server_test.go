@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"ratelimiter-service/internal/adapter/out/memory"
+	"ratelimiter-service/internal/adapter/out/prom"
 	"ratelimiter-service/internal/domain"
 	"ratelimiter-service/internal/service"
 )
@@ -18,7 +19,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 		domain.ActionAuthLogin:      domain.PolicyOf(5),
 	}
 	svc := service.NewLimiter(memory.NewStore(), policies)
-	srv := New(":0", svc)
+	srv := New(":0", svc, prom.New().Handler())
 	ts := httptest.NewServer(srv.Handler)
 	t.Cleanup(ts.Close)
 	return ts
@@ -52,7 +53,7 @@ func TestBucketsShowcase(t *testing.T) {
 	_, _ = svc.Check(context.Background(), "bookings.create", "u-1")
 	_, _ = svc.Check(context.Background(), "bookings.create", "u-1")
 
-	ts2 := httptest.NewServer(New(":0", svc).Handler)
+	ts2 := httptest.NewServer(New(":0", svc, prom.New().Handler()).Handler)
 	defer ts2.Close()
 
 	res, err := ts2.Client().Get(ts2.URL + "/buckets")

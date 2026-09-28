@@ -26,6 +26,7 @@ import (
 	"ratelimiter-service/internal/adapter/in/httpapi"
 	"ratelimiter-service/internal/adapter/out/memory"
 	"ratelimiter-service/internal/adapter/out/postgres"
+	"ratelimiter-service/internal/adapter/out/prom"
 	"ratelimiter-service/internal/config"
 	"ratelimiter-service/internal/domain"
 	pb "ratelimiter-service/internal/pb"
@@ -67,6 +68,8 @@ func main() {
 		domain.ActionAuthLogin:      domain.PolicyOf(cfg.RateLoginPerMin),
 	}
 	limiter := service.NewLimiter(store, policies)
+	// счётчики вердиктов/длительностей Check — на границе gRPC-адаптера
+	metrics := prom.New()
 
 	// gRPC — главный интерфейс: токены спрашивают гварды NestJS API
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
@@ -74,14 +77,14 @@ func main() {
 		log.Fatalf("слушать %s: %v", cfg.GRPCAddr, err)
 	}
 	grpcSrv := grpc.NewServer()
-	pb.RegisterRateLimiterServer(grpcSrv, grpcapi.New(limiter))
+	pb.RegisterRateLimiterServer(grpcSrv, grpcapi.New(limiter, metrics))
 	// reflection — для grpcurl-проверок на живом стенде
 	reflection.Register(grpcSrv)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	httpSrv := httpapi.Start(cfg.HTTPAddr, limiter)
+	httpSrv := httpapi.Start(cfg.HTTPAddr, limiter, metrics.Handler())
 
 	go func() {
 		log.Printf("gRPC RateLimiter на %s", cfg.GRPCAddr)

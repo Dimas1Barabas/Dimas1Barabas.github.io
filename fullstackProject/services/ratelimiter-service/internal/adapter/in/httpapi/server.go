@@ -13,24 +13,26 @@ import (
 )
 
 // Start поднимает HTTP-сервер в горутине; Shutdown — обязанность main.
-func Start(addr string, svc *service.Limiter) *http.Server {
-	srv := New(addr, svc)
+// metricsHandler — prometheus-выгрузка адаптера out/prom.
+func Start(addr string, svc *service.Limiter, metricsHandler http.Handler) *http.Server {
+	srv := New(addr, svc, metricsHandler)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("http: %v", err)
 		}
 	}()
-	log.Printf("http: /health, /buckets на %s", addr)
+	log.Printf("http: /health, /buckets и /metrics на %s", addr)
 	return srv
 }
 
 // New собирает сервер без запуска — для main и тестов.
-func New(addr string, svc *service.Limiter) *http.Server {
+func New(addr string, svc *service.Limiter, metricsHandler http.Handler) *http.Server {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.Handle("/metrics", metricsHandler)
 
 	// витрина корзин: остатки токенов и вердикты последних проверок,
 	// свежие сверху — видно, как лимит режет спам
@@ -56,7 +58,7 @@ func New(addr string, svc *service.Limiter) *http.Server {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"service":   "ratelimiter-service",
-			"endpoints": []string{"/health", "/buckets"},
+			"endpoints": []string{"/health", "/buckets", "/metrics"},
 		})
 	})
 
