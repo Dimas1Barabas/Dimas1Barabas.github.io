@@ -220,5 +220,16 @@ services:
     # без restart-политики: контейнеры не поднимаются сами при старте Docker Desktop —
     # только по `docker compose up`
 
+  # Prometheus — скрейпер метрик: опрашивает /metrics всех сервисов
+  # и RabbitMQ (встроенный плагин, 15692) каждые 5с, историю держит
+  # в собственной TSDB. Grafana рисует дашборды поверх него.
+  # host-порт 19090 (9090 на хосте не занят, но держим конвенцию 1xxxx)
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - '19090:9090'
+
 volumes:
   pgdata:

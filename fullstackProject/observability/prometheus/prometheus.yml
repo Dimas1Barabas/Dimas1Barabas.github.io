@@ -1,0 +1,57 @@
+# Конфигурация Prometheus для стенда CineBooking.
+#
+# Скрейпим всё внутри сети compose (контейнер:порт), наружу торчат только
+# UI-порты. API живёт под глобальным префиксом /api — метрики на
+# /api/metrics; Go-сервисы отдают /metrics рядом с /health и витринами.
+# RabbitMQ-образ management включает плагин rabbitmq_prometheus —
+# метрики брокера сами лежат на 15692 без настроек.
+#
+# Интервал 5с: стендовой демо-нагрузке хватает событий за минуту,
+# а графики в Grafana оживают сразу.
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # NestJS API: HTTP-гистограммы + nodejs/process-метрики prom-client
+  - job_name: api
+    metrics_path: /api/metrics
+    static_configs:
+      - targets: ['api:3000']
+
+  # Go-воркер оплаты: вердикты брони, возвраты, uptime
+  - job_name: ticket-worker
+    static_configs:
+      - targets: ['ticket-worker:8081']
+
+  # Уведомления: письма по типам, сбои доставки
+  - job_name: notification
+    static_configs:
+      - targets: ['notification:8080']
+
+  # КиноСоветник: топы и сигналы зрителей
+  - job_name: recommendation
+    static_configs:
+      - targets: ['recommendation:8085']
+
+  # Напоминания: планирования, гашения, ушедшие письма
+  - job_name: reminder
+    static_configs:
+      - targets: ['reminder:8087']
+
+  # Тарификатор: котировки, распределение цен, события спроса
+  - job_name: pricing
+    static_configs:
+      - targets: ['pricing:8089']
+
+  # Привратник: вердикты корзин, длительности Check
+  - job_name: ratelimiter
+    static_configs:
+      - targets: ['ratelimiter:8091']
+
+  # Брокер: очереди, публикации/доставки, соединения
+  # (встроенный плагин rabbitmq_prometheus)
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ['rabbitmq:15692']
