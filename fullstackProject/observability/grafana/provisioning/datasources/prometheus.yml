@@ -1,0 +1,16 @@
+# Источник данных: TSDB Prometheus из той же сети compose.
+# Фиксированный uid «prometheus» — дашборды ссылаются на него
+# в панели-конфигах, имена можно менять свободно.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 5s

@@ -1,0 +1,15 @@
+# Провайдер дашбордов: JSON-файлы из /var/lib/grafana/dashboards
+# подхватываются при старте и обновляются при изменении файлов
+# (папка примонтирована из observability/grafana/dashboards).
+
+apiVersion: 1
+
+providers:
+  - name: cine-booking
+    folder: CineBooking
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

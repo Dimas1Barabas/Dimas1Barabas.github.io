@@ -231,5 +231,24 @@ services:
     ports:
       - '19090:9090'
 
+  # Grafana — витрина метрик: датасорс и дашборды провиженятся из
+  # observability/grafana при старте, ручных настроек в UI не нужно.
+  # Анонимный Viewer — дашборды открываются без логина (демо);
+  # admin-вход — для правок. host-порт 19000 (3000 занят API-стендом)
+  grafana:
+    image: grafana/grafana:11.5.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-cine}
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - '19000:3000'
+    depends_on:
+      - prometheus
+
 volumes:
   pgdata:
