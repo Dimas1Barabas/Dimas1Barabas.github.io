@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"pricing-service/internal/adapter/out/prom"
 	"pricing-service/internal/domain"
 	pb "pricing-service/internal/pb"
 	"pricing-service/internal/service"
@@ -19,11 +20,12 @@ import (
 // будущим методам контракта.
 type Server struct {
 	pb.UnimplementedPricingServer
-	svc *service.Pricer
+	svc     *service.Pricer
+	metrics *prom.Metrics
 }
 
-func New(svc *service.Pricer) *Server {
-	return &Server{svc: svc}
+func New(svc *service.Pricer, metrics *prom.Metrics) *Server {
+	return &Server{svc: svc, metrics: metrics}
 }
 
 // Quote: цена места сеанса с раскладкой факторов. Мусор в запросе
@@ -37,6 +39,7 @@ func (s *Server) Quote(ctx context.Context, req *pb.QuoteRequest) (*pb.QuoteResp
 	if req.GetSessionId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "sessionId обязателен")
 	}
+	startedAt := time.Now()
 	quote, err := s.svc.Quote(ctx, service.QuoteRequest{
 		SessionID:    req.GetSessionId(),
 		SessionAt:    sessionAt,
@@ -47,8 +50,10 @@ func (s *Server) Quote(ctx context.Context, req *pb.QuoteRequest) (*pb.QuoteResp
 		if errors.Is(err, domain.ErrInvalidQuote) {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
+		s.metrics.QuoteError(time.Since(startedAt).Seconds())
 		return nil, status.Error(codes.Internal, "хранилище спроса недоступно")
 	}
+	s.metrics.QuoteOk(quote.PriceRub, time.Since(startedAt).Seconds())
 	factors := make([]*pb.PriceFactor, 0, len(quote.Factors))
 	for _, f := range quote.Factors {
 		factors = append(factors, &pb.PriceFactor{

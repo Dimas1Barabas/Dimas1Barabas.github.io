@@ -25,6 +25,7 @@ import (
 	"pricing-service/internal/adapter/in/httpapi"
 	"pricing-service/internal/adapter/out/memory"
 	"pricing-service/internal/adapter/out/postgres"
+	"pricing-service/internal/adapter/out/prom"
 	"pricing-service/internal/config"
 	"pricing-service/internal/domain"
 	pb "pricing-service/internal/pb"
@@ -57,7 +58,9 @@ func main() {
 	}
 
 	pricer := service.NewPricer(store)
-	consumer := amqp.New(cfg.AMQPURL, pricer, cfg.MaxAttempts, cfg.RetryTTLMs)
+	// счётчики котировок/спроса — на границах gRPC и amqp-адаптеров
+	metrics := prom.New()
+	consumer := amqp.New(cfg.AMQPURL, pricer, metrics, cfg.MaxAttempts, cfg.RetryTTLMs)
 
 	// gRPC — главный интерфейс: квот цены спрашивает NestJS API
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
@@ -65,14 +68,14 @@ func main() {
 		log.Fatalf("слушать %s: %v", cfg.GRPCAddr, err)
 	}
 	grpcSrv := grpc.NewServer()
-	pb.RegisterPricingServer(grpcSrv, grpcapi.New(pricer))
+	pb.RegisterPricingServer(grpcSrv, grpcapi.New(pricer, metrics))
 	// reflection — для grpcurl-проверок на живом стенде
 	reflection.Register(grpcSrv)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	httpSrv := httpapi.Start(cfg.HTTPAddr, pricer)
+	httpSrv := httpapi.Start(cfg.HTTPAddr, pricer, metrics.Handler())
 
 	go func() {
 		log.Printf("gRPC Pricing на %s", cfg.GRPCAddr)

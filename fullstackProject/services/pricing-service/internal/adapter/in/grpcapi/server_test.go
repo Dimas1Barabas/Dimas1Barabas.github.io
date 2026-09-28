@@ -3,6 +3,9 @@ package grpcapi
 import (
 	"context"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +17,7 @@ import (
 
 	"fmt"
 	"pricing-service/internal/adapter/out/memory"
+	"pricing-service/internal/adapter/out/prom"
 	pb "pricing-service/internal/pb"
 	"pricing-service/internal/service"
 )
@@ -21,13 +25,14 @@ import (
 // start поднимает сервер на bufconn-листенере и клиента к нему.
 // Спрос в тестах гоняется через те же use-case'ы, что и консьюмер:
 // held/released → Quote, сквозной путь без брокера.
-func start(t *testing.T) (pb.PricingClient, *service.Pricer) {
+func start(t *testing.T) (pb.PricingClient, *service.Pricer, *prom.Metrics) {
 	t.Helper()
 	pricer := service.NewPricer(memory.NewStore())
+	metrics := prom.New()
 
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
-	pb.RegisterPricingServer(srv, New(pricer))
+	pb.RegisterPricingServer(srv, New(pricer, metrics))
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 
@@ -41,7 +46,7 @@ func start(t *testing.T) (pb.PricingClient, *service.Pricer) {
 		t.Fatalf("клиент bufconn: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	return pb.NewPricingClient(conn), pricer
+	return pb.NewPricingClient(conn), pricer, metrics
 }
 
 func quoteRequest() *pb.QuoteRequest {
@@ -54,7 +59,7 @@ func quoteRequest() *pb.QuoteRequest {
 }
 
 func TestQuoteOk(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	resp, err := client.Quote(context.Background(), quoteRequest())
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +80,7 @@ func TestQuoteOk(t *testing.T) {
 }
 
 func TestQuoteEndToEndDemand(t *testing.T) {
-	client, pricer := start(t)
+	client, pricer, _ := start(t)
 	ctx := context.Background()
 	// десять броней по 7 мест — 70/80 (87%), аншлаг поверх вечера
 	for i := 0; i < 10; i++ {
@@ -114,7 +119,7 @@ func TestQuoteEndToEndDemand(t *testing.T) {
 }
 
 func TestQuoteGarbageSessionAt(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	req := quoteRequest()
 	req.SessionAt = "завтра"
 	if _, err := client.Quote(context.Background(), req); status.Code(err) != codes.InvalidArgument {
@@ -127,7 +132,7 @@ func TestQuoteGarbageSessionAt(t *testing.T) {
 }
 
 func TestQuoteValidation(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	for _, tc := range []struct {
 		name string
 		mut  func(*pb.QuoteRequest)
@@ -143,5 +148,31 @@ func TestQuoteValidation(t *testing.T) {
 				t.Fatalf("код = %v, want InvalidArgument", status.Code(err))
 			}
 		})
+	}
+}
+
+// котировки обязаны отражаться в выгрузке: счётчик результата,
+// бакет цены и счётчик длительности
+func TestQuoteMetricsMirror(t *testing.T) {
+	client, _, metrics := start(t)
+	resp, err := client.Quote(context.Background(), quoteRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		`cine_pricing_quotes_total{result="ok"} 1`,
+		"cine_pricing_quote_duration_seconds_count 1",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("в выгрузке нет строки %q", want)
+		}
+	}
+	// 430 руб попадает в бакет 500 («_bucket» с le=500 больше нуля)
+	if !strings.Contains(body, `cine_pricing_quote_price_rub_bucket{le="500"} 1`) {
+		t.Errorf("цена %d не попала в бакет le=500:\n%s", resp.GetPriceRub(), body)
 	}
 }

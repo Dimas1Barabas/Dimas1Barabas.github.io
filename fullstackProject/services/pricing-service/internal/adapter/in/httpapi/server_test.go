@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"pricing-service/internal/adapter/out/memory"
+	"pricing-service/internal/adapter/out/prom"
 	"pricing-service/internal/service"
 )
 
 func TestHealth(t *testing.T) {
-	srv := New("127.0.0.1:0", service.NewPricer(memory.NewStore()))
+	srv := New("127.0.0.1:0", service.NewPricer(memory.NewStore()), prom.New().Handler())
 	rec := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rec, httptest.NewRequest("GET", "/health", nil))
 	if rec.Code != 200 {
@@ -44,7 +45,7 @@ func TestPricesShowcase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv := New("127.0.0.1:0", svc)
+	srv := New("127.0.0.1:0", svc, prom.New().Handler())
 
 	rec := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rec, httptest.NewRequest("GET", "/prices", nil))

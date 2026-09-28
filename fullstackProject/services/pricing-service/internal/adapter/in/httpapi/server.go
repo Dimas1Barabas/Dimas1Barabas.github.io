@@ -13,24 +13,26 @@ import (
 )
 
 // Start поднимает HTTP-сервер в горутине; Shutdown — обязанность main.
-func Start(addr string, svc *service.Pricer) *http.Server {
-	srv := New(addr, svc)
+// metricsHandler — prometheus-выгрузка адаптера out/prom.
+func Start(addr string, svc *service.Pricer, metricsHandler http.Handler) *http.Server {
+	srv := New(addr, svc, metricsHandler)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("http: %v", err)
 		}
 	}()
-	log.Printf("http: /health, /prices и /demand на %s", addr)
+	log.Printf("http: /health, /prices, /demand и /metrics на %s", addr)
 	return srv
 }
 
 // New собирает сервер без запуска — для main и тестов.
-func New(addr string, svc *service.Pricer) *http.Server {
+func New(addr string, svc *service.Pricer, metricsHandler http.Handler) *http.Server {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.Handle("/metrics", metricsHandler)
 
 	// витрина истории: проведённые квоты с раскладкой факторов,
 	// свежими сверху — видно, как цена дышит вместе со спросом
@@ -74,7 +76,7 @@ func New(addr string, svc *service.Pricer) *http.Server {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"service":   "pricing-service",
-			"endpoints": []string{"/health", "/prices", "/demand"},
+			"endpoints": []string{"/health", "/prices", "/demand", "/metrics"},
 		})
 	})
 
