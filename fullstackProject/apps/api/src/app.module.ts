@@ -10,6 +10,7 @@ import { RolesGuard } from './auth/roles.guard';
 import { BookingsModule } from './bookings/bookings.module';
 import { dataSourceOptions } from './data-source';
 import { HealthController } from './health/health.controller';
+import { MetricsModule } from './metrics/metrics.module';
 import { MoviesModule } from './movies/movies.module';
 import { PromosModule } from './promos/promos.module';
 import { rabbitMqModule } from './rabbit/rabbitmq.config';
@@ -40,6 +41,7 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     rabbitMqModule,
 
     RedisModule,
+    MetricsModule,
     MoviesModule,
     BookingsModule,
     ReviewsModule,
