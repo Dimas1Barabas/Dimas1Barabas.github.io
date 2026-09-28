@@ -51,6 +51,8 @@ docker compose up --build
 | reminder (Go, gRPC) | localhost:18086 (gRPC, reflection); http://localhost:18087/reminders | напоминания «скоро сеанс»: витрина очереди и отправленных писем |
 | pricing (Go, gRPC) | localhost:18088 (gRPC, reflection); http://localhost:18089/prices | «Тарификатор»: история квотов с раскладкой факторов, проекция спроса |
 | ratelimiter (Go, gRPC) | localhost:18090 (gRPC, reflection); http://localhost:18091/buckets | «Привратник»: витрина token-корзин лимитов (бронь, вход) |
+| Prometheus | http://localhost:19090 | UI скрейпера: таргеты, метрики, TSDB |
+| Grafana | http://localhost:19000 | дашборды без логина (Viewer); admin — вход для правок |
 | PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications + cine_recommendations + cine_reminders + cine_prices + cine_ratekeeper |
 | Redis | localhost:6379 | кэш фильмов, TTL 60 c |
 
@@ -150,7 +152,7 @@ docker compose exec postgres dropdb -U cine cine_empty
 # среза (eslint-plugin-boundaries, политика — в eslint.config.js)
 cd apps/web && npm run lint && npm test
 
-# API: юнит (261 тест) — логика брони, места/конфликт, pay/expire/cancel,
+# API: юнит (272 теста) — логика брони, места/конфликт, pay/expire/cancel,
 # SSE, кэш, расписание сеансов, health, пользователи/посев админа,
 # JWT-логин, retry/parking, отзывы (право/дубль/агрегаты/удаление),
 # промокоды (скидка-математика, превью, атомарное списание в оплате,
@@ -163,7 +165,9 @@ cd apps/web && npm run lint && npm test
 # дней, кэш), токены сессий (ротация, reuse-detection, гонки),
 # forgot/reset пароля и клиент Тарификатора (gRPC-дедлайн на мёртвом
 # адресе, квот в чеке create, fallback на базовую цену), клиент
-# Привратника (контракт грузится, дедлайн на мёртвом адресе)
+# Привратника (контракт грузится, дедлайн на мёртвом адресе),
+# метрики Prometheus (лейблы 200/404/500, обрыв потока, @Public
+# витрины, собственный реестр у инстанса)
 cd apps/api && npm test
 
 # API: интеграционные (177) — полный HTTP-стек Nest (роутинг, ValidationPipe,
@@ -864,6 +868,42 @@ WebSocket: `@nestjs/platform-ws` на бэкенде, нативный `WebSocke
   с остатками токенов). Лимит брони на стенде — 30/мин: e2e-сьют сам
   создаёт больше десяти броней в минуту ботовским пользователем, честные
   10/мин — продуктовые дефолты Go-сервиса и демо.
+
+### Мониторинг: Prometheus + Grafana
+
+Метрики собирает Prometheus (скрейп `/metrics` всех сервисов раз в 5 с +
+встроенный плагин `rabbitmq_prometheus` брокера на 15692), рисует Grafana:
+датасорс и три дашборда провижинятся из `observability/` при старте,
+ручных настроек в UI не нужно.
+
+- **Стенд**: Grafana `:19000` — анонимный Viewer, дашборды открываются
+  без логина (демо); вход `admin` / `GRAFANA_PASSWORD` (дефолт `cine`) —
+  для правок. UI самого Prometheus — `:19090` (таргеты и сырые метрики).
+  Витрина API — `GET /api/metrics` (публичный `@Public`-эндпоинт,
+  exposition v0.0.4).
+- **Дашборды** (папка `observability/grafana/dashboards`, обновляются
+  при изменении файлов): «Стенд» — up-статусы таргетов, in-flight и
+  аптайм, RSS/горутины, очереди и потоки RabbitMQ; «API» — RPS
+  и p95 latency по маршрутам, статусы, 5xx, event loop lag, куча,
+  активные хендлы (SSE/WS видно живьём); «Go-сервисы» — вердикты/возвраты
+  воркера, письма по типам, вердикты Привратника и p95 Check, котировки
+  и распределение цен p50/p90, топы/сигналы КиноСоветника, напоминания.
+- **Кто что экспортирует**: API — prom-client с собственным Registry:
+  глобальный интерцептор пишет гистограмму
+  `cine_api_http_request_duration_seconds{method,route,status}`
+  (лейбл route — шаблон `/api/bookings/:id`, id не плодят ряды)
+  и gauge in-flight + стандартные `process_*`/`nodejs_*`; ticket-worker —
+  pull-коллектор читает атомики `stats.Stats` на скрейпе
+  (`cine_worker_verdicts_total{verdict}` и др.); notification —
+  prom-обёртка второй реализацией порта `domain.Metrics` (JSON-витрина
+  `/stats` не меняется); синхронные gRPC-сервисы (pricing, ratelimiter,
+  recommendation, reminder) считают метрики на границах входящих
+  адаптеров. Все Go-сервисы держат собственный Registry (не глобальный)
+  и отдают стандартные `go_*`/`process_*`.
+- **Кастомизация**: цели скрейпа — `observability/prometheus/prometheus.yml`
+  (джоба `api` ходит на `/api/metrics` из-за глобального префикса);
+  дашборды — JSON в `observability/grafana/dashboards`, датасорс
+  фиксирован uid `prometheus`.
 
 ### Админ-аналитика
 
