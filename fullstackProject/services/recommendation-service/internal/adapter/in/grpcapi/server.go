@@ -6,10 +6,12 @@ package grpcapi
 import (
 	"context"
 	"errors"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"recommendation-service/internal/adapter/out/prom"
 	"recommendation-service/internal/domain"
 	pb "recommendation-service/internal/pb"
 	"recommendation-service/internal/service"
@@ -19,11 +21,12 @@ import (
 // будущим методам контракта.
 type Server struct {
 	pb.UnimplementedRecommendationsServer
-	svc *service.Advisor
+	svc     *service.Advisor
+	metrics *prom.Metrics
 }
 
-func New(svc *service.Advisor) *Server {
-	return &Server{svc: svc}
+func New(svc *service.Advisor, metrics *prom.Metrics) *Server {
+	return &Server{svc: svc, metrics: metrics}
 }
 
 // GetRecommendations: userId → топ афиши. Доменные ошибки переводятся
@@ -40,13 +43,16 @@ func (s *Server) GetRecommendations(ctx context.Context, req *pb.Recommendations
 		})
 	}
 
+	startedAt := time.Now()
 	rec, err := s.svc.Recommend(ctx, req.GetUserId(), candidates, int(req.GetLimit()))
 	if err != nil {
 		if errors.Is(err, domain.ErrEmptyUserID) {
 			return nil, status.Error(codes.InvalidArgument, "userId обязателен")
 		}
+		s.metrics.TopError(time.Since(startedAt).Seconds())
 		return nil, status.Error(codes.Internal, "хранилище сигналов недоступно")
 	}
+	s.metrics.TopOk(time.Since(startedAt).Seconds())
 
 	items := make([]*pb.RecommendationItem, 0, len(rec.Items))
 	for _, it := range rec.Items {

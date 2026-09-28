@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"recommendation-service/internal/adapter/out/memory"
+	"recommendation-service/internal/adapter/out/prom"
 	"recommendation-service/internal/domain"
 	"recommendation-service/internal/service"
 )
@@ -14,7 +15,7 @@ import (
 func start(t *testing.T) (*httptest.Server, *service.Advisor) {
 	t.Helper()
 	advisor := service.NewAdvisor(memory.NewStore())
-	ts := httptest.NewServer(New("test", advisor).Handler)
+	ts := httptest.NewServer(New("test", advisor, prom.New().Handler()).Handler)
 	t.Cleanup(ts.Close)
 	return ts, advisor
 }

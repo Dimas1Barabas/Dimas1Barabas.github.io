@@ -12,6 +12,7 @@ import (
 
 	amqp091 "github.com/rabbitmq/amqp091-go"
 
+	"recommendation-service/internal/adapter/out/prom"
 	"recommendation-service/internal/domain"
 	"recommendation-service/internal/service"
 )
@@ -33,14 +34,15 @@ const (
 type Consumer struct {
 	amqpURL string
 	svc     *service.Advisor
+	metrics *prom.Metrics
 
 	maxAttempts int
 	retryTTLMs  int
 }
 
 // New — адаптер получает готовый use-case; кто за ним стоит, его не волнует.
-func New(amqpURL string, svc *service.Advisor, maxAttempts, retryTTLMs int) *Consumer {
-	return &Consumer{amqpURL: amqpURL, svc: svc, maxAttempts: maxAttempts, retryTTLMs: retryTTLMs}
+func New(amqpURL string, svc *service.Advisor, metrics *prom.Metrics, maxAttempts, retryTTLMs int) *Consumer {
+	return &Consumer{amqpURL: amqpURL, svc: svc, metrics: metrics, maxAttempts: maxAttempts, retryTTLMs: retryTTLMs}
 }
 
 // Run держит одно подключение до отмены контекста; реконнект с бэкоффом —
@@ -104,9 +106,11 @@ func (c *Consumer) handle(ch *amqp091.Channel, d amqp091.Delivery) {
 			return
 		}
 		// собственный сбой (хранилище) — транзиентный, ретраим
+		c.metrics.AmqpError()
 		c.retryOrFail(ch, d, false, err.Error())
 		return
 	}
+	c.metrics.Signal(string(signal.Kind))
 	_ = d.Ack(false)
 }
 

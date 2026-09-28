@@ -23,6 +23,7 @@ import (
 	"recommendation-service/internal/adapter/in/grpcapi"
 	"recommendation-service/internal/adapter/in/httpapi"
 	"recommendation-service/internal/adapter/out/memory"
+	"recommendation-service/internal/adapter/out/prom"
 	"recommendation-service/internal/adapter/out/postgres"
 	"recommendation-service/internal/config"
 	"recommendation-service/internal/domain"
@@ -56,7 +57,8 @@ func main() {
 	}
 
 	advisor := service.NewAdvisor(store)
-	consumer := amqp.New(cfg.AMQPURL, advisor, cfg.MaxAttempts, cfg.RetryTTLMs)
+	metrics := prom.New()
+	consumer := amqp.New(cfg.AMQPURL, advisor, metrics, cfg.MaxAttempts, cfg.RetryTTLMs)
 
 	// gRPC — главный интерфейс: рекомендации спрашивает NestJS API
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
@@ -64,14 +66,14 @@ func main() {
 		log.Fatalf("слушать %s: %v", cfg.GRPCAddr, err)
 	}
 	grpcSrv := grpc.NewServer()
-	pb.RegisterRecommendationsServer(grpcSrv, grpcapi.New(advisor))
+	pb.RegisterRecommendationsServer(grpcSrv, grpcapi.New(advisor, metrics))
 	// reflection — для grpcurl-проверок на живом стенде
 	reflection.Register(grpcSrv)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	httpSrv := httpapi.Start(cfg.HTTPAddr, advisor)
+	httpSrv := httpapi.Start(cfg.HTTPAddr, advisor, metrics.Handler())
 
 	go func() {
 		log.Printf("gRPC Recommendations на %s", cfg.GRPCAddr)

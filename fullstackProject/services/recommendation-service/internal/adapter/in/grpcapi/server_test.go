@@ -3,6 +3,9 @@ package grpcapi
 import (
 	"context"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -12,6 +15,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"recommendation-service/internal/adapter/out/memory"
+	"recommendation-service/internal/adapter/out/prom"
 	"recommendation-service/internal/domain"
 	pb "recommendation-service/internal/pb"
 	"recommendation-service/internal/service"
@@ -20,13 +24,14 @@ import (
 // start поднимает сервер на bufconn-листенере и клиента к нему.
 // Отдаём и advisor: тесты сеют сигналы через use-case, как настоящий
 // консьюмер, — и проверяют сквозной путь «сигнал → профиль → топ».
-func start(t *testing.T) (pb.RecommendationsClient, *service.Advisor) {
+func start(t *testing.T) (pb.RecommendationsClient, *service.Advisor, *prom.Metrics) {
 	t.Helper()
 	advisor := service.NewAdvisor(memory.NewStore())
+	metrics := prom.New()
 
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
-	pb.RegisterRecommendationsServer(srv, New(advisor))
+	pb.RegisterRecommendationsServer(srv, New(advisor, metrics))
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 
@@ -40,7 +45,7 @@ func start(t *testing.T) (pb.RecommendationsClient, *service.Advisor) {
 		t.Fatalf("клиент bufconn: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	return pb.NewRecommendationsClient(conn), advisor
+	return pb.NewRecommendationsClient(conn), advisor, metrics
 }
 
 func afisha() []*pb.MovieCandidate {
@@ -53,7 +58,7 @@ func afisha() []*pb.MovieCandidate {
 }
 
 func TestGetRecommendationsColdStart(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	resp, err := client.GetRecommendations(context.Background(), &pb.RecommendationsRequest{
 		UserId: "u-new", Candidates: afisha(),
 	})
@@ -72,7 +77,7 @@ func TestGetRecommendationsColdStart(t *testing.T) {
 }
 
 func TestGetRecommendationsByProfile(t *testing.T) {
-	client, advisor := start(t)
+	client, advisor, _ := start(t)
 	// зритель смотрел «Дюну» (фантастика) и высоко оценил её отзывом
 	for _, s := range []domain.Signal{
 		{UserID: "u1", MovieID: "m1", MovieTitle: "Дюна", Genre: "фантастика", Kind: domain.KindBooking, DedupKey: "booking:b1"},
@@ -105,7 +110,7 @@ func TestGetRecommendationsByProfile(t *testing.T) {
 }
 
 func TestGetRecommendationsEmptyUser(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	_, err := client.GetRecommendations(context.Background(), &pb.RecommendationsRequest{Candidates: afisha()})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("код = %v, want InvalidArgument", status.Code(err))
@@ -113,7 +118,7 @@ func TestGetRecommendationsEmptyUser(t *testing.T) {
 }
 
 func TestGetRecommendationsLimit(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	resp, err := client.GetRecommendations(context.Background(), &pb.RecommendationsRequest{
 		UserId: "u-new", Candidates: afisha(), Limit: 2,
 	})
@@ -122,5 +127,28 @@ func TestGetRecommendationsLimit(t *testing.T) {
 	}
 	if len(resp.GetItems()) != 2 {
 		t.Fatalf("топ с limit=2 = %d, want 2", len(resp.GetItems()))
+	}
+}
+
+// выданные топы обязаны отражаться в выгрузке Prometheus:
+// счётчик результата и счётчик длительности
+func TestTopMetricsMirror(t *testing.T) {
+	client, _, metrics := start(t)
+	if _, err := client.GetRecommendations(context.Background(), &pb.RecommendationsRequest{
+		UserId: "u-metrics", Candidates: afisha(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		`cine_recommendation_tops_total{result="ok"} 1`,
+		"cine_recommendation_top_duration_seconds_count 1",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("в выгрузке нет строки %q", want)
+		}
 	}
 }

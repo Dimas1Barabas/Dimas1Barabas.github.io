@@ -13,8 +13,9 @@ import (
 )
 
 // Start поднимает HTTP-сервер в горутине; Shutdown — обязанность main.
-func Start(addr string, svc *service.Advisor) *http.Server {
-	srv := New(addr, svc)
+// metricsHandler — prometheus-выгрузка адаптера out/prom.
+func Start(addr string, svc *service.Advisor, metricsHandler http.Handler) *http.Server {
+	srv := New(addr, svc, metricsHandler)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("http: %v", err)
@@ -25,12 +26,13 @@ func Start(addr string, svc *service.Advisor) *http.Server {
 }
 
 // New собирает сервер без запуска — для main и тестов.
-func New(addr string, svc *service.Advisor) *http.Server {
+func New(addr string, svc *service.Advisor, metricsHandler http.Handler) *http.Server {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.Handle("/metrics", metricsHandler)
 
 	// витрина профиля: какие жанровые веса накопил зритель
 	mux.HandleFunc("/profile", func(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +54,7 @@ func New(addr string, svc *service.Advisor) *http.Server {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"service":   "recommendation-service",
-			"endpoints": []string{"/health", "/profile?userId=…"},
+			"endpoints": []string{"/health", "/profile?userId=…", "/metrics"},
 		})
 	})
 
