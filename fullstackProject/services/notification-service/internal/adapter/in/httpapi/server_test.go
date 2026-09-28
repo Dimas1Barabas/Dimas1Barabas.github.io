@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"notification-service/internal/adapter/out/memory"
+	"notification-service/internal/adapter/out/prom"
 	"notification-service/internal/domain"
 	"notification-service/internal/service"
 )
@@ -19,11 +20,13 @@ type discardSender struct{}
 
 func (discardSender) Send(context.Context, domain.Notification) error { return nil }
 
-func newTestServer(t *testing.T) (*httptest.Server, *memory.Metrics) {
+// как в main: memory-счётчики обёрнуты prom-адаптером, /stats и /metrics
+// видят одни и те же числа
+func newTestServer(t *testing.T) (*httptest.Server, *prom.Metrics) {
 	t.Helper()
-	metrics := memory.NewMetrics()
+	metrics := prom.New(memory.NewMetrics())
 	svc := service.NewNotifier(discardSender{}, memory.NewRepository(100), metrics)
-	ts := httptest.NewServer(New("127.0.0.1:0", svc).Handler)
+	ts := httptest.NewServer(New("127.0.0.1:0", svc, metrics.Handler()).Handler)
 	t.Cleanup(ts.Close)
 	return ts, metrics
 }

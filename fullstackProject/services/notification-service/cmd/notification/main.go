@@ -20,6 +20,7 @@ import (
 	"notification-service/internal/adapter/out/console"
 	"notification-service/internal/adapter/out/memory"
 	"notification-service/internal/adapter/out/postgres"
+	"notification-service/internal/adapter/out/prom"
 	"notification-service/internal/config"
 	"notification-service/internal/domain"
 	"notification-service/internal/service"
@@ -49,14 +50,16 @@ func main() {
 	default:
 		log.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
 	}
-	metrics := memory.NewMetrics()
+	// счётчики: memory ведёт JSON-витрину /stats, prom-обёртка зеркалит
+	// те же числа в /metrics для Prometheus — use-case видит один порт
+	metrics := prom.New(memory.NewMetrics())
 	notifier := service.NewNotifier(console.NewSender(), repo, metrics)
 	consumer := amqp.New(cfg.AMQPURL, notifier, cfg.MaxAttempts, cfg.RetryTTLMs)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	httpSrv := httpapi.Start(cfg.HTTPAddr, notifier)
+	httpSrv := httpapi.Start(cfg.HTTPAddr, notifier, metrics.Handler())
 
 	log.Printf("notification-service запущен (RabbitMQ: %s, storage: %s)", cfg.AMQPURL, cfg.Storage)
 
