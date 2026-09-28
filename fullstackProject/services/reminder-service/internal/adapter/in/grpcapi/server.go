@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"reminder-service/internal/adapter/out/prom"
 	"reminder-service/internal/domain"
 	pb "reminder-service/internal/pb"
 	"reminder-service/internal/service"
@@ -20,11 +21,12 @@ import (
 // будущим методам контракта.
 type Server struct {
 	pb.UnimplementedRemindersServer
-	svc *service.Scheduler
+	svc     *service.Scheduler
+	metrics *prom.Metrics
 }
 
-func New(svc *service.Scheduler) *Server {
-	return &Server{svc: svc}
+func New(svc *service.Scheduler, metrics *prom.Metrics) *Server {
+	return &Server{svc: svc, metrics: metrics}
 }
 
 // Schedule: бронь → запланированное письмо. Отказы, нормальные
@@ -49,8 +51,10 @@ func (s *Server) Schedule(ctx context.Context, req *pb.ScheduleRequest) (*pb.Sch
 		if errors.Is(err, domain.ErrInvalidReminder) || errors.Is(err, domain.ErrSessionPassed) {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
+		s.metrics.ScheduledError()
 		return nil, status.Error(codes.Internal, "хранилище напоминаний недоступно")
 	}
+	s.metrics.ScheduledOk()
 	return &pb.ScheduleResponse{Status: res.Status, DueAt: res.DueAt.Format(time.RFC3339)}, nil
 }
 
@@ -64,6 +68,7 @@ func (s *Server) Cancel(ctx context.Context, req *pb.CancelRequest) (*pb.CancelR
 		}
 		return nil, status.Error(codes.Internal, "хранилище напоминаний недоступно")
 	}
+	s.metrics.Cancelled(st)
 	return &pb.CancelResponse{Status: st}, nil
 }
 

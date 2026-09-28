@@ -24,6 +24,7 @@ import (
 	"reminder-service/internal/adapter/in/httpapi"
 	"reminder-service/internal/adapter/out/amqp"
 	"reminder-service/internal/adapter/out/memory"
+	"reminder-service/internal/adapter/out/prom"
 	"reminder-service/internal/adapter/out/postgres"
 	"reminder-service/internal/config"
 	"reminder-service/internal/domain"
@@ -56,7 +57,8 @@ func main() {
 		log.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
 	}
 
-	pub := amqp.NewPublisher(cfg.AMQPURL)
+	metrics := prom.New()
+	pub := amqp.NewPublisher(cfg.AMQPURL, metrics)
 	scheduler := service.NewScheduler(store, pub, time.Duration(cfg.LeadMinutes)*time.Minute)
 
 	// gRPC — главный интерфейс: Schedule/Cancel зовёт NestJS API
@@ -65,14 +67,14 @@ func main() {
 		log.Fatalf("слушать %s: %v", cfg.GRPCAddr, err)
 	}
 	grpcSrv := grpc.NewServer()
-	pb.RegisterRemindersServer(grpcSrv, grpcapi.New(scheduler))
+	pb.RegisterRemindersServer(grpcSrv, grpcapi.New(scheduler, metrics))
 	// reflection — для grpcurl-проверок на живом стенде
 	reflection.Register(grpcSrv)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	httpSrv := httpapi.Start(cfg.HTTPAddr, scheduler)
+	httpSrv := httpapi.Start(cfg.HTTPAddr, scheduler, metrics.Handler())
 
 	go func() {
 		log.Printf("gRPC Reminders на %s", cfg.GRPCAddr)

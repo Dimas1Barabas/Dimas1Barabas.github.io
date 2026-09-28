@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"reminder-service/internal/adapter/out/memory"
+	"reminder-service/internal/adapter/out/prom"
 	"reminder-service/internal/domain"
 	"reminder-service/internal/service"
 )
@@ -15,7 +16,7 @@ import (
 func start(t *testing.T) (*httptest.Server, *service.Scheduler) {
 	t.Helper()
 	scheduler := service.NewScheduler(memory.NewStore(), nopPublisher{}, 2*time.Hour)
-	ts := httptest.NewServer(New("test", scheduler).Handler)
+	ts := httptest.NewServer(New("test", scheduler, prom.New().Handler()).Handler)
 	t.Cleanup(ts.Close)
 	return ts, scheduler
 }

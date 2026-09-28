@@ -3,6 +3,9 @@ package grpcapi
 import (
 	"context"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"reminder-service/internal/adapter/out/memory"
+	"reminder-service/internal/adapter/out/prom"
 	"reminder-service/internal/domain"
 	pb "reminder-service/internal/pb"
 	"reminder-service/internal/service"
@@ -21,13 +25,14 @@ import (
 // start поднимает сервер на bufconn-листенере и клиента к нему.
 // Публикатор настоящий не нужен: тесты проверяют планирование,
 // тик в них не участвует.
-func start(t *testing.T) (pb.RemindersClient, *service.Scheduler) {
+func start(t *testing.T) (pb.RemindersClient, *service.Scheduler, *prom.Metrics) {
 	t.Helper()
 	scheduler := service.NewScheduler(memory.NewStore(), nopPublisher{}, 2*time.Hour)
+	metrics := prom.New()
 
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
-	pb.RegisterRemindersServer(srv, New(scheduler))
+	pb.RegisterRemindersServer(srv, New(scheduler, metrics))
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 
@@ -41,7 +46,7 @@ func start(t *testing.T) (pb.RemindersClient, *service.Scheduler) {
 		t.Fatalf("клиент bufconn: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	return pb.NewRemindersClient(conn), scheduler
+	return pb.NewRemindersClient(conn), scheduler, metrics
 }
 
 // nopPublisher — заглушка порта доставки: gRPC-тесты не тикают.
@@ -59,7 +64,7 @@ func futureRequest() *pb.ScheduleRequest {
 }
 
 func TestScheduleOk(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	resp, err := client.Schedule(context.Background(), futureRequest())
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +78,7 @@ func TestScheduleOk(t *testing.T) {
 }
 
 func TestSchedulePastSession(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	req := futureRequest()
 	req.SessionAt = time.Now().Add(-time.Hour).Format(time.RFC3339)
 	if _, err := client.Schedule(context.Background(), req); status.Code(err) != codes.InvalidArgument {
@@ -82,7 +87,7 @@ func TestSchedulePastSession(t *testing.T) {
 }
 
 func TestScheduleGarbageSessionAt(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	req := futureRequest()
 	req.SessionAt = "завтра"
 	if _, err := client.Schedule(context.Background(), req); status.Code(err) != codes.InvalidArgument {
@@ -91,7 +96,7 @@ func TestScheduleGarbageSessionAt(t *testing.T) {
 }
 
 func TestScheduleInvalidFields(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	req := futureRequest()
 	req.Email = ""
 	if _, err := client.Schedule(context.Background(), req); status.Code(err) != codes.InvalidArgument {
@@ -100,7 +105,7 @@ func TestScheduleInvalidFields(t *testing.T) {
 }
 
 func TestCancelMissingIsNotError(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	resp, err := client.Cancel(context.Background(), &pb.CancelRequest{BookingId: "b-нет"})
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +116,7 @@ func TestCancelMissingIsNotError(t *testing.T) {
 }
 
 func TestCancelAfterSchedule(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	ctx := context.Background()
 	if _, err := client.Schedule(ctx, futureRequest()); err != nil {
 		t.Fatal(err)
@@ -126,8 +131,38 @@ func TestCancelAfterSchedule(t *testing.T) {
 }
 
 func TestCancelEmptyBookingID(t *testing.T) {
-	client, _ := start(t)
+	client, _, _ := start(t)
 	if _, err := client.Cancel(context.Background(), &pb.CancelRequest{}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("код = %v, want InvalidArgument", status.Code(err))
+	}
+}
+
+// вердикты Schedule/Cancel обязаны отражаться в выгрузке Prometheus
+func TestScheduleCancelMetricsMirror(t *testing.T) {
+	client, _, metrics := start(t)
+	ctx := context.Background()
+
+	if _, err := client.Schedule(ctx, futureRequest()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Cancel(ctx, &pb.CancelRequest{BookingId: "b-1"}); err != nil {
+		t.Fatal(err)
+	}
+	// повторная отмена — идемпотентный MISSING
+	if _, err := client.Cancel(ctx, &pb.CancelRequest{BookingId: "b-1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		`cine_reminder_scheduled_total{result="ok"} 1`,
+		`cine_reminder_cancels_total{status="cancelled"} 1`,
+		`cine_reminder_cancels_total{status="missing"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("в выгрузке нет строки %q", want)
+		}
 	}
 }

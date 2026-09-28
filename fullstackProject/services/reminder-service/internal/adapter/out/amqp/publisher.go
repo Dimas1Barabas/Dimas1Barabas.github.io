@@ -14,6 +14,7 @@ import (
 
 	"github.com/rabbitmq/amqp091-go"
 
+	"reminder-service/internal/adapter/out/prom"
 	"reminder-service/internal/domain"
 )
 
@@ -60,13 +61,14 @@ func buildPayload(r domain.Reminder) letterPayload {
 // мьютексом, чтобы тикер публиковал concurrently с реконнектами.
 type Publisher struct {
 	url     string
+	metrics *prom.Metrics
 	mu      sync.Mutex
 	conn    *amqp091.Connection
 	channel *amqp091.Channel
 }
 
-func NewPublisher(url string) *Publisher {
-	return &Publisher{url: url}
+func NewPublisher(url string, metrics *prom.Metrics) *Publisher {
+	return &Publisher{url: url, metrics: metrics}
 }
 
 // Run держит соединение до отмены контекста; реконнект с бэкоффом —
@@ -123,14 +125,21 @@ func (p *Publisher) Publish(ctx context.Context, r domain.Reminder) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.channel == nil {
+		p.metrics.PublishFailed()
 		return errors.New("соединение с брокером не установлено")
 	}
-	return p.channel.PublishWithContext(ctx, exchangeName, RoutingKey, false, false, amqp091.Publishing{
+	err = p.channel.PublishWithContext(ctx, exchangeName, RoutingKey, false, false, amqp091.Publishing{
 		ContentType:  "application/json",
 		DeliveryMode: amqp091.Persistent,
 		Timestamp:    r.RemindedAt,
 		Body:         body,
 	})
+	if err != nil {
+		p.metrics.PublishFailed()
+		return err
+	}
+	p.metrics.Fired()
+	return nil
 }
 
 var _ domain.ReminderPublisher = (*Publisher)(nil)
