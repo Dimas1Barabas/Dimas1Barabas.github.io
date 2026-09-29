@@ -6,6 +6,7 @@
 #   go           — matrix по шести Go-сервисам: build + vet + test -race
 #                 (ticket-worker, notification, recommendation, reminder,
 #                  pricing, ratelimiter)
+#   infra        — docker compose config + парсинг JSON/YAML в observability/
 #
 # E2E против живого docker-стенда в CI не гоняем: он требует поднятия
 # всего compose-окружения и остаётся локальным (`npm run test:e2e`
@@ -121,3 +122,49 @@ jobs:
 
       # -race: воркер на атомиках и планировщики особенно благодарны детектору
       - run: go test -race ./...
+
+  # Инфра-конфиги стенда: то, что раньше проверяли руками перед каждым
+  # коммитом («compose config валиден», «все JSON пропарсены»), теперь
+  # делает CI. Ничего не поднимается — только валидация синтаксиса.
+  infra:
+    name: infra — compose config + observability JSON/YAML
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # compose обязан собираться в валидный конфиг (переменные имеют дефолты,
+      # .env не нужен); контейнеры не запускаются
+      - name: docker compose config
+        run: docker compose --file fullstackProject/docker-compose.yml config --quiet
+
+      # дашборды Grafana (*.json) и конфиги Prometheus/provisioning (*.yml):
+      # ошибки синтаксиса ловим до деплоя стенда
+      - name: parse observability JSON/YAML
+        run: |
+          python3 - <<'EOF'
+          import glob, json, sys
+          import yaml
+
+          bad = []
+          json_files = sorted(glob.glob("fullstackProject/observability/**/*.json", recursive=True))
+          for path in json_files:
+              try:
+                  with open(path, encoding="utf-8") as fh:
+                      json.load(fh)
+              except ValueError as err:
+                  bad.append(f"{path}: {err}")
+
+          yaml_files = sorted(glob.glob("fullstackProject/observability/**/*.yml", recursive=True))
+          for path in yaml_files:
+              try:
+                  with open(path, encoding="utf-8") as fh:
+                      yaml.safe_load(fh)
+              except yaml.YAMLError as err:
+                  bad.append(f"{path}: {err}")
+
+          print(f"parsed {len(json_files)} JSON, {len(yaml_files)} YAML")
+          if bad:
+              print("\n".join(bad), file=sys.stderr)
+              sys.exit(1)
+          EOF
