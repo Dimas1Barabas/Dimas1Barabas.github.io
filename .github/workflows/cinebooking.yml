@@ -1,9 +1,10 @@
 # CI для фулстек-демо CineBooking (fullstackProject/).
 #
 # Герметичные уровни без внешних зависимостей:
-#   web          — eslint (границы FSD) + typecheck (vue-tsc) + vitest + production-сборка
-#   api          — jest юнит + интеграционные (фейковые Postgres/RabbitMQ/Redis на Map) + сборка
+#   web          — eslint (границы FSD) + typecheck (vue-tsc) + vitest с coverage-порогом + сборка
+#   api          — jest юнит с coverage-порогом + интеграционные (фейковые Postgres/RabbitMQ/Redis на Map) + сборка
 #   go           — matrix по шести Go-сервисам: build + vet + lint + test -race
+#                 с порогом покрытия per-service
 #                 (ticket-worker, notification, recommendation, reminder,
 #                  pricing, ratelimiter)
 #   proto        — buf lint (STANDARD) + buf breaking (дрейф gRPC-контрактов)
@@ -53,7 +54,9 @@ jobs:
 
       - run: npm run typecheck
 
-      - run: npm test
+      # юниты с покрытием: пороги в vitest.config.ts ниже текущего
+      # (89/79/84/90) — падать нельзя
+      - run: npm run test:cov
 
       - run: npm run build
 
@@ -75,7 +78,9 @@ jobs:
 
       - run: npm ci
 
-      - run: npm test
+      # юниты с покрытием: coverageThreshold в package.json ниже текущего
+      # (statements 64 / branches 73 / functions 69 / lines 64) — падать нельзя
+      - run: npm run test:cov
 
       - run: npm run test:integration
 
@@ -94,18 +99,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # threshold: фиксация текущего покрытия с запасом ~1% вниз —
+          # расти можно, падать нет (main/cmd и pb-генерат без тестов тянут
+          # цифру вниз, живые адаптеры закроет эпоха Testcontainers)
           - name: worker
             dir: ticket-worker
+            threshold: 19
           - name: notification
             dir: notification-service
+            threshold: 38
           - name: recommendation
             dir: recommendation-service
+            threshold: 31
           - name: reminder
             dir: reminder-service
+            threshold: 26
           - name: pricing
             dir: pricing-service
+            threshold: 31
           - name: ratelimiter
             dir: ratelimiter-service
+            threshold: 29
     defaults:
       run:
         working-directory: fullstackProject/services/${{ matrix.dir }}
@@ -129,8 +143,17 @@ jobs:
           working-directory: fullstackProject/services/${{ matrix.dir }}
           args: --config=../../.golangci.yml
 
-      # -race: воркер на атомиках и планировщики особенно благодарны детектору
-      - run: go test -race ./...
+      # -race: воркер на атомиках и планировщики особенно благодарны
+      # детектору; заодно пишем общий профиль покрытия всех пакетов
+      - run: go test -race -coverprofile=cover.out ./...
+
+      # порог в matrix.threshold: ниже — красный шаг, расти можно
+      - name: coverage threshold
+        run: |
+          total=$(go tool cover -func=cover.out | tail -1 | awk '{gsub(/%/, ""); print $3}')
+          echo "покрытие: ${total}% (порог ${{ matrix.threshold }}%)"
+          awk -v t="$total" -v min="${{ matrix.threshold }}" 'BEGIN { exit t < min }' \
+            || { echo "покрытие ${total}% ниже порога ${{ matrix.threshold }}%"; exit 1; }
 
   # Контракты gRPC. lint — STANDARD с зафиксированными в proto/buf.yaml
   # исключениями (плоская раскладка, имена без «Service»). breaking —

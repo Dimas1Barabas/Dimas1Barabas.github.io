@@ -10,6 +10,7 @@
     "preview": "vite preview --port 4173",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
+    "test:cov": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "eslint src"
   },
@@ -23,6 +24,7 @@
   "devDependencies": {
     "@typescript-eslint/parser": "^8.70.0",
     "@vitejs/plugin-vue": "^6.0.8",
+    "@vitest/coverage-v8": "^5.0.2",
     "@vue/test-utils": "^2.5.0",
     "eslint": "^10.10.0",
     "eslint-import-resolver-typescript": "^4.4.5",
