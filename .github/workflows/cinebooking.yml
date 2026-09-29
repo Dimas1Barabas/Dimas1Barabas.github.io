@@ -3,12 +3,9 @@
 # Герметичные уровни без внешних зависимостей:
 #   web          — eslint (границы FSD) + typecheck (vue-tsc) + vitest + production-сборка
 #   api          — jest юнит + интеграционные (фейковые Postgres/RabbitMQ/Redis на Map) + сборка
-#   worker       — go test
-#   notification — go test (гексагональный сервис уведомлений)
-#   recommendation — go test (КиноСоветник: gRPC-рекомендации)
-#   reminder     — go test (напоминания о сеансах)
-#   pricing      — go test (Тарификатор: динамические цены)
-#   ratelimiter  — go test (Привратник: лимиты частоты)
+#   go           — matrix по шести Go-сервисам: build + vet + test -race
+#                 (ticket-worker, notification, recommendation, reminder,
+#                  pricing, ratelimiter)
 #
 # E2E против живого docker-стенда в CI не гоняем: он требует поднятия
 # всего compose-окружения и остаётся локальным (`npm run test:e2e`
@@ -83,104 +80,44 @@ jobs:
       # dist нужен docker-образу: проверяем, что проект компилируется
       - run: npm run build
 
-  worker:
-    name: worker — go test
+  # Шесть Go-сервисов одной матрицей: каждый элемент — отдельный раннер,
+  # как раньше отдельные джобы, но без копипасты шагов. fail-fast: false —
+  # упавший сервис не отменяет проверки остальных.
+  # Шаги повторяют локальный ритуал перед коммитом: build + vet + test -race.
+  go:
+    name: ${{ matrix.name }} — go build + vet + test -race
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: worker
+            dir: ticket-worker
+          - name: notification
+            dir: notification-service
+          - name: recommendation
+            dir: recommendation-service
+          - name: reminder
+            dir: reminder-service
+          - name: pricing
+            dir: pricing-service
+          - name: ratelimiter
+            dir: ratelimiter-service
     defaults:
       run:
-        working-directory: fullstackProject/services/ticket-worker
+        working-directory: fullstackProject/services/${{ matrix.dir }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: fullstackProject/services/ticket-worker/go.mod
-          cache-dependency-path: fullstackProject/services/ticket-worker/go.sum
+          go-version-file: fullstackProject/services/${{ matrix.dir }}/go.mod
+          cache-dependency-path: fullstackProject/services/${{ matrix.dir }}/go.sum
 
-      - run: go test ./...
+      - run: go build ./...
 
-  notification:
-    name: notification — go test
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: fullstackProject/services/notification-service
-    steps:
-      - uses: actions/checkout@v4
+      - run: go vet ./...
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: fullstackProject/services/notification-service/go.mod
-          cache-dependency-path: fullstackProject/services/notification-service/go.sum
-
-      - run: go test ./...
-
-  recommendation:
-    name: recommendation — go test
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: fullstackProject/services/recommendation-service
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: fullstackProject/services/recommendation-service/go.mod
-          cache-dependency-path: fullstackProject/services/recommendation-service/go.sum
-
-      - run: go test ./...
-
-  reminder:
-    name: reminder — go test
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: fullstackProject/services/reminder-service
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: fullstackProject/services/reminder-service/go.mod
-          cache-dependency-path: fullstackProject/services/reminder-service/go.sum
-
-      - run: go test ./...
-
-  pricing:
-    name: pricing — go test
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: fullstackProject/services/pricing-service
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: fullstackProject/services/pricing-service/go.mod
-          cache-dependency-path: fullstackProject/services/pricing-service/go.sum
-
-      - run: go test ./...
-
-  ratelimiter:
-    name: ratelimiter — go test
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: fullstackProject/services/ratelimiter-service
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: fullstackProject/services/ratelimiter-service/go.mod
-          cache-dependency-path: fullstackProject/services/ratelimiter-service/go.sum
-
-      - run: go test ./...
+      # -race: воркер на атомиках и планировщики особенно благодарны детектору
+      - run: go test -race ./...
