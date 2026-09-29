@@ -277,11 +277,16 @@ cd services/ratelimiter-service && go test ./...
 
 CI (GitHub Actions, workflow в корне репо `.github/workflows/cinebooking.yml`)
 на пуш/PR по `fullstackProject/` гоняет герметичные уровни: web —
-typecheck + vitest + build, api — юнит + интеграционные + build,
-worker и notification — go test (live-тесты уведомлений скипаются:
-в раннере нет Postgres), recommendation, reminder, pricing и ratelimiter —
-go test (live-PG точно так же скипается). E2e остаётся локальным: ему нужен
-живой docker-стенд.
+typecheck + vitest с порогом покрытия + build, api — юнит с порогом
+покрытия + интеграционные + build, go — матрица шести сервисов
+(build + vet + golangci-lint по общему `.golangci.yml` + test -race
+с порогом покрытия per-service; live-PG-тесты скипаются: в раннере
+нет Postgres), proto — buf lint (STANDARD; исключения с обоснованием —
+в `proto/buf.yaml`) + buf breaking против main до пуша: дрейф
+gRPC-контрактов валит CI, пока клиенты собраны под старый контракт,
+infra — `docker compose config` + парсинг JSON/YAML в observability.
+Пороги зафиксированы чуть ниже текущего уровня (расти можно, падать
+нет). E2e остаётся локальным: ему нужен живой docker-стенд.
 
 Письменная тест-документация «как у QA» — в [docs/qa/](docs/qa/):
 [тест-план](docs/qa/test-plan.md), [чек-листы](docs/qa/checklists.md),
