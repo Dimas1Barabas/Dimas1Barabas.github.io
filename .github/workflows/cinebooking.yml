@@ -6,6 +6,7 @@
 #   go           — matrix по шести Go-сервисам: build + vet + lint + test -race
 #                 (ticket-worker, notification, recommendation, reminder,
 #                  pricing, ratelimiter)
+#   proto        — buf lint (STANDARD) + buf breaking (дрейф gRPC-контрактов)
 #   infra        — docker compose config + парсинг JSON/YAML в observability/
 #
 # E2E против живого docker-стенда в CI не гоняем: он требует поднятия
@@ -130,6 +131,42 @@ jobs:
 
       # -race: воркер на атомиках и планировщики особенно благодарны детектору
       - run: go test -race ./...
+
+  # Контракты gRPC. lint — STANDARD с зафиксированными в proto/buf.yaml
+  # исключениями (плоская раскладка, имена без «Service»). breaking —
+  # дрейф против main до пуша: удалить поле или сменить тип не даст,
+  # клиенты (NestJS API и Go-сервисы) собраны под старый контракт.
+  # Ветки с правкой контракта проходят через pull_request — против базы.
+  proto:
+    name: proto — buf lint + breaking
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: fullstackProject/proto
+    steps:
+      # full history: breaking читает коммит до пуша из git-ссылки
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: 1.73.0  # как локально, генерат и проверки не расходятся
+
+      - run: buf lint
+
+      # push: против коммита до пуша; pull_request: против origin/main;
+      # ручной запуск — без breaking (before не определён)
+      - name: buf breaking
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            against="../../.git#branch=origin/main,subdir=fullstackProject/proto"
+          else
+            against="../../.git#ref=${{ github.event.before }},subdir=fullstackProject/proto"
+          fi
+          buf breaking --against "$against"
 
   # Инфра-конфиги стенда: то, что раньше проверяли руками перед каждым
   # коммитом («compose config валиден», «все JSON пропарсены»), теперь

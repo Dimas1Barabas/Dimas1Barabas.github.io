@@ -1,0 +1,35 @@
+# Конфиг buf-модуля proto/: линт контрактов и проверка совместимости.
+#
+#   buf lint      — стиль и структура (STANDARD)
+#   buf breaking  — дрейф контрактов против предыдущего состояния main:
+#                   нельзя удалить поле/сервис или сменить тип — клиенты
+#                   (NestJS API и Go-сервисы) собраны под старый контракт.
+#                   Уровень FILE: правки в других файлах модуля не считаются
+#                   ломающими (PACKAGE/TYPE жёстче, для демо избыточны).
+#
+# Исключения — осознанные решения устройства демо, не недосмотр:
+#   DIRECTORY_SAME_PACKAGE, PACKAGE_DIRECTORY_MATCH
+#     — модуль плоский: один .proto на сервис в корне proto/, к каждому
+#       свой шаблон кодогена buf.gen.*.yaml (--path в protogen.sh);
+#       раскладка cine/<svc>/v1/ означала бы по каталогу ради одного файла;
+#   SERVICE_SUFFIX — сервисы зовутся Pricing/RateLimiter/... без «Service»:
+#     суффикс дублировал бы доменные имена (PricingService уже есть в Go);
+#   RPC_REQUEST/RESPONSE_STANDARD_NAME — типы CheckRateRequest и
+#     RecommendationsRequest вшиты в сгенерированный код и клиентов,
+#     ренейм ради стайла — ломающее изменение без выгоды.
+# Перечисленное запрещено ослаблять молча: новое — по STANDARD.
+#
+# Вызывается из CI (джоба proto), кодоген — scripts/protogen.sh (buf.gen.*.yaml).
+version: v2
+lint:
+  use:
+    - STANDARD
+  except:
+    - DIRECTORY_SAME_PACKAGE
+    - PACKAGE_DIRECTORY_MATCH
+    - SERVICE_SUFFIX
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+breaking:
+  use:
+    - FILE
