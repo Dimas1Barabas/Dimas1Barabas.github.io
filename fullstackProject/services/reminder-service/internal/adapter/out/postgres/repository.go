@@ -84,13 +84,13 @@ func NewRepository(ctx context.Context, dsn string) (*Repository, error) {
 	db.SetMaxOpenConns(4)
 
 	if err := db.PingContext(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("пинг Postgres, база %s (PG поднят? docker compose up -d postgres): %w", cfg.Database, err)
 	}
 
 	r := &Repository{db: db}
 	if err := r.ensureSchema(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	return r, nil
@@ -153,7 +153,7 @@ func (r *Repository) Close() error { return r.db.Close() }
 // scanReminders читает общий SELECT-набор колонок; слайс всегда
 // непустой (len 0, не nil).
 func scanReminders(rows *sql.Rows) ([]domain.Reminder, error) {
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]domain.Reminder, 0)
 	for rows.Next() {
 		var rem domain.Reminder
@@ -190,7 +190,7 @@ func ensureDatabase(ctx context.Context, cfg *pgx.ConnConfig) error {
 	if err != nil {
 		return fmt.Errorf("коннект к служебной базе postgres: %w", err)
 	}
-	defer admin.Close(context.Background())
+	defer func() { _ = admin.Close(context.Background()) }()
 
 	var exists bool
 	if err := admin.QueryRow(ctx,

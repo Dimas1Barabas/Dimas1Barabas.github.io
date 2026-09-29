@@ -99,13 +99,13 @@ func NewRepository(ctx context.Context, dsn string) (*Repository, error) {
 	db.SetMaxOpenConns(4)
 
 	if err := db.PingContext(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("пинг Postgres, база %s (PG поднят? docker compose up -d postgres): %w", cfg.Database, err)
 	}
 
 	r := &Repository{db: db}
 	if err := r.ensureSchema(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	return r, nil
@@ -138,7 +138,7 @@ func (r *Repository) apply(ctx context.Context, query, bookingID, sessionID stri
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	applied := rows.Next()
 	if err := rows.Err(); err != nil {
 		return false, err
@@ -179,7 +179,7 @@ func (r *Repository) ListQuotes(ctx context.Context) ([]domain.QuoteRecord, erro
 	if err != nil {
 		return nil, fmt.Errorf("select витрины квотов: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]domain.QuoteRecord, 0)
 	for rows.Next() {
 		var q domain.QuoteRecord
@@ -200,7 +200,7 @@ func (r *Repository) ListDemand(ctx context.Context) ([]domain.DemandRecord, err
 	if err != nil {
 		return nil, fmt.Errorf("select витрины спроса: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]domain.DemandRecord, 0)
 	for rows.Next() {
 		var d domain.DemandRecord
@@ -226,7 +226,7 @@ func ensureDatabase(ctx context.Context, cfg *pgx.ConnConfig) error {
 	if err != nil {
 		return fmt.Errorf("коннект к служебной базе postgres: %w", err)
 	}
-	defer admin.Close(context.Background())
+	defer func() { _ = admin.Close(context.Background()) }()
 
 	var exists bool
 	if err := admin.QueryRow(ctx,

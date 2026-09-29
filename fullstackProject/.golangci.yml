@@ -1,0 +1,12 @@
+# Общий конфиг golangci-lint для всех Go-сервисов (services/*-service).
+# Один файл вместо шести копий: в CI и локально запускается с флагом
+#   golangci-lint run --config=../../.golangci.yml
+# из каталога сервиса.
+#
+# Набор standard: errcheck, govet, ineffassign, staticcheck, unused —
+# тот же список, что `go vet`, плюс проверка проигнорированных ошибок
+# и мёртвого кода. Активнее (gosec, revive...) не включаем: юнит-тесты
+# трёх уровней дают больше, чем шум линтера в пет-проекте.
+version: "2"
+linters:
+  default: standard

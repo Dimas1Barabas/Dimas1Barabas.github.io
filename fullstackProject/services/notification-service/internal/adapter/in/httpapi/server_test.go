@@ -38,7 +38,7 @@ func TestHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != 200 {
 		t.Fatalf("код = %d, want 200", res.StatusCode)
 	}
@@ -58,7 +58,7 @@ func TestNotificationsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	var body struct {
 		Items []domain.Notification `json:"items"`
 		Count int                   `json:"count"`
@@ -78,7 +78,7 @@ func TestStatsShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	var body map[string]any
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 		t.Fatal(err)
@@ -101,7 +101,7 @@ func TestNotificationsBadLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != 200 {
 		t.Fatalf("код = %d, want 200", res.StatusCode)
 	}

@@ -60,7 +60,7 @@ func dropDatabase(t *testing.T, dsn string) {
 	if err != nil {
 		t.Fatalf("коннект к служебной базе для DROP: %v", err)
 	}
-	defer conn.Close(context.Background())
+	defer func() { _ = conn.Close(context.Background()) }()
 
 	quoted := `"` + strings.ReplaceAll(cfg.Database, `"`, `""`) + `"`
 	if _, err := conn.Exec(ctx, "DROP DATABASE IF EXISTS "+quoted+" WITH (FORCE)"); err != nil {
@@ -191,14 +191,14 @@ func TestNewRepositoryIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("первый NewRepository: %v", err)
 	}
-	defer first.Close()
+	defer func() { _ = first.Close() }()
 
 	// второй старт на существующей базе: ветка «база уже есть» + IF NOT EXISTS
 	second, err := NewRepository(ctx, dsn)
 	if err != nil {
 		t.Fatalf("повторный NewRepository: %v", err)
 	}
-	second.Close()
+	_ = second.Close()
 
 	t.Cleanup(func() {
 		_ = first.Close()

@@ -3,7 +3,7 @@
 # Герметичные уровни без внешних зависимостей:
 #   web          — eslint (границы FSD) + typecheck (vue-tsc) + vitest + production-сборка
 #   api          — jest юнит + интеграционные (фейковые Postgres/RabbitMQ/Redis на Map) + сборка
-#   go           — matrix по шести Go-сервисам: build + vet + test -race
+#   go           — matrix по шести Go-сервисам: build + vet + lint + test -race
 #                 (ticket-worker, notification, recommendation, reminder,
 #                  pricing, ratelimiter)
 #   infra        — docker compose config + парсинг JSON/YAML в observability/
@@ -119,6 +119,14 @@ jobs:
       - run: go build ./...
 
       - run: go vet ./...
+
+      # статический анализ шире go vet: errcheck/staticcheck/unused/ineffassign;
+      # конфиг общий на все сервисы (fullstackProject/.golangci.yml, набор standard)
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.4.0  # как локально — замечания не расходятся с машиной
+          working-directory: fullstackProject/services/${{ matrix.dir }}
+          args: --config=../../.golangci.yml
 
       # -race: воркер на атомиках и планировщики особенно благодарны детектору
       - run: go test -race ./...

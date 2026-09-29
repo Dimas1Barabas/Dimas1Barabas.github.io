@@ -53,7 +53,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("STORAGE=postgres: %v", err)
 		}
-		defer pgStore.Close()
+		defer func() { _ = pgStore.Close() }()
 		store = pgStore
 	default:
 		log.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)

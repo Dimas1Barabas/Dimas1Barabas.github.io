@@ -32,7 +32,7 @@ func TestHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		t.Fatalf("код /health = %d, want 200", resp.StatusCode)
 	}
@@ -67,7 +67,7 @@ func TestRemindersListAndFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var all struct {
 		Reminders []map[string]any `json:"reminders"`
 	}
@@ -89,7 +89,7 @@ func TestRemindersListAndFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var mine struct {
 		Reminders []map[string]any `json:"reminders"`
 	}

@@ -45,7 +45,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("STORAGE=postgres: %v", err)
 		}
-		defer pgRepo.Close()
+		defer func() { _ = pgRepo.Close() }()
 		repo = pgRepo
 	default:
 		log.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)

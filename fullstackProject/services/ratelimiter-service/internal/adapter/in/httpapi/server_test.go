@@ -31,7 +31,7 @@ func TestHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != 200 {
 		t.Fatalf("код = %d", res.StatusCode)
 	}
@@ -54,13 +54,13 @@ func TestBucketsShowcase(t *testing.T) {
 	_, _ = svc.Check(context.Background(), "bookings.create", "u-1")
 
 	ts2 := httptest.NewServer(New(":0", svc, prom.New().Handler()).Handler)
-	defer ts2.Close()
+	defer ts2.Close() // httptest.Server.Close не возвращает ошибку
 
 	res, err := ts2.Client().Get(ts2.URL + "/buckets")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	var body struct {
 		Buckets []struct {
 			Action string  `json:"action"`

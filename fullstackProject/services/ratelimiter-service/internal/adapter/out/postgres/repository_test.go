@@ -60,7 +60,7 @@ func dropDatabase(t *testing.T, dsn string) {
 	if err != nil {
 		t.Fatalf("коннект к служебной базе для DROP: %v", err)
 	}
-	defer conn.Close(context.Background())
+	defer func() { _ = conn.Close(context.Background()) }()
 
 	quoted := `"` + strings.ReplaceAll(cfg.Database, `"`, `""`) + `"`
 	if _, err := conn.Exec(ctx, "DROP DATABASE IF EXISTS "+quoted+" WITH (FORCE)"); err != nil {

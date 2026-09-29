@@ -57,8 +57,12 @@ func TestListBucketsShowsVerdict(t *testing.T) {
 	ctx := context.Background()
 	p := domain.PolicyOf(2)
 
-	s.Take(ctx, domain.ActionBookingsCreate, "u-1", p)
-	s.Take(ctx, domain.ActionBookingsCreate, "u-1", p)
+	if _, _, err := s.Take(ctx, domain.ActionBookingsCreate, "u-1", p); err != nil {
+		t.Fatalf("первый Take: %v", err)
+	}
+	if _, _, err := s.Take(ctx, domain.ActionBookingsCreate, "u-1", p); err != nil {
+		t.Fatalf("второй Take: %v", err)
+	}
 	taken, _, _ := s.Take(ctx, domain.ActionBookingsCreate, "u-1", p)
 	if taken {
 		t.Fatalf("третья подряд при ёмкости 2 — отказ")

@@ -93,7 +93,7 @@ func NewRepository(ctx context.Context, dsn string) (*Repository, error) {
 
 	r := &Repository{db: db}
 	if err := r.pingAndSchema(ctx, cfg); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	return r, nil
@@ -126,7 +126,7 @@ func (r *Repository) ListBuckets(ctx context.Context) ([]domain.BucketRecord, er
 	if err != nil {
 		return nil, fmt.Errorf("select витрины корзин: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]domain.BucketRecord, 0)
 	for rows.Next() {
 		var b domain.BucketRecord
@@ -155,7 +155,7 @@ func ensureDatabase(ctx context.Context, cfg *pgx.ConnConfig) error {
 	if err != nil {
 		return fmt.Errorf("коннект к служебной базе postgres: %w", err)
 	}
-	defer admin.Close(context.Background())
+	defer func() { _ = admin.Close(context.Background()) }()
 
 	var exists bool
 	if err := admin.QueryRow(ctx,
