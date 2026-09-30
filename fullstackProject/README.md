@@ -280,8 +280,11 @@ CI (GitHub Actions, workflow в корне репо `.github/workflows/cinebooki
 typecheck + vitest с порогом покрытия + build, api — юнит с порогом
 покрытия + интеграционные + build, go — матрица шести сервисов
 (build + vet + golangci-lint по общему `.golangci.yml` + test -race
-с порогом покрытия per-service; live-PG-тесты скипаются: в раннере
-нет Postgres), proto — buf lint (STANDARD; исключения с обоснованием —
+с порогом покрытия per-service; live-PG-тесты пяти сервисов с БД идут
+в прогон против одноразовых Postgres — testcontainers-go, `TESTCONTAINERS=1`:
+живой прогон делает робот; локально — стенд на :15432, либо та же
+переменная поднимет одноразовый контейнер, либо честный скип),
+proto — buf lint (STANDARD; исключения с обоснованием —
 в `proto/buf.yaml`) + buf breaking против main до пуша: дрейф
 gRPC-контрактов валит CI, пока клиенты собраны под старый контракт,
 infra — `docker compose config` + парсинг JSON/YAML в observability.
