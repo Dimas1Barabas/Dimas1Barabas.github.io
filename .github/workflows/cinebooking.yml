@@ -159,7 +159,9 @@ jobs:
       # без TESTCONTAINERS (скипы) вместо живого — проверено 30.09,
       # смена значения env-переменной не всегда инвалидирует кэш; в CI
       # прогоны и так должны быть свежими
-      - run: go test -race -count=1 -coverprofile=cover.out ./...
+      # -v: в CI логируем подробно — видны причины скипов live-тестов
+      # (t.Skipf молчит без verbose) и ход testcontainers-прогона
+      - run: go test -race -count=1 -v -coverprofile=cover.out ./...
 
       # порог в matrix.threshold: ниже — красный шаг, расти можно
       - name: coverage threshold
