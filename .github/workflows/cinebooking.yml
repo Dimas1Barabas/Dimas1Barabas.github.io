@@ -110,26 +110,27 @@ jobs:
         include:
           # threshold: фиксация текущего покрытия с запасом ~1% вниз —
           # расти можно, падать нет (main/cmd и pb-генерат без тестов тянут
-          # цифру вниз); с включением testcontainers-прогона live-PG
-          # адаптеров покрытие подрастёт — порог пересмотрим по факту
+          # цифру вниз); пороги 51/39/39/43/43 подняты 30.09 по факту
+          # live-PG прогона адаптеров на testcontainers (52.2/40.2/39.7/
+          # 44.2/44.1), worker без БД — прежние 19/20.0
           - name: worker
             dir: ticket-worker
             threshold: 19
           - name: notification
             dir: notification-service
-            threshold: 38
+            threshold: 51
           - name: recommendation
             dir: recommendation-service
-            threshold: 31
+            threshold: 39
           - name: reminder
             dir: reminder-service
-            threshold: 26
+            threshold: 39
           - name: pricing
             dir: pricing-service
-            threshold: 31
+            threshold: 43
           - name: ratelimiter
             dir: ratelimiter-service
-            threshold: 29
+            threshold: 43
     defaults:
       run:
         working-directory: fullstackProject/services/${{ matrix.dir }}
