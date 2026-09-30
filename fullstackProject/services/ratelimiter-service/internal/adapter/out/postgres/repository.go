@@ -27,24 +27,27 @@ var schemaSQL string
 // первый визит: корзины нет, считаем полной и списываем сразу; при
 // конфликте DO UPDATE пересчитывает долив от buckets.* — версии строки,
 // которую транзакция видит уже ПОСЛЕ ожидания локa конкурента, поэтому
-// параллельные Take serialized и перебор невозможен. WHERE на долитой
-// корзине: токена нет — стейтмент не возвращает строк, Take трактует
-// это как отказ (sql.ErrNoRows → false). last_taken именно колонка,
-// а не выражение в RETURNING: RETURNING гарантированно видит только
-// колонки целевой таблицы, а остаток 0.4 после списания неотличим от
-// отказа с 0.4 без явного следа. До 30.09 долив считался CTE по
-// снапшоту старта и писался через EXCLUDED — последняя запись побеждала,
-// и 50 параллельных Take снимали до 15 токенов из ёмкости 10 (поймано
-// testcontainers-прогоном CI: быстрый раннер сузил окно гонки).
+// параллельные Take serialized и перебор невозможен: CASE решает по
+// послелочному значению. Отказ тоже пишется в строку (last_taken=false,
+// tokens = долитый остаток) — витрина ListBuckets показывает отказ, а
+// долив между визитами копится и в отказные разы. last_taken именно
+// колонка, а не выражение в RETURNING: RETURNING гарантированно видит
+// только колонки целевой таблицы, а остаток 0.4 после списания
+// неотличим от отказа с 0.4 без явного следа. До 30.09 долив считался
+// CTE по снапшоту старта и писался через EXCLUDED — последняя запись
+// побеждала, и 50 параллельных Take снимали до 15 токенов из ёмкости
+// 10 (поймано testcontainers-прогоном CI: быстрый раннер сузил окно).
 //
 //	$1 action, $2 key, $3 capacity, $4 refill/сек
 const takeSQL = `INSERT INTO buckets (action, client_key, tokens, last_taken, updated_at)
 VALUES ($1, $2, $3::float8 - 1, TRUE, now())
 ON CONFLICT (action, client_key) DO UPDATE
-	SET tokens = LEAST($3::float8, buckets.tokens + GREATEST(EXTRACT(EPOCH FROM (now() - buckets.updated_at))::float8, 0) * $4::float8) - 1,
-	    last_taken = TRUE,
+	SET tokens = CASE WHEN LEAST($3::float8, buckets.tokens + GREATEST(EXTRACT(EPOCH FROM (now() - buckets.updated_at))::float8, 0) * $4::float8) >= 1
+	        THEN LEAST($3::float8, buckets.tokens + GREATEST(EXTRACT(EPOCH FROM (now() - buckets.updated_at))::float8, 0) * $4::float8) - 1
+	        ELSE LEAST($3::float8, buckets.tokens + GREATEST(EXTRACT(EPOCH FROM (now() - buckets.updated_at))::float8, 0) * $4::float8)
+	    END,
+	    last_taken = LEAST($3::float8, buckets.tokens + GREATEST(EXTRACT(EPOCH FROM (now() - buckets.updated_at))::float8, 0) * $4::float8) >= 1,
 	    updated_at = now()
-	WHERE LEAST($3::float8, buckets.tokens + GREATEST(EXTRACT(EPOCH FROM (now() - buckets.updated_at))::float8, 0) * $4::float8) >= 1
 RETURNING last_taken, tokens`
 
 const listBucketsSQL = `SELECT action, client_key, tokens, last_taken, updated_at
@@ -102,13 +105,10 @@ func (r *Repository) pingAndSchema(ctx context.Context, cfg *pgx.ConnConfig) err
 func (r *Repository) Take(ctx context.Context, action domain.Action, key string, p domain.Policy) (bool, float64, error) {
 	var taken bool
 	var remaining float64
-	// стейтмент пишет строку (токен снят) или ни одной (WHERE в
-	// ON CONFLICT не пустил — это отказ, а не ошибка)
+	// INSERT..ON CONFLICT всегда пишет ровно одну строку — отказ
+	// это last_taken=false в RETURNING, а не пустой результат
 	if err := r.db.QueryRowContext(ctx, takeSQL, string(action), key, p.Capacity, p.RefillPerSec).
 		Scan(&taken, &remaining); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, 0, nil
-		}
 		return false, 0, fmt.Errorf("take %s/%s: %w", action, key, err)
 	}
 	return taken, remaining, nil
