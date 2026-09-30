@@ -46,6 +46,9 @@ func run(m *testing.M) (code int) {
 
 	cnt, err := tcpostgres.Run(ctx, "postgres:16-alpine",
 		tcpostgres.WithDatabase("cine_reminders_test"),
+		// без wait-стратегии Run возвращает «running», а не «ready»:
+		// postgres ещё делает initdb, коннект ловит RST и тест скипается
+		tcpostgres.BasicWaitStrategies(),
 	)
 	if err != nil {
 		log.Fatalf("testcontainers postgres: %v", err)
