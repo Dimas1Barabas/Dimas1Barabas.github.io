@@ -2,25 +2,64 @@ package postgres
 
 import (
 	"context"
+	"log"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"recommendation-service/internal/domain"
 )
 
-// Живые тесты против локального стенда (postgres из docker-compose).
-// Базы нет, PG не поднят (локальный прогон без Docker, CI) — честный
-// skip, как у e2e API; тестовая база пересоздаётся каждым прогоном.
+// Живые тесты против Postgres двумя путями: локально — стенд
+// (postgres из docker-compose, порт 15432) или TEST_DATABASE_URL,
+// в CI (TESTCONTAINERS=1) — одноразовый контейнер testcontainers.
+// Нет ни того, ни другого — честный skip, как у e2e API; тестовая
+// база пересоздаётся каждым тестом.
 
 func testDSN() string {
 	if v := os.Getenv("TEST_DATABASE_URL"); v != "" {
 		return v
 	}
 	return "postgres://cine:cine@localhost:15432/cine_recommendations_test"
+}
+
+// TestMain: TESTCONTAINERS=1 (CI) — поднимаем одноразовый Postgres
+// на пакет и подменяем TEST_DATABASE_URL его DSN, поэтому остальной
+// код тестов (requirePostgres/dropDatabase/withRepo) не меняется.
+// Локально переменную не ставим — прежние стенд или skip; живой
+// прогон в CI делает робот, машина разработчика контейнеры не трогает.
+func TestMain(m *testing.M) {
+	os.Exit(run(m))
+}
+
+func run(m *testing.M) (code int) {
+	if os.Getenv("TESTCONTAINERS") != "1" {
+		return m.Run()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	cnt, err := tcpostgres.Run(ctx, "postgres:16-alpine",
+		tcpostgres.WithDatabase("cine_recommendations_test"),
+	)
+	if err != nil {
+		log.Fatalf("testcontainers postgres: %v", err)
+	}
+	defer func() { _ = cnt.Terminate(ctx) }()
+
+	dsn, err := cnt.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		log.Fatalf("DSN контейнера: %v", err)
+	}
+	if err := os.Setenv("TEST_DATABASE_URL", dsn); err != nil {
+		log.Fatalf("TEST_DATABASE_URL: %v", err)
+	}
+	return m.Run()
 }
 
 // requirePostgres — graceful-skip: коннект к служебной базе за 3 с
