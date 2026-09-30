@@ -6,7 +6,9 @@
 #   go           — matrix по шести Go-сервисам: build + vet + lint + test -race
 #                 с порогом покрытия per-service
 #                 (ticket-worker, notification, recommendation, reminder,
-#                  pricing, ratelimiter)
+#                  pricing, ratelimiter); live-PG адаптеры пяти сервисов —
+#                 против одноразовых Postgres (testcontainers, TESTCONTAINERS=1):
+#                 живой прогон делает робот, локально тесты честно скипаются
 #   proto        — buf lint (STANDARD) + buf breaking (дрейф gRPC-контрактов)
 #   infra        — docker compose config + парсинг JSON/YAML в observability/
 #
@@ -95,13 +97,21 @@ jobs:
     name: ${{ matrix.name }} — go build + vet + test -race
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # TESTCONTAINERS=1: пяти сервисам с live-PG адаптерами даёт зелёный
+    # свет testcontainers — каждый пакет postgres поднимает одноразовый
+    # postgres:16-alpine (см. TestMain в repository_test.go); worker
+    # переменную не использует. Локально её не ставим — live-тесты
+    # скипаются, машина разработчика контейнеры не трогает.
+    env:
+      TESTCONTAINERS: 1
     strategy:
       fail-fast: false
       matrix:
         include:
           # threshold: фиксация текущего покрытия с запасом ~1% вниз —
           # расти можно, падать нет (main/cmd и pb-генерат без тестов тянут
-          # цифру вниз, живые адаптеры закроет эпоха Testcontainers)
+          # цифру вниз); с включением testcontainers-прогона live-PG
+          # адаптеров покрытие подрастёт — порог пересмотрим по факту
           - name: worker
             dir: ticket-worker
             threshold: 19
