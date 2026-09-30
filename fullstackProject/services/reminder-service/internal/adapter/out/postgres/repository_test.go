@@ -160,8 +160,11 @@ func TestScheduleDueListRoundtrip(t *testing.T) {
 		t.Fatalf("Due до срока = %d, want 0", len(due))
 	}
 
-	// срок пришёл — напоминание на месте, поля пережили запись
-	due, err = r.Due(ctx, base.Add(5*time.Minute))
+	// срок пришёл (due_at = base+5ч, минута спустя) — напоминание на
+	// месте, поля пережили запись; было base+5м — момент ЗА 4ч55м до
+	// срока, тест не мог пройти ни на одной базе (латентный баг теста,
+	// до эпохи testcontainers ни разу реально не исполнялся)
+	due, err = r.Due(ctx, base.Add(5*time.Hour+time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
