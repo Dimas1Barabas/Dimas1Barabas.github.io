@@ -188,8 +188,10 @@ func TestConcurrentTake(t *testing.T) {
 	ctx := context.Background()
 	p := domain.PolicyOf(10)
 
-	// 50 одновременных проверок одной корзины: снять должны ровно
-	// ёмкость (допустим +1 на гонку «первых визитов»)
+	// 50 одновременных проверок одной корзины: снять должны РОВНО
+	// ёмкость — DO UPDATE в takeSQL читает buckets.* после ожидания
+	// локa, параллельные Take serialized (до 30.09 снипшот-CTE давал
+	// до 15 из 10 — ловилось только на быстром CI-раннере)
 	results := make(chan bool, 50)
 	for i := 0; i < 50; i++ {
 		go func() {
@@ -203,8 +205,8 @@ func TestConcurrentTake(t *testing.T) {
 			allowed++
 		}
 	}
-	if allowed < 10 || allowed > 11 {
-		t.Fatalf("снято %d токенов, ожидали 10–11", allowed)
+	if allowed != 10 {
+		t.Fatalf("снято %d токенов, ожидали ровно 10", allowed)
 	}
 }
 
