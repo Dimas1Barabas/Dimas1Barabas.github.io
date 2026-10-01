@@ -16,6 +16,7 @@
     "test": "jest",
     "test:cov": "jest --coverage",
     "test:integration": "jest --rootDir test --testRegex \"\\.int\\.spec\\.ts$\" --coverage=false",
+    "test:live-int": "jest --rootDir test --testRegex \"\\.live-int\\.spec\\.ts$\" --runInBand --coverage=false",
     "test:e2e": "jest --rootDir test --testRegex \"\\.e2e\\.spec\\.ts$\" --runInBand --coverage=false"
   },
   "dependencies": {
@@ -51,6 +52,9 @@
     "@nestjs/cli": "^11.0.10",
     "@nestjs/schematics": "^11.0.8",
     "@nestjs/testing": "^11.1.6",
+    "@testcontainers/postgresql": "^12.2.0",
+    "@testcontainers/rabbitmq": "^12.2.0",
+    "@testcontainers/redis": "^12.2.0",
     "@types/amqplib": "^0.10.7",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.5",
@@ -61,6 +65,7 @@
     "@types/ws": "^8.18.1",
     "jest": "^30.2.0",
     "supertest": "^7.2.2",
+    "testcontainers": "^12.2.0",
     "ts-jest": "^29.4.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
