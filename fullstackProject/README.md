@@ -194,6 +194,26 @@ cd apps/api && npm test
 # спецификацию Swagger (маршруты, схемы DTO, bearer-security)
 cd apps/api && npm run test:integration
 
+# API: live-int (15) — то же приложение целиком против одноразовых
+# контейнеров testcontainers: postgres:16-alpine + redis:7-alpine +
+# rabbitmq:3.13-alpine (образы как в compose стенда). Boot-путь
+# прод-старта: миграции (migrationsRun), посев каталога и админа,
+# топология RabbitMQ — и живые хранилища: гонку двух брони за одно
+# место решает настоящий uq seat_occupancy, активацию промокода —
+# реальный UPDATE…RETURNING, баланс бонусов — настоящий SUM по ledger,
+# wait-событие резерва лежит в реальной wait-очереди, вердикты
+# booking.processed/booking.expired (роль воркера играет тест) едут
+# по настоящему брокеру в настоящие @RabbitSubscribe-консьюмеры
+# (кэшбэк INSERT…ON CONFLICT, идемпотентность ределивери), кэш каталога
+# живёт в Redis с тикающим TTL и честной инвалидацией на админской
+# мутации. gRPC-клиенты четырёх Go-сервисов — фейки: сама их интеграция
+# — уровень живого стенда (e2e). Запуск только с TESTCONTAINERS=1
+# (делает CI-робот); локально — корректный скип, машина разработчика
+# контейнеры не трогает. live-harness: singleton-тройка контейнеров
+# на jest-процесс (globalThis + --runInBand), между файлами —
+# TRUNCATE/FLUSHALL/purge + повторный посев
+cd apps/api && npm run test:live-int
+
 # API: e2e против живого docker-стенда (health, кэш, полный цикл create →
 # pay → вердикт Go-воркера, EXPIRED по TTL wait-очереди, сага отмены,
 # отзывы: 403 без брони и полный цикл брони → отзыва → дубля → удаления,
@@ -278,7 +298,11 @@ cd services/ratelimiter-service && go test ./...
 CI (GitHub Actions, workflow в корне репо `.github/workflows/cinebooking.yml`)
 на пуш/PR по `fullstackProject/` гоняет герметичные уровни: web —
 typecheck + vitest с порогом покрытия + build, api — юнит с порогом
-покрытия + интеграционные + build, go — матрица шести сервисов
+покрытия + интеграционные + build, api-containers — live-int: то же
+приложение целиком против одноразовых PG+RabbitMQ+Redis
+(testcontainers-node, `TESTCONTAINERS=1`: миграции, uq-констрейнты,
+настоящий брокер и кэш; живой прогон делает робот, локально — скип),
+go — матрица шести сервисов
 (build + vet + golangci-lint по общему `.golangci.yml` + test -race
 с порогом покрытия per-service; live-PG-тесты пяти сервисов с БД идут
 в прогон против одноразовых Postgres — testcontainers-go, `TESTCONTAINERS=1`:
