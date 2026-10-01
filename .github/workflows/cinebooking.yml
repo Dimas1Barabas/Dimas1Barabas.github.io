@@ -3,6 +3,11 @@
 # Герметичные уровни без внешних зависимостей:
 #   web          — eslint (границы FSD) + typecheck (vue-tsc) + vitest с coverage-порогом + сборка
 #   api          — jest юнит с coverage-порогом + интеграционные (фейковые Postgres/RabbitMQ/Redis на Map) + сборка
+#   api-containers — live-int: то же приложение целиком против одноразовых
+#                 PG+RabbitMQ+Redis (testcontainers, TESTCONTAINERS=1):
+#                 миграции, uq-констрейнты, настоящий брокер и кэш.
+#                 Живой прогон делает робот, локально спеки скипаются —
+#                 как у Go-сервисов
 #   go           — matrix по шести Go-сервисам: build + vet + lint + test -race
 #                 с порогом покрытия per-service
 #                 (ticket-worker, notification, recommendation, reminder,
@@ -88,6 +93,38 @@ jobs:
 
       # dist нужен docker-образу: проверяем, что проект компилируется
       - run: npm run build
+
+  # Live-int уровень API (15-B): приложение целиком — миграции, сиды,
+  # топология RabbitMQ — против одноразовых postgres:16-alpine /
+  # redis:7-alpine / rabbitmq:3.13-alpine (образы как в compose стенда).
+  # TESTCONTAINERS=1 — тот же гейт, что у Go-сервисов: локально спеки
+  # скипаются (см. live-harness.ts), живой прогон делает CI-робот.
+  # --runInBand зашит в скрипте: одна тройка контейнеров на все
+  # спек-файлы (singleton в globalThis).
+  api-containers:
+    name: api — live-int (testcontainers PG+Rabbit+Redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: fullstackProject/apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fullstackProject/apps/api/package-lock.json
+
+      - run: npm ci
+
+      # Docker на раннере предустановлен; Ryuk подчищает контейнеры
+      # по завершении джобы. Первый прогон тянет три образа (~40с),
+      # дальше контейнеры стартуют за секунды
+      - run: npm run test:live-int
+        env:
+          TESTCONTAINERS: 1
 
   # Шесть Go-сервисов одной матрицей: каждый элемент — отдельный раннер,
   # как раньше отдельные джобы, но без копипасты шагов. fail-fast: false —
