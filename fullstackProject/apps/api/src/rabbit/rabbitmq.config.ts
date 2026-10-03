@@ -26,15 +26,12 @@ export const rabbitMqModule = RabbitMQModule.forRoot({
     ...withRetryTopology('api.booking.expired', 'booking.expired'),
     // места вернулись в продажу → уведомить голову листа ожидания
     ...withRetryTopology('api.waitlist.released', 'waitlist.seat.released'),
-    // сигналы КиноСоветнику → консьюмер API гасит кэш «Вам понравится»
-    ...withRetryTopology(
-      'api.recommendations.signals',
+    // сигналы КиноСоветнику → консьюмер API гасит кэш «Вам понравится»;
+    // очередь слушает оба rk — retry/parking декларируются один раз
+    ...withRetryTopology('api.recommendations.signals', [
       'recommendation.booking.confirmed',
-    ),
-    ...withRetryTopology(
-      'api.recommendations.signals',
       'recommendation.review.created',
-    ),
+    ]),
     // «письмо ушло» от reminder-сервиса → SSE-событие зрителю
     // (параллельно то же событие читает notification-service)
     ...withRetryTopology('api.reminder.sent', 'user.session.reminder'),
@@ -61,22 +58,30 @@ export const rabbitMqModule = RabbitMQModule.forRoot({
 });
 
 /**
- * Топология надёжности для рабочей очереди `queue` (бинд `cinema` ← routingKey):
+ * Топология надёжности для рабочей очереди `queue` (бинд `cinema` ← routingKey;
+ * массив — когда одна очередь слушает несколько потоков, см. api.recommendations.signals):
  *
  *   `<queue>.retry`   — без потребителей, держит упавшее сообщение RETRY_TTL_MS
  *                       и по TTL (dead-letter) возвращает его в рабочую очередь;
  *   `<queue>.parking` — «парковка» отработавших попытки: poison или всё, что
  *                       не пережило MAX_ATTEMPTS, разбирают вручную.
+ *
+ * Retry-очередь на поток одна, dead-letter возвращает по первому rk —
+ * рабочая очередь слушает их все, сообщение в любом случае попадает домой.
+ * (Раньше на каждый rk генерировалась своя декларация той же очереди с
+ * другим x-dead-letter-routing-key — брокер на вторую отвечал 406
+ * PRECONDITION_FAILED; поймано live-int против живого RabbitMQ.)
  */
 export function withRetryTopology(
   queue: string,
-  routingKey: string,
+  routingKey: string | string[],
 ): RabbitMQQueueConfig[] {
+  const rks = Array.isArray(routingKey) ? routingKey : [routingKey];
   return [
     {
       name: `${queue}.retry`,
       exchange: 'cinema',
-      routingKey: `${routingKey}.retry`,
+      routingKey: rks.map((rk) => `${rk}.retry`),
       createQueueIfNotExists: true,
       options: {
         durable: true,
@@ -84,14 +89,14 @@ export function withRetryTopology(
           'x-message-ttl': RETRY_TTL_MS,
           'x-dead-letter-exchange': 'cinema',
           // по истечении TTL брокер сам вернёт сообщение в рабочую очередь
-          'x-dead-letter-routing-key': routingKey,
+          'x-dead-letter-routing-key': rks[0],
         },
       },
     },
     {
       name: `${queue}.parking`,
       exchange: 'cinema',
-      routingKey: `${routingKey}.parking`,
+      routingKey: rks.map((rk) => `${rk}.parking`),
       createQueueIfNotExists: true,
       options: { durable: true },
     },

@@ -59,7 +59,10 @@ export class Booking {
   totalRub: number;
 
   /** промокод, применённый при оплате (активация списывается в pay) */
-  @Column({ name: 'promo_code', length: 32, nullable: true })
+  // type задан явно: союбу `string | null` отражается в design:type как
+  // Object, и TypeORM при построении метаданных (initialize) отказывается
+  // угадывать тип колонки — прод-старт падал целиком (поймано live-int)
+  @Column({ name: 'promo_code', type: 'varchar', length: 32, nullable: true })
   promoCode: string | null;
 
   /** скидка применённого промокода, ₽ (null — бронь без промокода) */
