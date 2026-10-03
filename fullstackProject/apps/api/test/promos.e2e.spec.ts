@@ -4,7 +4,7 @@
  * в ./e2e-context. Если API не поднят — тесты файла тихо пропускаются
  * с предупреждением.
  */
-import { api, bootstrap, token, available, waitForStatus, E2EMovie, adminToken, freeSeat } from './e2e-context';
+import { api, bootstrap, BASE, token, available, waitForStatus, E2EMovie, adminToken, freeSeat } from './e2e-context';
 
 jest.setTimeout(30_000);
 

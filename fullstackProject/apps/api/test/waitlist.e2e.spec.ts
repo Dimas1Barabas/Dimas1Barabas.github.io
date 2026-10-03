@@ -61,10 +61,14 @@ describe('лист ожидания: честная гонка', () => {
     const session = movie.sessions[0];
 
     const bookingIds: string[] = [];
-    // зал 8×10 — восемь броней по целому ряду (ряды 1–8, места 1–10);
-    // раньше 10 блоков по 8 мест: ряды 9–10 не существуют, 400 роняли сетап
-    for (let block = 0; block < 8; block++) {
-      const seats = Array.from({ length: 10 }, (_, i) => `${block + 1}-${i + 1}`);
+    // зал 8×10, но максимум 8 мест на бронь: 80 мест раскладываем
+    // по порядку (ряд за рядом) десятью бронями по 8. Раньше блоками
+    // 10×8 — рядов 9–10 не существует, 400 роняли сетап
+    const all = Array.from({ length: 8 }, (_, r) =>
+      Array.from({ length: 10 }, (_, s) => `${r + 1}-${s + 1}`),
+    ).flat();
+    for (let block = 0; block < 10; block++) {
+      const seats = all.slice(block * 8, block * 8 + 8);
       const booking = await api<{ id: string }>('/bookings', {
         method: 'POST',
         body: JSON.stringify({
