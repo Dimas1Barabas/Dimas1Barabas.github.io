@@ -73,6 +73,15 @@ services:
       GRPC_RATELIMITER_URL: ratelimiter:8090
     ports:
       - '13000:3000'
+    # readiness по факту, а не «процесс стартовал»: на первом boot'е api
+    # гоняет миграции и ждёт брокера, /api/health оживает последним.
+    # Нужен docker compose up --wait (e2e в CI и локальные прогоны)
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/api/health >/dev/null 2>&1 || exit 1']
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy

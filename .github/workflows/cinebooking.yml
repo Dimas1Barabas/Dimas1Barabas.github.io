@@ -16,10 +16,10 @@
 #                 живой прогон делает робот, локально тесты честно скипаются
 #   proto        — buf lint (STANDARD) + buf breaking (дрейф gRPC-контрактов)
 #   infra        — docker compose config + парсинг JSON/YAML в observability/
-#
-# E2E против живого docker-стенда в CI не гоняем: он требует поднятия
-# всего compose-окружения и остаётся локальным (`npm run test:e2e`
-# корректно пропускается, если стенд не поднят).
+#   e2e          — живой стенд целиком (docker compose up --build --wait:
+#                 PG+Redis+Rabbit+api+воркер+пять Go-сервисов) и test:e2e
+#                 против него: HTTP → брокер → вердикты воркера → gRPC.
+#                 Локально тот же прогон — `docker compose up` руками
 #
 # Репо — портфолио на GitHub Pages, где меняется не только fullstackProject,
 # поэтому стоят path-фильтры: гоняемся только по своему каталогу.
@@ -208,6 +208,63 @@ jobs:
           echo "покрытие: ${total}% (порог ${{ matrix.threshold }}%)"
           awk -v t="$total" -v min="${{ matrix.threshold }}" 'BEGIN { exit t < min }' \
             || { echo "покрытие ${total}% ниже порога ${{ matrix.threshold }}%"; exit 1; }
+
+  # Живой e2e-стенд (15-C): поднимаем compose-окружение ЦЕЛИКОМ — как его
+  # поднимает разработчик локально, но на раннере CI. В прогон берём
+  # событийный контур стенда: инфраструктура + api + Go-воркер + пять
+  # Go-сервисов; web/prometheus/grafana e2e не нужны (UI — уровень
+  # Playwright-демо). Сборка честная: docker compose build по тем же
+  # Dockerfile, что летят на стенд. --wait держит до готовности api
+  # (healthcheck в compose), затем test:e2e из apps/api — спеки ходят
+  # на localhost:13000 (дефолт E2E_BASE_URL = маппинг стенда).
+  e2e:
+    name: e2e — живой compose-стенд + test:e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fullstackProject/apps/api/package-lock.json
+
+      - run: npm ci
+        working-directory: fullstackProject/apps/api
+
+      # --build: образы api/воркера/Go-сервисов собираются из Dockerfile'ов
+      # стенда; --wait: пока api не пройдёт healthcheck (миграции + брокер),
+      # --wait-timeout: страховка от вечного ожидания
+      - name: docker compose up --wait
+        run: |
+          docker compose up --build --wait --wait-timeout 300 -d \
+            postgres redis rabbitmq \
+            worker notification recommendation reminder pricing ratelimiter api
+        working-directory: fullstackProject
+
+      # страховка на случай, если --wait пропустил (healthcheck-флейк):
+      # явная проба /api/health с понятным сообщением об ошибке
+      - name: wait for /api/health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:13000/api/health >/dev/null 2>&1; then
+              echo "api готов (проба $i)"; exit 0
+            fi
+            sleep 5
+          done
+          echo "api не ожил за 300с — логи ниже"; docker compose logs --tail 100 api
+          exit 1
+        working-directory: fullstackProject
+
+      - run: npm run test:e2e
+        working-directory: fullstackProject/apps/api
+
+      # посмертные логи стенда: на упавшей спеке видно, что делали сервисы
+      - name: compose logs (только при падении)
+        if: failure()
+        run: docker compose logs --tail 300 api worker notification recommendation reminder pricing ratelimiter
+        working-directory: fullstackProject
 
   # Контракты gRPC. lint — STANDARD с зафиксированными в proto/buf.yaml
   # исключениями (плоская раскладка, имена без «Service»). breaking —
