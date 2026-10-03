@@ -77,11 +77,14 @@ export function withRetryTopology(
   routingKey: string | string[],
 ): RabbitMQQueueConfig[] {
   const rks = Array.isArray(routingKey) ? routingKey : [routingKey];
+  // одиночной очереди оставляем плоский rk, слушающей несколько — массив биндов
+  const bind = (suffix: string) =>
+    rks.length === 1 ? `${rks[0]}${suffix}` : rks.map((rk) => `${rk}${suffix}`);
   return [
     {
       name: `${queue}.retry`,
       exchange: 'cinema',
-      routingKey: rks.map((rk) => `${rk}.retry`),
+      routingKey: bind('.retry'),
       createQueueIfNotExists: true,
       options: {
         durable: true,
@@ -96,7 +99,7 @@ export function withRetryTopology(
     {
       name: `${queue}.parking`,
       exchange: 'cinema',
-      routingKey: rks.map((rk) => `${rk}.parking`),
+      routingKey: bind('.parking'),
       createQueueIfNotExists: true,
       options: { durable: true },
     },
