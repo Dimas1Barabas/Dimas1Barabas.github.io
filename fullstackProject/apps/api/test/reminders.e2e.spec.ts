@@ -186,11 +186,18 @@ describe('напоминания о сеансе: письмо + SSE + витр�
     const confirmed = await confirmBooking(login.accessToken, sessionId, '8-9');
     if (!confirmed) return;
 
-    await as(login.accessToken, `/bookings/${confirmed.id}/cancel`, {
-      method: 'POST',
-    });
-    const done = await waitForStatus(confirmed.id, 'CANCELLING');
-    expect(done.status).toBe('CANCELLED');
+    // возврат вероятностен (~10% REFUND_FAILED возвращает бронь в
+    // CONFIRMED) — ретраим отмену до CANCELLED, как живой пользователь
+    let done: { status: string } | undefined;
+    for (let attempt = 0; attempt < 5 && done?.status !== 'CANCELLED'; attempt++) {
+      if (attempt > 0 || (await waitForStatus(confirmed.id, 'CONFIRMED')).status === 'CONFIRMED') {
+        await as(login.accessToken, `/bookings/${confirmed.id}/cancel`, {
+          method: 'POST',
+        });
+      }
+      done = await waitForStatus(confirmed.id, 'CANCELLING');
+    }
+    expect(done?.status).toBe('CANCELLED');
 
     // витрина: запись погашена, письма нет и не появится (окно далеко)
     await new Promise((resolve) => setTimeout(resolve, 8000));

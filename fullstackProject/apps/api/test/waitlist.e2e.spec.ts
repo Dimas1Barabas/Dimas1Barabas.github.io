@@ -17,7 +17,10 @@ describe('лист ожидания: честная гонка', () => {
 
   /** свежий пользователь с известным email — адресат «письма» */
   async function freshUser(label: string): Promise<{ token: string; email: string }> {
-    const email = `e2e-wl-${label}-${Date.now()}-${Math.random()
+    // label в нижнем регистре: register lowercase'ит email, а витрину писем
+    // мы потом фильтруем ровно этой строкой (прогон f566ac4a: письмо
+    // лежало в истории под «письмо», спека искала «Письмо»)
+    const email = `e2e-wl-${label.toLowerCase()}-${Date.now()}-${Math.random()
       .toString(36)
       .slice(2, 6)}@test.local`;
     await api('/auth/register', {
@@ -138,7 +141,13 @@ describe('лист ожидания: честная гонка', () => {
   it('join только на полный сеанс: 409 sessionNotFull на обычном', async () => {
     if (!available) return;
     const movies = await api<{ data: E2EMovie[] }>('/movies');
-    const session = movies.data[0].sessions[0];
+    // сессия с запасом будущего: афиша до 60с сидит в кэше, сессия
+    // соседнего сьюта на границе «сейчас» успевает стать прошлой
+    // к моменту join (410 Gone вместо 409 — прогон f566ac4a)
+    const session = movies.data[0].sessions.find(
+      (sn) => Date.parse(sn.startsAt) > Date.now() + 30 * 60_000,
+    );
+    if (!session) throw new Error('в афише нет сеанса с запасом будущего');
 
     const res = await joinWaitlist(token, session.id);
     expect(res.status).toBe(409);
