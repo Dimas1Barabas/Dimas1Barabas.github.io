@@ -895,23 +895,32 @@ export class BookingsService {
    * (идемпотентность гонки pay/cancel-vs-timeout).
    */
   async handleExpired(event: BookingExpiredEvent): Promise<void> {
-    const updated = await this.bookings.update(
-      { id: event.bookingId, status: 'PENDING_PAYMENT' },
-      {
-        status: 'EXPIRED',
-        message: event.message,
-        processedBy: event.processedBy,
-        processedAt: new Date(event.expiredAt),
-      },
-    );
-    if (!updated.affected) {
+    // статус и возврат мест — одной транзакцией: двумя отдельными
+    // записями внешний наблюдатель ловил EXPIRED с ещё занятым местом
+    // (флейк live-int), а падение в этом окне оставляло бы места
+    // занятыми навсегда
+    const applied = await this.dataSource.transaction(async (em) => {
+      const updated = await em.update(
+        Booking,
+        { id: event.bookingId, status: 'PENDING_PAYMENT' },
+        {
+          status: 'EXPIRED',
+          message: event.message,
+          processedBy: event.processedBy,
+          processedAt: new Date(event.expiredAt),
+        },
+      );
+      if (!updated.affected) return false;
+      // резерв истёк — места снова в продаже
+      await em.delete(SeatOccupancy, { bookingId: event.bookingId });
+      return true;
+    });
+    if (!applied) {
       this.logger.warn(
         `booking.expired по бронь ${event.bookingId} уже не в PENDING_PAYMENT — пропуск`,
       );
       return;
     }
-    // резерв истёк — места снова в продаже
-    await this.occupancy.delete({ bookingId: event.bookingId });
     this.logger.log(`Бронь ${event.bookingId} → EXPIRED (${event.processedBy})`);
     const booking = await this.bookings.findOneByOrFail({ id: event.bookingId });
     this.publishSeatsReleased(booking, 'EXPIRED');

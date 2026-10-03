@@ -15,10 +15,11 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
   let reminders: BookingsHarness['reminders'];
   let rabbit: BookingsHarness['rabbit'];
   let stream: BookingsHarness['stream'];
+  let emUpdate: BookingsHarness['emUpdate'];
   let bonusRows: BookingsHarness['bonusRows'];
 
   beforeEach(async () => {
-    ({ service, bookingsRepo, sessionsRepo, occupancyRepo, reminders, rabbit, stream, bonusRows } = await buildBookingsHarness());
+    ({ service, bookingsRepo, sessionsRepo, occupancyRepo, reminders, rabbit, stream, bonusRows, emUpdate } = await buildBookingsHarness());
   });
 
   describe('handleProcessed', () => {
@@ -269,7 +270,7 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
 
   describe('handleExpired', () => {
     it('гасит ждущую оплаты бронь в EXPIRED и освобождает места', async () => {
-      bookingsRepo.update.mockResolvedValue({ affected: 1 });
+      emUpdate.mockResolvedValue({ affected: 1 });
       bookingsRepo.findOneByOrFail.mockResolvedValue({
         ...bookingFixture(),
         status: 'EXPIRED',
@@ -282,7 +283,9 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
         expiredAt: '2026-09-03T12:15:00Z',
       });
 
-      expect(bookingsRepo.update).toHaveBeenCalledWith(
+      // условный UPDATE и освобождение мест — в общей транзакции (em)
+      expect(emUpdate).toHaveBeenCalledWith(
+        Booking,
         { id: 'booking-1', status: 'PENDING_PAYMENT' },
         {
           status: 'EXPIRED',
@@ -298,7 +301,7 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
     });
 
     it('пропускает событие, если бронь уже не ждёт оплаты (pay-vs-timeout)', async () => {
-      bookingsRepo.update.mockResolvedValue({ affected: 0 });
+      emUpdate.mockResolvedValue({ affected: 0 });
 
       await service.handleExpired({
         bookingId: 'booking-1',

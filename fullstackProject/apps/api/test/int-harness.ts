@@ -356,6 +356,11 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
       if (entity === Booking) return bookingsRepo.update(criteria, patch);
       throw new Error('unexpected entity');
     },
+    // handleExpired(): гашение EXPIRED возвращает места — в той же транзакции
+    delete: (entity: unknown, criteria: { bookingId: string }) => {
+      if (entity === SeatOccupancy) return occupancyRepo.delete(criteria);
+      throw new Error('unexpected entity');
+    },
     // сырой UPDATE promos в оплате с промокодом; баланс/строки —
     // от фейкового ledger'а (SUM в pg — bigint, строкой)
     query: jest.fn(async (sql: string, params: string[]) => {

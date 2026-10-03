@@ -1,12 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { BonusModule } from './bonus/bonus.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
+import { TypeOrmNotFoundFilter } from './exceptions/typeorm-not-found.filter';
 import { BookingsModule } from './bookings/bookings.module';
 import { dataSourceOptions } from './data-source';
 import { HealthController } from './health/health.controller';
@@ -62,6 +63,8 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     // следом за JWT: сверка роли с @Roles(...) на админских эндпоинтах
     { provide: APP_GUARD, useClass: RolesGuard },
+    // findOneByOrFail по несуществующему id → 404, не 500 (HTTP-пути)
+    { provide: APP_FILTER, useClass: TypeOrmNotFoundFilter },
   ],
 })
 export class AppModule {}

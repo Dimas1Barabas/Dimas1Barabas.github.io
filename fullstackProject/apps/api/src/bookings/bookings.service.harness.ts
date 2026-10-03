@@ -216,6 +216,11 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
     save: (entity: unknown, x: Booking) => Promise<Booking>;
     insert: jest.Mock;
     update: jest.Mock;
+    /** гашение занятости в транзакции (handleExpired) */
+    delete: (
+      entity: unknown,
+      criteria: { bookingId: string },
+    ) => Promise<unknown>;
     query: jest.Mock;
     createQueryBuilder: (entity: unknown) => unknown;
   } = {
@@ -229,6 +234,9 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
     save: (_entity, x) => bookingsRepo.save(x),
     insert: emInsert,
     update: emUpdate,
+    // handleExpired гасит занятость в общей транзакции со статусом
+    delete: (_entity: unknown, criteria: { bookingId: string }) =>
+      occupancyRepo.delete(criteria),
     query: emQuery,
     // INSERT INTO bonus_transactions … ON CONFLICT DO NOTHING:
     // orIgnore-цепочка пишет строку в фейковый ledger

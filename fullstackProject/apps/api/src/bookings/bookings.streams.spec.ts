@@ -12,9 +12,10 @@ describe('BookingsService: шины: SSE и живая карта (unit)', () =>
   let stream: BookingsHarness['stream'];
   let seatStream: BookingsHarness['seatStream'];
   let emInsert: BookingsHarness['emInsert'];
+  let emUpdate: BookingsHarness['emUpdate'];
 
   beforeEach(async () => {
-    ({ service, bookingsRepo, stream, seatStream, emInsert } = await buildBookingsHarness());
+    ({ service, bookingsRepo, stream, seatStream, emInsert, emUpdate } = await buildBookingsHarness());
   });
 
   describe('SSE: уведомление подключённых клиентов', () => {
@@ -184,7 +185,8 @@ describe('BookingsService: шины: SSE и живая карта (unit)', () =>
       });
       expect(seatStream.emit).not.toHaveBeenCalled();
 
-      bookingsRepo.update.mockResolvedValue({ affected: 0 });
+      // ределивери EXPIRED: условный UPDATE в транзакции уже никого не задел
+      emUpdate.mockResolvedValue({ affected: 0 });
       await service.handleExpired({
         bookingId: 'booking-1',
         message: 'Время оплаты истекло',
