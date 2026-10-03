@@ -17,7 +17,7 @@
     "test:cov": "jest --coverage",
     "test:integration": "jest --rootDir test --testRegex \"\\.int\\.spec\\.ts$\" --coverage=false",
     "test:live-int": "jest --rootDir test --testRegex \"\\.live-int\\.spec\\.ts$\" --runInBand --coverage=false --forceExit",
-    "test:e2e": "jest --rootDir test --testRegex \"\\.e2e\\.spec\\.ts$\" --runInBand --coverage=false"
+    "test:e2e": "jest --rootDir test --testRegex \"\\.e2e\\.spec\\.ts$\" --runInBand --coverage=false --forceExit"
   },
   "dependencies": {
     "@golevelup/nestjs-rabbitmq": "^9.0.2",

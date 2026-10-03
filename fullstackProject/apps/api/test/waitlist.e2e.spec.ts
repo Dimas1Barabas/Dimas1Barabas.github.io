@@ -123,6 +123,18 @@ describe('лист ожидания: честная гонка', () => {
     });
   }
 
+  /** POST от конкретного пользователя: гашение записи листа ожидания
+   *  привязано к юзеру брони — бронь «за файлового» голову не гасит */
+  async function postAs<T>(jwt: string, path: string, body: unknown): Promise<T> {
+    const res = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    return (await res.json()) as T;
+  }
+
   it('join только на полный сеанс: 409 sessionNotFull на обычном', async () => {
     if (!available) return;
     const movies = await api<{ data: E2EMovie[] }>('/movies');
@@ -151,48 +163,50 @@ describe('лист ожидания: честная гонка', () => {
     expect(again.status).toBe(409);
     expect(((await again.json()) as { code: string }).code).toBe('waitlistAlready');
 
-    // слушаем стрим ДО освобождения — событие waitlist витринное
+    // слушаем стрим ДО освобождения — событие waitlist витринное;
+    // abort в finally обязателен: открытый SSE-ручей держит jest живым
+    // после падения ожидания (прогон 764f0e7b так и умер по таймауту джобы)
     const controller = new AbortController();
     const sse = await fetch(`${BASE}/bookings/stream`, {
       signal: controller.signal,
     });
     expect(sse.ok).toBe(true);
     const frames = sseFrames(sse.body!);
+    try {
 
-    // место освобождается: отмена неоплаченной брони ряда 1
-    await api(`/bookings/${bookingIds[0]}/cancel`, { method: 'POST' });
+      // место освобождается: отмена неоплаченной брони ряда 1
+      await api(`/bookings/${bookingIds[0]}/cancel`, { method: 'POST' });
 
-    // in-app уведомление голове — без опроса
-    const wlEvent = await waitForSseEvent<{ userId: string; sessionId: string }>(
-      frames,
-      'waitlist',
-      (p) => p.sessionId === sessionId,
-      15_000,
-    );
-    expect(wlEvent.userId).toBeTruthy(); // фильтрация «моё» — на клиенте
+      // in-app уведомление голове — без опроса
+      const wlEvent = await waitForSseEvent<{ userId: string; sessionId: string }>(
+        frames,
+        'waitlist',
+        (p) => p.sessionId === sessionId,
+        15_000,
+      );
+      expect(wlEvent.userId).toBeTruthy(); // фильтрация «моё» — на клиенте
 
-    // голова уведомлена, второй всё ещё ждёт
-    const entryA = await waitForEntryStatus(first.token, sessionId, 'NOTIFIED');
-    expect(entryA.position).toBeNull();
-    expect((await myEntry(second.token, sessionId))?.status).toBe('WAITING');
+      // голова уведомлена, второй всё ещё ждёт
+      const entryA = await waitForEntryStatus(first.token, sessionId, 'NOTIFIED');
+      expect(entryA.position).toBeNull();
+      expect((await myEntry(second.token, sessionId))?.status).toBe('WAITING');
 
-    // первый успел в честной гонке: бронь гасит его запись (LEFT скрыт)
-    const booked = await api<{ id: string }>('/bookings', {
-      method: 'POST',
-      body: JSON.stringify({
+      // первый успел в честной гонке: бронь ПЕРВОГО гасит ЕГО запись
+      // (LEFT скрыт) — гашение в create() матчит userId брони
+      const booked = await postAs<{ id: string }>(first.token, '/bookings', {
         sessionId,
         customerName: 'E2E Успел',
         seats: ['1-1'],
-      }),
-    });
-    expect(booked.id).toBeTruthy();
-    expect(await myEntry(first.token, sessionId)).toBeUndefined();
+      });
+      expect(booked.id).toBeTruthy();
+      expect(await myEntry(first.token, sessionId)).toBeUndefined();
 
-    // второе освобождение — второй в гонке
-    await api(`/bookings/${bookingIds[1]}/cancel`, { method: 'POST' });
-    await waitForEntryStatus(second.token, sessionId, 'NOTIFIED');
-
-    controller.abort();
+      // второе освобождение — второй в гонке
+        await api(`/bookings/${bookingIds[1]}/cancel`, { method: 'POST' });
+        await waitForEntryStatus(second.token, sessionId, 'NOTIFIED');
+    } finally {
+      controller.abort();
+    }
   }, 120_000);
 
   it('письмо «место освободилось» в истории notification-service', async () => {
@@ -216,9 +230,11 @@ describe('лист ожидания: честная гонка', () => {
 
     await api(`/bookings/${bookingIds[0]}/cancel`, { method: 'POST' });
 
-    // «письмо» едет через RabbitMQ — поллим историю у адресата
+    // «письмо» едет через RabbitMQ (API → waitlist-консьюмер →
+    // notification-service) — поллим историю у адресата
     let letter: { body: string } | undefined;
-    for (let attempt = 0; attempt < 10 && !letter; attempt++) {
+    let lastSeen: { kind: string; bookingId: string }[] = [];
+    for (let attempt = 0; attempt < 20 && !letter; attempt++) {
       const res = await fetch(
         `${NOTIF}/notifications?bookingId=${encodeURIComponent(user.email)}&limit=5`,
         { signal: AbortSignal.timeout(3000) },
@@ -227,9 +243,14 @@ describe('лист ожидания: честная гонка', () => {
         const body = (await res.json()) as {
           items: { kind: string; body: string }[];
         };
+        lastSeen = body.items.map((i) => ({ kind: i.kind, bookingId: '' }));
         letter = body.items.find((i) => i.kind === 'waitlist_seat');
       }
       if (!letter) await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    if (!letter) {
+      // eslint-disable-next-line no-console
+      console.warn('письма waitlist_seat нет; витрина видела:', JSON.stringify(lastSeen));
     }
     expect(letter).toBeDefined();
     expect(letter!.body).toContain('?movie='); // ссылка к выбору мест
