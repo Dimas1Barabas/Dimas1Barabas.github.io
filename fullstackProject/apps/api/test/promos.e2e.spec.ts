@@ -4,28 +4,13 @@
  * в ./e2e-context. Если API не поднят — тесты файла тихо пропускаются
  * с предупреждением.
  */
-import { api, bootstrap, BASE, token, available, waitForStatus, E2EMovie } from './e2e-context';
+import { api, bootstrap, token, available, waitForStatus, E2EMovie, adminToken, freeSeat } from './e2e-context';
 
 jest.setTimeout(30_000);
 
 beforeAll(bootstrap);
 
 describe('промокоды и скидки', () => {
-  /** вход админом посева — отдельный токен */
-  async function adminToken(): Promise<string> {
-    const login = await fetch(`${BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: 'admin@cine.local',
-        password: 'admin-secret-1',
-      }),
-    });
-    expect(login.status).toBe(200);
-    const body = (await login.json()) as { accessToken: string };
-    return body.accessToken;
-  }
-
   /** уникальный код на прогон — коллизии между запусками исключены */
   const code = `E2E${Date.now().toString(36).toUpperCase()}`;
 
@@ -35,12 +20,15 @@ describe('промокоды и скидки', () => {
   }> {
     const movies = await api<{ data: E2EMovie[] }>('/movies');
     const session = movies.data[0].sessions[0];
+    // место из живой карты: хардкод конфликтовал с соседними файлами
+    // и с повторными вызовами внутри этого (гонка бронила 7-7 дважды)
+    const seat = await freeSeat(session.id);
     return api('/bookings', {
       method: 'POST',
       body: JSON.stringify({
         sessionId: session.id,
         customerName: 'E2E Промо',
-        seats: ['7-7'],
+        seats: [seat],
       }),
     });
   }

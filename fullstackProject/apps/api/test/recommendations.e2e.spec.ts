@@ -4,7 +4,7 @@
  * в ./e2e-context. Если API не поднят — тесты файла тихо пропускаются
  * с предупреждением.
  */
-import { api, bootstrap, BASE, available, waitForStatus, E2EMovie } from './e2e-context';
+import { api, bootstrap, BASE, available, waitForStatus, E2EMovie, freeSeat } from './e2e-context';
 
 jest.setTimeout(30_000);
 
@@ -25,9 +25,6 @@ describe('КиноСоветник: GET /recommendations/my', () => {
     return (await res.json()) as T;
   }
 
-  function randomSeat(): string {
-    return `${1 + Math.floor(Math.random() * 8)}-${1 + Math.floor(Math.random() * 10)}`;
-  }
 
   it('401 без токена; свежий пользователь — холодный старт или недоступность, но не ошибка', async () => {
     if (!available) return;
@@ -83,7 +80,8 @@ describe('КиноСоветник: GET /recommendations/my', () => {
     for (let attempt = 0; attempt < 4 && !confirmed; attempt++) {
       const booking = await as<{ id: string }>(login.accessToken, '/bookings', {
         method: 'POST',
-        body: JSON.stringify({ sessionId: session.id, seats: [randomSeat()] }),
+        // место из живой карты: случайное ловило чужие занятые — 409
+        body: JSON.stringify({ sessionId: session.id, seats: [await freeSeat(session.id)] }),
       });
       await as(login.accessToken, `/bookings/${booking.id}/pay`, { method: 'POST' });
       const done = await waitForStatus(booking.id, 'PENDING');

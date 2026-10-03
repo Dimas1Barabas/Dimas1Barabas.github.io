@@ -88,3 +88,48 @@ export async function waitForStatus(
   }
   throw new Error(`бронь ${id} не покинула статус ${from}`);
 }
+
+/**
+ * Токен админа: один вход на весь jest-процесс. Кэш живёт в globalThis —
+ * у каждого спек-файла свой module-registry, локальная переменная кэшом
+ * не будет (паттерн live-harness). Без кэша файлы входили админом
+ * 13 раз за минуту — корзина Привратника на /auth/login (5/мин на
+ * стенде) резала случайные спеки 429.
+ */
+export async function adminToken(): Promise<string> {
+  globalThis.__e2eAdminToken ??= (async () => {
+    const login = await api<{ accessToken: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: 'admin@cine.local',
+        password: 'admin-secret-1',
+      }),
+    });
+    return login.accessToken;
+  })();
+  return globalThis.__e2eAdminToken;
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __e2eAdminToken: Promise<string> | undefined;
+}
+
+/**
+ * Свободное место сеанса — из живой карты занятости. Хардкод мест
+ * между файлами конфликтовал: CONFIRMED-брони держат места навсегда,
+ * и спека, шедшая следом, получала 409 на чужое место.
+ */
+export async function freeSeat(sessionId: string): Promise<string> {
+  const map = await api<{ occupied: string[] }>(
+    `/sessions/${sessionId}/seats`,
+  );
+  const taken = new Set(map.occupied);
+  for (let row = 1; row <= 8; row++) {
+    for (let seat = 1; seat <= 10; seat++) {
+      const code = `${row}-${seat}`;
+      if (!taken.has(code)) return code;
+    }
+  }
+  throw new Error(`сеанс ${sessionId}: свободных мест нет`);
+}

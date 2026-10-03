@@ -4,7 +4,7 @@
  * в ./e2e-context. Если API не поднят — тесты файла тихо пропускаются
  * с предупреждением.
  */
-import { api, bootstrap, BASE, available, waitForStatus, E2EMovie } from './e2e-context';
+import { BASE, E2EMovie, adminToken, api, available, bootstrap, waitForStatus } from './e2e-context';
 import { sseFrames, waitForSseEvent } from './sse';
 
 jest.setTimeout(30_000);
@@ -15,19 +15,6 @@ describe('напоминания о сеансе: письмо + SSE + витр�
   const NOTIF = process.env.E2E_NOTIF_URL ?? 'http://localhost:18082';
   const REMINDERS = process.env.E2E_REMINDER_URL ?? 'http://localhost:18087';
 
-  /** вход админом посева — создаёт сеансы под прогон */
-  async function adminToken(): Promise<string> {
-    const login = await fetch(`${BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: 'admin@cine.local',
-        password: 'admin-secret-1',
-      }),
-    });
-    expect(login.status).toBe(200);
-    return ((await login.json()) as { accessToken: string }).accessToken;
-  }
 
   /** запросы за конкретного пользователя (токен в заголовке) */
   async function as<T>(jwt: string, path: string, init?: RequestInit): Promise<T> {

@@ -4,7 +4,7 @@
  * в ./e2e-context. Если API не поднят — тесты файла тихо пропускаются
  * с предупреждением.
  */
-import { api, bootstrap, BASE, token, available, waitForStatus, E2EMovie } from './e2e-context';
+import { api, bootstrap, BASE, token, available, waitForStatus, E2EMovie, freeSeat } from './e2e-context';
 
 jest.setTimeout(30_000);
 
@@ -70,12 +70,15 @@ describe('отзывы и рейтинги', () => {
     // право на отзыв даёт CONFIRMED-бронь; воркер отказывает в ~10% — ретраи
     let posted = await postReview(movie.id, token);
     for (let attempt = 0; attempt < 5 && posted.status === 403; attempt++) {
+      // место из живой карты: зал 8×10, ряд 9 не существует, а хардкод
+      // конфликтовал с соседними файлами
+      const seat = await freeSeat(movie.sessions[0].id);
       const created = await api<{ id: string }>('/bookings', {
         method: 'POST',
         body: JSON.stringify({
           sessionId: movie.sessions[0].id,
           customerName: `E2E отзыв ${attempt}`,
-          seats: [`9-${attempt + 1}`],
+          seats: [seat],
         }),
       });
       await api(`/bookings/${created.id}/pay`, { method: 'POST' });

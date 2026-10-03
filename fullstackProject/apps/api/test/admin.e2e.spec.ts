@@ -4,7 +4,7 @@
  * в ./e2e-context. Если API не поднят — тесты файла тихо пропускаются
  * с предупреждением.
  */
-import { api, bootstrap, BASE, token, available } from './e2e-context';
+import { api, bootstrap, BASE, token, available, adminToken } from './e2e-context';
 
 jest.setTimeout(30_000);
 
@@ -12,21 +12,16 @@ beforeAll(bootstrap);
 
 it('admin: создаёт фильм с сеансами, он появляется в афише', async () => {
   if (!available) return;
-  // админ сеется при старте API: admin@cine.local / admin-secret-1
-  const login = await api<{ accessToken: string }>('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({
-      email: 'admin@cine.local',
-      password: 'admin-secret-1',
-    }),
-  });
+  // вход админом — один на весь прогон (кэш в e2e-context):
+  // 13 логинов в минуту резались корзиной Привратника на /auth/login
+  const admin = await adminToken();
 
   const before = await api<{ data: unknown[] }>('/movies');
   const res = await fetch(`${BASE}/movies`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${login.accessToken}`,
+      Authorization: `Bearer ${admin}`,
     },
     body: JSON.stringify({
       title: 'E2E Сеанс',
@@ -70,15 +65,8 @@ describe('админ-аналитика: GET /admin/stats', () => {
   it('200 админу: агрегаты дашборда, конверт source и кэш', async () => {
     if (!available) return;
     // админ сеется при старте API: admin@cine.local / admin-secret-1
-    const login = await api<{ accessToken: string }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({
-        email: 'admin@cine.local',
-        password: 'admin-secret-1',
-      }),
-    });
-
-    const first = await adminStats(login.accessToken);
+    const admin = await adminToken();
+    const first = await adminStats(admin);
     expect(first.status).toBe(200);
     const body = (await first.json()) as {
       source: string;
@@ -122,7 +110,7 @@ describe('админ-аналитика: GET /admin/stats', () => {
     }
 
     // повторный вызов — из Redis-кэша (TTL 30 c)
-    const second = (await (await adminStats(login.accessToken)).json()) as {
+    const second = (await (await adminStats(admin)).json()) as {
       source: string;
     };
     expect(second.source).toBe('cache');

@@ -4,7 +4,7 @@
  * в ./e2e-context. Если API не поднят — тесты файла тихо пропускаются
  * с предупреждением.
  */
-import { api, bootstrap, BASE, available, E2EMovie } from './e2e-context';
+import { BASE, E2EMovie, adminToken, api, available, bootstrap } from './e2e-context';
 
 jest.setTimeout(30_000);
 
@@ -29,19 +29,6 @@ describe('Тарификатор: цена сеанса (динамическо�
     return !!health?.ok;
   }
 
-  /** вход админом посева — создаёт сеанс под прогон */
-  async function adminToken(): Promise<string> {
-    const login = await fetch(`${BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: 'admin@cine.local',
-        password: 'admin-secret-1',
-      }),
-    });
-    expect(login.status).toBe(200);
-    return ((await login.json()) as { accessToken: string }).accessToken;
-  }
 
   /** свежий сеанс: час сеанса не контролируем — сверяем инварианты, не набор факторов */
   async function freshSession(inMinutes = 60): Promise<string> {

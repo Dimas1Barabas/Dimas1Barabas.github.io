@@ -4,7 +4,7 @@
  * в ./e2e-context. Если API не поднят — тесты файла тихо пропускаются
  * с предупреждением.
  */
-import { api, bootstrap, BASE, token, available, E2EMovie } from './e2e-context';
+import { BASE, E2EMovie, adminToken, api, available, bootstrap, token } from './e2e-context';
 import { sseFrames, waitForSseEvent } from './sse';
 
 jest.setTimeout(30_000);
@@ -14,19 +14,6 @@ beforeAll(bootstrap);
 describe('лист ожидания: честная гонка', () => {
   const NOTIF = process.env.E2E_NOTIF_URL ?? 'http://localhost:18082';
 
-  /** вход админом посева — создаёт сеансы под прогон */
-  async function adminToken(): Promise<string> {
-    const login = await fetch(`${BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: 'admin@cine.local',
-        password: 'admin-secret-1',
-      }),
-    });
-    expect(login.status).toBe(200);
-    return ((await login.json()) as { accessToken: string }).accessToken;
-  }
 
   /** свежий пользователь с известным email — адресат «письма» */
   async function freshUser(label: string): Promise<{ token: string; email: string }> {
@@ -74,8 +61,10 @@ describe('лист ожидания: честная гонка', () => {
     const session = movie.sessions[0];
 
     const bookingIds: string[] = [];
-    for (let block = 0; block < 10; block++) {
-      const seats = Array.from({ length: 8 }, (_, i) => `${block + 1}-${i + 1}`);
+    // зал 8×10 — восемь броней по целому ряду (ряды 1–8, места 1–10);
+    // раньше 10 блоков по 8 мест: ряды 9–10 не существуют, 400 роняли сетап
+    for (let block = 0; block < 8; block++) {
+      const seats = Array.from({ length: 10 }, (_, i) => `${block + 1}-${i + 1}`);
       const booking = await api<{ id: string }>('/bookings', {
         method: 'POST',
         body: JSON.stringify({
