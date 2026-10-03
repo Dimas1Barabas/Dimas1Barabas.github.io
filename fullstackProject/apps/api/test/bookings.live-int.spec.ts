@@ -29,7 +29,8 @@ describeLive('CineBooking API: бронь против живого Postgres (te
       'SELECT name FROM migrations ORDER BY timestamp',
     );
     expect(applied.length).toBeGreaterThanOrEqual(9);
-    expect(applied[0].name).toBe('InitialSchema');
+    // в таблице лежит имя класса миграции (у старых — без таймстампа)
+    expect(applied[0].name).toMatch(/^InitialSchema\d*$/);
 
     const movies = await h.catalog();
     expect(movies.length).toBeGreaterThan(0);
@@ -71,31 +72,35 @@ describeLive('CineBooking API: бронь против живого Postgres (te
 
   it('оплата с промокодом: атомарная активация списывает запас и пишет скидку в бронь', async () => {
     const [, session] = await sessionOf();
-    // промокод сеем напрямую — админского эндпоинта для них нет
-    await h.db.query(
-      `INSERT INTO promos (code, kind, value, max_activations, used_count, expires_at, created_at)
-       VALUES ('LIVE500', 'fixed', 500, 1, 0, now() + interval '1 day', now())`,
-    );
-
     const created = await post(h.bearer, session.id, 'Дмитрий', ['2-2']);
     expect(created.status).toBe(201);
     const totalBefore: number = created.body.totalRub;
-    expect(totalBefore).toBeGreaterThan(500);
+
+    // скидку выводим из фактической суммы брони (базовые цены сеансов
+    // менялись волнами фич): половина — и от промокода не зависит
+    // отрицательный итог, и запас проверяется честно
+    const discount = Math.floor(totalBefore / 2);
+    // промокод сеем напрямую — админского эндпоинта для них нет
+    await h.db.query(
+      `INSERT INTO promos (code, kind, value, max_activations, used_count, expires_at, created_at)
+       VALUES ('LIVEHALF', 'fixed', $1, 1, 0, now() + interval '1 day', now())`,
+      [discount],
+    );
 
     const paid = await request(h.app.getHttpServer())
       .post(`/api/bookings/${created.body.id}/pay`)
       .set('Authorization', h.bearer)
-      .send({ promoCode: 'live500' });
+      .send({ promoCode: 'livehalf' });
     expect(paid.status).toBe(200);
     expect(paid.body.status).toBe('PENDING');
-    expect(paid.body.totalRub).toBe(totalBefore - 500);
-    expect(paid.body.promoCode).toBe('LIVE500');
-    expect(paid.body.discountRub).toBe(500);
+    expect(paid.body.totalRub).toBe(totalBefore - discount);
+    expect(paid.body.promoCode).toBe('LIVEHALF');
+    expect(paid.body.discountRub).toBe(discount);
 
     // запас исчерпан живым UPDATE: повторная активация невозможна
     const [promo] = await h.db.query<{ used_count: number }[]>(
       'SELECT used_count FROM promos WHERE code = $1',
-      ['LIVE500'],
+      ['LIVEHALF'],
     );
     expect(Number(promo.used_count)).toBe(1);
 
@@ -103,7 +108,7 @@ describeLive('CineBooking API: бронь против живого Postgres (te
     const refused = await request(h.app.getHttpServer())
       .post(`/api/bookings/${second.body.id}/pay`)
       .set('Authorization', h.bearer)
-      .send({ promoCode: 'live500' });
+      .send({ promoCode: 'livehalf' });
     expect(refused.status).toBe(409);
   });
 
