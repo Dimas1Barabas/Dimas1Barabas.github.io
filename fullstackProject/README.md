@@ -152,7 +152,7 @@ docker compose exec postgres dropdb -U cine cine_empty
 # среза (eslint-plugin-boundaries, политика — в eslint.config.js)
 cd apps/web && npm run lint && npm test
 
-# API: юнит (272 теста) — логика брони, места/конфликт, pay/expire/cancel,
+# API: юнит (282 теста) — логика брони, места/конфликт, pay/expire/cancel,
 # SSE, кэш, расписание сеансов, health, пользователи/посев админа,
 # JWT-логин, retry/parking, отзывы (право/дубль/агрегаты/удаление),
 # промокоды (скидка-математика, превью, атомарное списание в оплате,
@@ -167,7 +167,9 @@ cd apps/web && npm run lint && npm test
 # адресе, квот в чеке create, fallback на базовую цену), клиент
 # Привратника (контракт грузится, дедлайн на мёртвом адресе),
 # метрики Prometheus (лейблы 200/404/500, обрыв потока, @Public
-# витрины, собственный реестр у инстанса)
+# витрины, собственный реестр у инстанса), JwtAuthGuard (rmk/ws
+# контексты без паспорта, @Public, passport-делегирование) и форма
+# retry-топологии брокера (уникальность деклараций при нескольких rk)
 cd apps/api && npm test
 
 # API: интеграционные (177) — полный HTTP-стек Nest (роутинг, ValidationPipe,
