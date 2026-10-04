@@ -10,17 +10,25 @@ import { expect, test, type Page } from '@playwright/test';
  * места берём заведомо свободные — сиды «других зрителей» не знаем.
  */
 
-/** первый сеанс фильма — как его выбирает модалка по умолчанию */
+/** ближайший будущий сеанс фильма — как его выбирает модалка по умолчанию
+ *  (после вечера sessions[0] уже в прошлом, карта была бы чужой) */
 async function firstSessionId(page: Page, title: string): Promise<string> {
   return page.evaluate((movieTitle) => {
     const engine = (
       window as unknown as {
-        __cineDemo: { movies: () => { data: { title: string; sessions: { id: string }[] }[] } };
+        __cineDemo: {
+          movies: () => {
+            data: { title: string; sessions: { id: string; startsAt: string }[] }[];
+          };
+        };
       }
     ).__cineDemo;
     const movie = engine.movies().data.find((m) => m.title === movieTitle);
-    if (!movie?.sessions.length) throw new Error(`нет сеансов у «${movieTitle}»`);
-    return movie.sessions[0].id;
+    const upcoming = movie?.sessions.find(
+      (s) => Date.parse(s.startsAt) > Date.now(),
+    );
+    if (!upcoming) throw new Error(`нет будущих сеансов у «${movieTitle}»`);
+    return upcoming.id;
   }, title);
 }
 
