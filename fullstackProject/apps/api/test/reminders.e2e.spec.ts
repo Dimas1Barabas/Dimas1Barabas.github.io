@@ -186,15 +186,14 @@ describe('напоминания о сеансе: письмо + SSE + витр�
     const confirmed = await confirmBooking(login.accessToken, sessionId, '8-9');
     if (!confirmed) return;
 
-    // возврат вероятностен (~10% REFUND_FAILED возвращает бронь в
-    // CONFIRMED) — ретраим отмену до CANCELLED, как живой пользователь
+    // возврат вероятностен (~10% REFUND_FAILED откатывает бронь в
+    // CONFIRMED) — ретраим отмену до CANCELLED, как живой пользователь:
+    // cancel → ждать вердикта (выход из CANCELLING) → при откате снова
     let done: { status: string } | undefined;
     for (let attempt = 0; attempt < 5 && done?.status !== 'CANCELLED'; attempt++) {
-      if (attempt > 0 || (await waitForStatus(confirmed.id, 'CONFIRMED')).status === 'CONFIRMED') {
-        await as(login.accessToken, `/bookings/${confirmed.id}/cancel`, {
-          method: 'POST',
-        });
-      }
+      await as(login.accessToken, `/bookings/${confirmed.id}/cancel`, {
+        method: 'POST',
+      });
       done = await waitForStatus(confirmed.id, 'CANCELLING');
     }
     expect(done?.status).toBe('CANCELLED');
