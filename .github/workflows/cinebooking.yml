@@ -2,6 +2,9 @@
 #
 # Герметичные уровни без внешних зависимостей:
 #   web          — eslint (границы FSD) + typecheck (vue-tsc) + vitest с coverage-порогом + сборка
+#   web-ui       — Playwright против демо-режима (build:demo-test + vite
+#                 preview, без бэкенда): витрина, полный цикл брони,
+#                 waitlist-аншлаг, живая карта — та страница, что на Pages
 #   api          — jest юнит с coverage-порогом + интеграционные (фейковые Postgres/RabbitMQ/Redis на Map) + сборка
 #   api-containers — live-int: то же приложение целиком против одноразовых
 #                 PG+RabbitMQ+Redis (testcontainers, TESTCONTAINERS=1):
@@ -66,6 +69,49 @@ jobs:
       - run: npm run test:cov
 
       - run: npm run build
+
+  # Браузерные UI-тесты (16): Playwright против демо-режима. Сборка
+  # build:demo-test детерминирует вероятности витрины (вердикты всегда
+  # успешны, «зрителей» живой карты водит тест через window.__cineDemo),
+  # webServer конфига поднимает vite preview :4173 без бэкенда — проба
+  # /api/health честно падает, приложение уходит в демо, как на Pages.
+  web-ui:
+    name: web — playwright (демо-режим)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: fullstackProject/apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fullstackProject/apps/web/package-lock.json
+
+      - run: npm ci
+
+      # chromium один (полный зоопарк не нужен — темы и мобильная ширина
+      # в самих спеках); кэш между прогонами, версия в ключе из лока
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('fullstackProject/apps/web/package-lock.json') }}
+
+      - run: npx playwright install --with-deps chromium
+
+      # соберёт демо-сборку и прогонит спеки; webServer поднимет сам
+      - run: npm run test:ui
+
+      # трейсы и снапшоты упавших спек — со страницы прогона
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: fullstackProject/apps/web/test-results/
+          retention-days: 7
 
   api:
     name: api — jest (unit + integration) + build
