@@ -17,7 +17,10 @@ onMounted(() => {
   <div class="shell">
     <AppHeader />
     <main class="container">
-      <RouterView />
+      <!-- страница монтируется только после пробы API: иначе её onMounted
+           звал загрузку данных ещё в режиме 'loading' — та уходила в живую
+           ветку и демо на Pages могло показать ошибку вместо афиши -->
+      <RouterView v-if="appStore.mode !== 'loading'" />
     </main>
     <footer class="footer container">
       <span
