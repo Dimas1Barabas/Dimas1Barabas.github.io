@@ -7,11 +7,14 @@ apps/web/dist/
 
 # тесты
 coverage/
+apps/web/test-results/
+apps/web/playwright-report/
 
 # локальные env и артефакты
 .env
 .env.*
 !.env.example
+!.env.demo-test
 *.exe
 
 # IDE

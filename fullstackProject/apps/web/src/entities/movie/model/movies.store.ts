@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { api, wsUrl } from '@/shared/api/client';
-import { demoEngine } from '@/shared/api/demo-engine';
+import { DEMO_TEST_BUILD, demoEngine } from '@/shared/api/demo-engine';
 import type {
   CreateMoviePayload,
   Movie,
@@ -128,6 +128,9 @@ export const useMoviesStore = defineStore('movies', {
     /** демо: следующий «зритель» через случайные 7–15 c (не setInterval —
      *  так интервал дышит и таймер один на поток) */
     scheduleSeatViewer(): void {
+      // тестовая сборка: «зрителей» водит Playwright через window.__cineDemo —
+      // собственный таймер не подмешивает случайность
+      if (DEMO_TEST_BUILD) return;
       if (!this.seatStreamActive || !this.seatSessionId) return;
       const sessionId = this.seatSessionId;
       const epoch = this.seatEpoch;

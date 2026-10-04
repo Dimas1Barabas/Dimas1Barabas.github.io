@@ -115,6 +115,15 @@ const DEMO_REMINDER_LEAD_MS = 120_000;
 const REMINDER_DELAY_MIN_MS = 3_000;
 const REMINDER_DELAY_MAX_MS = 60_000;
 
+/**
+ * Тестовая сборка демо (vite build --mode demo-test, .env.demo-test) для
+ * браузерных тестов Playwright: вердикты оплаты/возврата всегда успешны,
+ * «зритель» живой карты только занимает место — вероятности витрины
+ * Pages не должны играть в тестах. Движок при этом открыт на
+ * window.__cineDemo (низ файла) — тест водит витрину руками.
+ */
+export const DEMO_TEST_BUILD = import.meta.env.VITE_DEMO_TEST === '1';
+
 /** сид бонусного счёта: история прошлых броней «гостя демо», баланс 350 */
 function seedBonusLedger(): BonusTransaction[] {
   const daysAgo = (d: number) =>
@@ -833,7 +842,7 @@ class DemoEngine {
     avoid: string[],
   ): 'taken' | 'released' | 'none' {
     if (!this.findSession(sessionId)) return 'none';
-    const releaseBranch = Math.random() < 0.3;
+    const releaseBranch = !DEMO_TEST_BUILD && Math.random() < 0.3;
     if (releaseBranch) {
       const mine = this.viewerSeats.get(sessionId);
       if (!mine || mine.size === 0) return 'none';
@@ -1215,7 +1224,8 @@ class DemoEngine {
   private scheduleVerdict(booking: Booking): void {
     const delay = MIN_MS + Math.random() * (MAX_MS - MIN_MS);
     setTimeout(() => {
-      const ok = Math.random() < SUCCESS_RATE;
+      // тестовая сборка: вердикт всегда успешен — FAILED-ветка у драйвера
+      const ok = DEMO_TEST_BUILD || Math.random() < SUCCESS_RATE;
       booking.status = ok ? 'CONFIRMED' : 'FAILED';
       booking.message = ok
         ? `Оплата ${booking.totalRub} ₽ прошла. Места ${booking.seats.join(', ')}. Приятного просмотра!`
@@ -1341,7 +1351,8 @@ class DemoEngine {
 
     const delay = REFUND_MIN_MS + Math.random() * (REFUND_MAX_MS - REFUND_MIN_MS);
     setTimeout(() => {
-      const ok = Math.random() < REFUND_SUCCESS_RATE;
+      // тестовая сборка: возврат всегда проходит (как и оплата выше)
+      const ok = DEMO_TEST_BUILD || Math.random() < REFUND_SUCCESS_RATE;
       booking.status = ok ? 'CANCELLED' : 'CONFIRMED';
       booking.message = ok
         ? `Возврат ${booking.totalRub} ₽ зачислен. Места ${booking.seats.join(', ')} снова в продаже.`
@@ -1785,6 +1796,12 @@ class DemoEngine {
 }
 
 export const demoEngine = new DemoEngine();
+
+if (DEMO_TEST_BUILD && typeof window !== 'undefined') {
+  // браузерные тесты (Playwright) водят витриной напрямую: simulateOtherViewer,
+  // seatMap, movies — без таймеров и вероятностей живой сборки
+  (window as unknown as { __cineDemo: DemoEngine }).__cineDemo = demoEngine;
+}
 
 /** глубокая копия JSON-данных: движок живёт вне реактивности Vue —
  *  каждой выдаче нужны свежие идентичности (как JSON по проводам в live) */
