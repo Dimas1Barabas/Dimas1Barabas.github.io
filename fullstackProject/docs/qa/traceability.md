@@ -9,18 +9,18 @@
 | FR-1 | Каталог отдаёт список фильмов с ценами и сеансами | High | TC-MOV-001 | ✅ int |
 | FR-2 | Кэш фильмов в Redis, TTL 60 c, источник виден клиенту | Medium | TC-MOV-001 | ✅ int |
 | FR-3 | Карта занятости зала 8×10 всегда свежая (без кэша) | High | TC-MOV-002 | ✅ int |
-| FR-4 | Бронь создаётся в PENDING с конкретными местами и суммой | High | TC-BKG-001 | ✅ int, e2e |
+| FR-4 | Бронь создаётся в PENDING с конкретными местами и суммой | High | TC-BKG-001, TC-UI-004 | ✅ int, e2e, UI |
 | FR-5 | Некорректный ввод брони отклоняется с 400 | High | TC-BKG-002, TC-BKG-003 | ✅ int |
 | FR-6 | Одно место — одна бронь; проигравший в гонке получает 409 со списком мест | High | TC-BKG-004 | ✅ int, web |
-| FR-7 | Воркер выносит вердикт CONFIRMED/FAILED с метаданными | High | TC-BKG-005, TC-SSE-002 | ✅ e2e |
+| FR-7 | Воркер выносит вердикт CONFIRMED/FAILED с метаданными | High | TC-BKG-005, TC-SSE-002, TC-UI-004 | ✅ e2e, UI |
 | FR-8 | FAILED освобождает места для повторной покупки | High | TC-BKG-005 | ✅ int, web |
 | FR-9 | Отменить можно только CONFIRMED (условный UPDATE, 409 при гонке) | High | TC-CAN-001…003 | ✅ int |
-| FR-10 | Возврат: CANCELLED освобождает места, REFUND_FAILED откатывает в CONFIRMED | High | TC-CAN-001, TC-CAN-005 | ✅ int, web |
+| FR-10 | Возврат: CANCELLED освобождает места, REFUND_FAILED откатывает в CONFIRMED | High | TC-CAN-001, TC-CAN-005, TC-UI-006 | ✅ int, web, UI |
 | FR-11 | Обработка событий идемпотентна (ределивери безопасен) | Medium | TC-CAN-006 | ✅ int |
 | FR-12 | SSE: событие booking с бронью и статистикой на каждую мутацию | High | TC-SSE-001, TC-SSE-002 | ✅ int, e2e |
 | FR-13 | Heartbeat 25 c; авто-reconnect; resync по onopen | Medium | TC-SSE-003 | ✅ unit (частично), ручная |
 | FR-14 | SSE доходит через nginx без буферизации | High | TC-SSE-004 | ручная |
-| FR-15 | Демо-режим повторяет контракты и тайминги живого стека | Medium | TC-DMO-001 | ✅ web |
+| FR-15 | Демо-режим повторяет контракты и тайминги живого стека | Medium | TC-DMO-001, TC-UI-001…TC-UI-009 | ✅ web, UI |
 | FR-16 | Health отражает состояние Postgres/Redis/RabbitMQ | Medium | TC-INF-001 | ✅ unit, int |
 | FR-17 | Воркер переподключается к брокеру и не теряет сообщения | Medium | TC-INF-002 | ручная |
 | FR-18 | Отзыв может написать только пользователь с CONFIRMED-бронью на фильм | High | TC-REV-001, TC-REV-004 | ✅ int, e2e, web |
@@ -38,29 +38,29 @@
 | FR-30 | Запрос сброса не раскрывает существование email; письмо со ссылкой — через notification-service | High | TC-ACC-006, TC-ACC-007 | ✅ unit, int, e2e, go |
 | FR-31 | Ссылка сброса одноразовая (условный UPDATE) и живёт 30 минут; невалидная — 400 без деталей | High | TC-ACC-007, TC-ACC-008 | ✅ unit, int |
 | FR-32 | Админ создаёт промокод (percent/fixed, лимит активаций, срок); дубль кода — 409 promoExists | High | TC-PRM-001, TC-PRM-002, TC-PRM-003 | ✅ unit, int, e2e, web |
-| FR-33 | Превью промокода на своей брони в PENDING_PAYMENT без списания; отказы 404/410/409/403 | High | TC-PRM-004, TC-PRM-005 | ✅ unit, int, web |
-| FR-34 | Активация списывается атомарно в транзакции оплаты; скидка — в total_rub, воркеру и возврату | High | TC-PRM-006 | ✅ unit, int, e2e, web |
+| FR-33 | Превью промокода на своей брони в PENDING_PAYMENT без списания; отказы 404/410/409/403 | High | TC-PRM-004, TC-PRM-005, TC-UI-004 | ✅ unit, int, web, UI |
+| FR-34 | Активация списывается атомарно в транзакции оплаты; скидка — в total_rub, воркеру и возврату | High | TC-PRM-006, TC-UI-004 | ✅ unit, int, e2e, web, UI |
 | FR-35 | Гонка за последний код: транзакция откатывается, бронь остаётся payable | High | TC-PRM-007 | ✅ unit, int, e2e, web |
 | FR-36 | Демо-паритет: сиды промокодов с честными 409/410, промо-админка открыта в демо | Medium | TC-PRM-008 | ✅ web + ✋ витрина Pages |
-| FR-37 | Билеты — производная CONFIRMED-брони: по одному на место, подпись hex-128 и TK-номер детерминированы, повторная выдача идентична | High | TC-QR-001 | ✅ unit, int, e2e, web |
+| FR-37 | Билеты — производная CONFIRMED-брони: по одному на место, подпись hex-128 и TK-номер детерминированы, повторная выдача идентична | High | TC-QR-001, TC-UI-004 | ✅ unit, int, e2e, web, UI |
 | FR-38 | Всё, что не CONFIRMED — 409 bookingNotConfirmed: до оплаты, после отмены; REFUND_FAILED оживляет билеты | High | TC-QR-002 | ✅ unit, int, e2e, web |
 | FR-39 | Билеты видит только владелец: 403 чужому JWT | High | TC-QR-003 | ✅ unit, int, e2e |
 | FR-40 | Подпись: канон CINE1\|bookingId\|seat\|epoch, HMAC-SHA256 усечён до 128 бит, сравнение timingSafeEqual; web-зеркало синхронным sha256 сверяется с node:crypto | High | TC-QR-004 | ✅ unit (api + web) |
 | FR-41 | Сканер verify (только admin): вердикт с причиной — badSignature/malformedPayload без обращения к БД, bookingNotFound/bookingNotConfirmed/seatMismatch/sessionPassed по данным | High | TC-QR-005, TC-QR-006, TC-QR-007 | ✅ unit, int, e2e, web |
 | FR-42 | Экран /ticket/:id и демо-паритет: карточки по местам, полноэкранный QR «у входа в зал», CTA с оплаты/моих билет/табло | Medium | TC-QR-008 | ✅ web + ✋ витрина Pages |
-| FR-43 | Вход в очередь — только на полный будущий сеанс за JWT; отказы 401/400/404, 409 waitlistAlready\|sessionNotFull, 410 sessionPassed | High | TC-WL-001, TC-WL-002 | ✅ int, e2e, web |
-| FR-44 | Очередь FIFO: позиция среди WAITING; leave → LEFT скрыт из /my; повторный join — в конец; прошедшие сеансы гасятся лениво, без cron | High | TC-WL-003, TC-WL-004 | ✅ unit, int |
+| FR-43 | Вход в очередь — только на полный будущий сеанс за JWT; отказы 401/400/404, 409 waitlistAlready\|sessionNotFull, 410 sessionPassed | High | TC-WL-001, TC-WL-002, TC-UI-007 | ✅ int, e2e, web, UI |
+| FR-44 | Очередь FIFO: позиция среди WAITING; leave → LEFT скрыт из /my; повторный join — в конец; прошедшие сеансы гасятся лениво, без cron | High | TC-WL-003, TC-WL-004, TC-UI-007 | ✅ unit, int, UI |
 | FR-45 | Освобождение места (4 точки: отмена неоплаченной/EXPIRED/FAILED/возврат) публикует waitlist.seat.released; консьюмер условным UPDATE переводит голову в NOTIFIED, место не резервируется; ределивери безопасен | High | TC-WL-005 | ✅ unit, int, e2e |
 | FR-46 | Уведомление двумя каналами: письмо user.waitlist.seat (пятый поток notification-service, ссылка ?movie=) и витринное SSE type waitlist с userId | High | TC-WL-005, TC-WL-007, TC-WL-008 | ✅ int, e2e, go, web |
 | FR-47 | Бронь уведомлённого гасит его запись в LEFT тем же create() — гонка остаётся честной; следующее освобождение уведомляет следующего | High | TC-WL-006 | ✅ int, e2e, web |
-| FR-48 | Живая карта: занятие/освобождение чужих мест доставляется мгновенно — ws-гейтвей /api/seats, комнаты по сеансу (чужим тишина), полные снапшоты перезапросом БД; сигнал из 5 точек занятости, create — после коммита | High | TC-WS-001…TC-WS-004 | ✅ unit, int, e2e, web |
+| FR-48 | Живая карта: занятие/освобождение чужих мест доставляется мгновенно — ws-гейтвей /api/seats, комнаты по сеансу (чужим тишина), полные снапшоты перезапросом БД; сигнал из 5 точек занятости, create — после коммита | High | TC-WS-001…TC-WS-004, TC-UI-008, TC-UI-009 | ✅ unit, int, e2e, web, UI |
 | FR-49 | Реконнект и resync: backoff min(1 c·2ⁿ, 15 c) + jitter, onopen → subscribe + loadSeats; stop глушит сокет и таймеры; ping 25 c, молчащие терминируются | High | TC-WS-005 | ✅ unit (gateway), web |
 | FR-50 | Демо-паритет: «другие зрители» каждые 7–15 c, avoid-выбор и сиды неприкосновенны, аншлаг статичен, закрытие модалки глушит симуляцию | Medium | TC-WS-006 | ✅ web |
 | FR-51 | Кэшбэк: CONFIRMED-бронь начисляет floor(финальной суммы × BONUS_CASHBACK_PERCENT/100) той же транзакцией со статусом; гостевым без владельца не начисляется; uq(booking_id, reason) гасит ределивери | High | TC-BON-005 | ✅ unit, int, e2e |
-| FR-52 | Списание при оплате: useBonuses ≤ половины суммы после промокода и ≤ баланса; списание, промо и статус — одна транзакция, отказ 409 (bonusOverLimit/bonusInsufficient/bonusUnavailable) откатывает всё | High | TC-BON-002, TC-BON-003 | ✅ unit, int, e2e, web |
+| FR-52 | Списание при оплате: useBonuses ≤ половины суммы после промокода и ≤ баланса; списание, промо и статус — одна транзакция, отказ 409 (bonusOverLimit/bonusInsufficient/bonusUnavailable) откатывает всё | High | TC-BON-002, TC-BON-003, TC-UI-004 | ✅ unit, int, e2e, web, UI |
 | FR-53 | Гонка балансом: контрольный пересчёт SUM после вставки не даёт параллельным оплатам увести счёт в минус — проигравший откатывается | High | TC-BON-004 | ✅ unit |
 | FR-54 | Реверсы: FAILED возвращает списанное (payment_failed); возврат CONFIRMED-брони возвращает списанное (refund) и гасит кэшбэк (clawback) до нуля, не в минус; REFUND_FAILED бонусы не трогает | High | TC-BON-006, TC-BON-007 | ✅ unit, int, web |
-| FR-55 | Счёт и UI: GET /bonuses/my — баланс SUM от источника + история; блок списания на /pay (потолок, подсказки 409, автоосвежение по вердиктам); карточка счёта в /my; демо-паритет (сид 350, ledger движка зеркалом) | Medium | TC-BON-001, TC-BON-008 | ✅ int, e2e, web + ✋ витрина Pages |
+| FR-55 | Счёт и UI: GET /bonuses/my — баланс SUM от источника + история; блок списания на /pay (потолок, подсказки 409, автоосвежение по вердиктам); карточка счёта в /my; демо-паритет (сид 350, ledger движка зеркалом) | Medium | TC-BON-001, TC-BON-008, TC-UI-004 | ✅ int, e2e, web, UI + ✋ витрина Pages |
 | FR-56 | Сигналы: API публикует recommendation.booking.confirmed (только CONFIRMED-брони с владельцем) и recommendation.review.created (с рейтингом); dedup-ключи bookingId/reviewId; контракты воркера не меняются | High | TC-REC-005, TC-REC-006 | ✅ unit, int, e2e |
 | FR-57 | Скоринг: профиль = веса жанров (бронь 1.0, отзыв rating/5×1.2); скор = 0.7×косинус(профиль, жанр) + 0.3×рейтинг; просмотренное исключается; холодный старт — popular по рейтингу; причины на русском; реализации Go и web (зеркало) сходятся | High | TC-REC-002, TC-REC-003, TC-REC-004 | ✅ go, web |
 | FR-58 | Хранилище и надёжность потребления: своя БД cine_recommendations; uq(dedup_key) гасит редоставления; retry/parking на каждый rk; битые события — poison в parking | High | TC-REC-007 | ✅ go (live-PG со скипами) |
