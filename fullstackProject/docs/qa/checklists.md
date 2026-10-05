@@ -209,3 +209,14 @@
 - [ ] обычная сборка демки (`npm run build`) НЕ детерминирована: на витрине Pages вердикты оплаты/возврата вероятностны (~10% отказ), «зрители» живой карты дышат таймером 7–15 c — шов `DEMO_TEST_BUILD` живёт только в `--mode demo-test`
 - [ ] `.env.demo-test` закоммичен (без него CI не соберёт тестовую демку), но не попадает в обычную сборку и vitest
 - [ ] добавить сценарий = добавить файл в `apps/web/e2e/*.spec.ts` + кейс TC-UI в docs/qa (md/txt/csv синхронно)
+
+## CL-22. Сквозные трейсы (OpenTelemetry + Jaeger)
+
+- [ ] стенд: `docker compose up` поднимает jaeger (:16686 UI, OTLP 4317/4318 встроены); в e2e-CI его нет — там у юнитов нет OTEL-переменной, гейт выключает трейсинг
+- [ ] найти в Jaeger сервисы api, ticket-worker, notification, recommendation, reminder, pricing, ratelimiter (System/Architecture-карта)
+- [ ] полный цикл брони одной трассой: `POST /bookings` → `rabbit.publish booking.payment.wait` → консьюмер воркера `rabbit.consume booking.created` → `booking.processed` → вердикт API (спан `rabbit.consume booking.processed`)
+- [ ] gRPC-ноги в той же трассе: квот Тарификатора в create, Take Привратника на POST /bookings, Schedule напоминания на CONFIRMED — серверные спаны детьми HTTP-спана API
+- [ ] письмо-напоминание: тикер reminder-сервиса публикует `user.session.reminder` с traceparent от Schedule-цепочки (консьюмер API и notification — дети одного корня)
+- [ ] ошибки видны: уронить воркер на минуту (stop → start) — сообщение уедет в retry, в трассе спан ERROR с exception-событием, после ределивери вердикт доедет ребёнком ИСХОДНОГО контекста
+- [ ] `docker compose stop jaeger` — стенд жив, брони проходят (трейсинг не влияет на функциональность; в логах воркеров тишина — экспортер отключён гейтом env)
+- [ ] ✋ без env нет и оверхеда: убрать OTEL_EXPORTER_OTLP_ENDPOINT у api (recreate) — `POST /bookings` работает, заголовки сообщений в RabbitMQ UI без traceparent

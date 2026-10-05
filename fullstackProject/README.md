@@ -168,7 +168,7 @@ cd apps/web && npm run lint && npm test
 # с подсказкой)
 cd apps/web && npm run test:ui
 
-# API: юнит (282 теста) — логика брони, места/конфликт, pay/expire/cancel,
+# API: юнит (293 теста) — логика брони, места/конфликт, pay/expire/cancel,
 # SSE, кэш, расписание сеансов, health, пользователи/посев админа,
 # JWT-логин, retry/parking, отзывы (право/дубль/агрегаты/удаление),
 # промокоды (скидка-математика, превью, атомарное списание в оплате,
@@ -185,7 +185,10 @@ cd apps/web && npm run test:ui
 # метрики Prometheus (лейблы 200/404/500, обрыв потока, @Public
 # витрины, собственный реестр у инстанса), JwtAuthGuard (rmk/ws
 # контексты без паспорта, @Public, passport-делегирование) и форма
-# retry-топологии брокера (уникальность деклараций при нескольких rk)
+# retry-топологии брокера (уникальность деклараций при нескольких rk),
+# швы трейсинга OTel: гейт SDK по env и URL OTLP, traceparent
+# в публикациях (wiring create), консьюмер-спаны-дети публикатора
+# с ERROR-статусом и пробросом в retry
 cd apps/api && npm test
 
 # API: интеграционные (177) — полный HTTP-стек Nest (роутинг, ValidationPipe,
@@ -964,6 +967,32 @@ WebSocket: `@nestjs/platform-ws` на бэкенде, нативный `WebSocke
   дашборды — JSON в `observability/grafana/dashboards`, датасорс
   фиксирован uid `prometheus`.
 
+### Трейсы: OpenTelemetry + Jaeger
+
+Сквозная трассировка контура: W3C `traceparent` переживает все швы —
+HTTP-запрос → публикация в RabbitMQ → консьюмер Go-воркера → вердикт
+обратно в API → gRPC-ноги к Тарификатору/Привратнику/КиноСоветнику/
+reminder → письмо-напоминание. Полный цикл брони — одна трасса.
+
+- **Стенд**: Jaeger `:16686` (образ v2 на OTel-коллекторе: OTLP-приём
+  4317/4318 и memory-хранилище включены дефолтами, конфиг-файла нет;
+  трейсы живут до рестарта контейнера). API пишет OTLP/HTTP
+  (`http://jaeger:4318`), Go-юниты — OTLP gRPC (`jaeger:4317`).
+- **Гейт**: трейсинг включается переменной `OTEL_EXPORTER_OTLP_ENDPOINT`.
+  Без неё SDK не поднимается вовсе — CI-e2e (джоба не поднимает
+  observability) не платит оверхед, функциональность не зависит.
+- **Инструментация**: API — NodeSDK c auto-instrumentations (http/express,
+  grpc-клиент, ioredis, pg; fs выключен за шум) + ручная пропагация
+  на AMQP-шве: `tracePublishOptions()` 4-м аргументом publish во всех
+  9 точках, `withConsumeSpan` на 7 консьюмерах. Go-юниты — собственный
+  `internal/tracing` (OTLP gRPC + inject/extract на своих AMQP-границах,
+  у гексагональных — ещё `otelgrpc` StatsHandler на gRPC-сервере).
+  Retry-очереди traceparent переносят сами — они копируют заголовки
+  сообщения целиком.
+- **Проверки**: герметичные спеки с in-memory экспортером (юниты API,
+  `tracing`-пакеты Go: раундтрип inject/extract, родство спанов);
+  живая картина — ручные TC-OTL-006/007 и CL-22.
+
 ### Админ-аналитика
 
 `GET /api/admin/stats` — дашборд владельца кинотеатра. Только роль admin
@@ -1143,6 +1172,12 @@ dev-дефолт `localhost:18088`) с дедлайном `GRPC_PRICING_TIMEOUT_
 ожидания). Часы факторов — локальное время контейнера: стенд задаёт
 `TZ=Europe/Moscow` (в образе есть tzdata). Витрину для e2e задаёт
 `E2E_PRICING_URL` (дефолт `http://localhost:18089`).
+
+Трейсы: `OTEL_EXPORTER_OTLP_ENDPOINT` включает OpenTelemetry — без
+переменной трейсинга нет и оверхеда тоже (CI-e2e). API ждёт OTLP/HTTP
+базовый URL (compose — `http://jaeger:4318`, dev-дефолт
+`http://localhost:4318`), Go-юниты — OTLP gRPC адрес хост:порт
+(compose — `jaeger:4317`, dev-дефолт `localhost:4317`).
 
 Привратник: API ходит по `GRPC_RATELIMITER_URL` (compose —
 `ratelimiter:8090`, dev-дефолт `localhost:18090`) с дедлайном
