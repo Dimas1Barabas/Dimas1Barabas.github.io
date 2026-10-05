@@ -1,6 +1,8 @@
 import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 import { Injectable } from '@nestjs/common';
+import type { ConsumeMessage } from 'amqplib';
 import { retryErrorHandler } from '../rabbit/retry';
+import { withConsumeSpan } from '../tracing/rabbit-trace';
 import {
   BookingExpiredEvent,
   BookingProcessedEvent,
@@ -21,8 +23,16 @@ export class BookingsConsumer {
     queueOptions: { durable: true },
     errorHandler: retryErrorHandler('booking.processed'),
   })
-  async onProcessed(event: BookingProcessedEvent): Promise<void> {
-    await this.bookings.handleProcessed(event);
+  async onProcessed(
+    event: BookingProcessedEvent,
+    raw?: ConsumeMessage,
+  ): Promise<void> {
+    await withConsumeSpan(
+      'api.booking.processed',
+      'booking.processed',
+      raw,
+      () => this.bookings.handleProcessed(event),
+    );
   }
 
   @RabbitSubscribe({
@@ -32,8 +42,16 @@ export class BookingsConsumer {
     queueOptions: { durable: true },
     errorHandler: retryErrorHandler('booking.refunded'),
   })
-  async onRefunded(event: BookingRefundedEvent): Promise<void> {
-    await this.bookings.handleRefunded(event);
+  async onRefunded(
+    event: BookingRefundedEvent,
+    raw?: ConsumeMessage,
+  ): Promise<void> {
+    await withConsumeSpan(
+      'api.booking.refunded',
+      'booking.refunded',
+      raw,
+      () => this.bookings.handleRefunded(event),
+    );
   }
 
   /** TTL wait-очереди резерва истёк: неоплаченная бронь гасится в EXPIRED */
@@ -44,7 +62,15 @@ export class BookingsConsumer {
     queueOptions: { durable: true },
     errorHandler: retryErrorHandler('booking.expired'),
   })
-  async onExpired(event: BookingExpiredEvent): Promise<void> {
-    await this.bookings.handleExpired(event);
+  async onExpired(
+    event: BookingExpiredEvent,
+    raw?: ConsumeMessage,
+  ): Promise<void> {
+    await withConsumeSpan(
+      'api.booking.expired',
+      'booking.expired',
+      raw,
+      () => this.bookings.handleExpired(event),
+    );
   }
 }

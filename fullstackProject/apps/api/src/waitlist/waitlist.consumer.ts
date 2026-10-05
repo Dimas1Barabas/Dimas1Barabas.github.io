@@ -1,6 +1,8 @@
 import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 import { Injectable } from '@nestjs/common';
+import type { ConsumeMessage } from 'amqplib';
 import { retryErrorHandler } from '../rabbit/retry';
+import { withConsumeSpan } from '../tracing/rabbit-trace';
 import { WaitlistSeatReleasedEvent } from './waitlist-events';
 import { WaitlistService } from './waitlist.service';
 
@@ -20,7 +22,15 @@ export class WaitlistConsumer {
     queueOptions: { durable: true },
     errorHandler: retryErrorHandler('waitlist.seat.released'),
   })
-  async onSeatReleased(event: WaitlistSeatReleasedEvent): Promise<void> {
-    await this.waitlist.handleSeatReleased(event);
+  async onSeatReleased(
+    event: WaitlistSeatReleasedEvent,
+    raw?: ConsumeMessage,
+  ): Promise<void> {
+    await withConsumeSpan(
+      'api.waitlist.released',
+      'waitlist.seat.released',
+      raw,
+      () => this.waitlist.handleSeatReleased(event),
+    );
   }
 }

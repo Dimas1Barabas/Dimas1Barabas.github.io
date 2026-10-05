@@ -1,6 +1,8 @@
 import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 import { Injectable } from '@nestjs/common';
+import type { ConsumeMessage } from 'amqplib';
 import { retryErrorHandler } from '../rabbit/retry';
+import { withConsumeSpan } from '../tracing/rabbit-trace';
 import {
   RecommendationBookingEvent,
   RecommendationReviewEvent,
@@ -31,7 +33,13 @@ export class RecommendationsConsumer {
   })
   async onSignal(
     event: RecommendationBookingEvent | RecommendationReviewEvent,
+    raw?: ConsumeMessage,
   ): Promise<void> {
-    await this.recos.invalidateFor(event.userId);
+    await withConsumeSpan(
+      'api.recommendations.signals',
+      raw?.fields?.routingKey ?? 'recommendation.signal',
+      raw,
+      () => this.recos.invalidateFor(event.userId),
+    );
   }
 }

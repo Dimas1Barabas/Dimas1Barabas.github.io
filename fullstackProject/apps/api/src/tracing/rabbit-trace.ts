@@ -33,7 +33,7 @@ export async function withConsumeSpan<T>(
   queue: string,
   routingKey: string,
   message: Pick<ConsumeMessage, 'properties'> | undefined,
-  handler: () => Promise<T>,
+  handler: () => T | Promise<T>,
 ): Promise<T> {
   const headers = (message?.properties?.headers ?? {}) as Record<
     string,
