@@ -15,6 +15,7 @@ import (
 	"pricing-service/internal/adapter/out/prom"
 	"pricing-service/internal/domain"
 	"pricing-service/internal/service"
+	"pricing-service/internal/tracing"
 )
 
 // События обмена «cinema», на которые подписан сервис. Оба публикует
@@ -93,27 +94,30 @@ func (c *Consumer) Run(ctx context.Context) error {
 // (битый JSON, неизвестный routing key, пустые ключи) едут в parking
 // без ретраев; транзиентные — в retry-очередь с TTL.
 func (c *Consumer) handle(ch *amqp091.Channel, d amqp091.Delivery) {
+	// трейс продолжается из заголовков доставки (W3C traceparent)
+	ctx, span := tracing.ConsumeSpan(d, queueName)
+	defer span.End()
 	change, err := toDemandChange(d)
 	if err != nil {
 		log.Printf("битое сообщение: %v", err)
-		c.retryOrFail(ch, d, true, err.Error())
+		c.retryOrFail(ctx, ch, d, true, err.Error())
 		return
 	}
 
 	var applyErr error
 	if change.held {
-		applyErr = c.svc.HandleHeld(context.Background(), change.sessionID, change.bookingID, change.seats)
+		applyErr = c.svc.HandleHeld(ctx, change.sessionID, change.bookingID, change.seats)
 	} else {
-		applyErr = c.svc.HandleReleased(context.Background(), change.sessionID, change.bookingID, change.seats)
+		applyErr = c.svc.HandleReleased(ctx, change.sessionID, change.bookingID, change.seats)
 	}
 	if applyErr != nil {
 		if errors.Is(applyErr, domain.ErrInvalidDemandEvent) {
-			c.retryOrFail(ch, d, true, applyErr.Error())
+			c.retryOrFail(ctx, ch, d, true, applyErr.Error())
 			return
 		}
 		// собственный сбой (хранилище) — транзиентный, ретраим
 		c.metrics.Error()
-		c.retryOrFail(ch, d, false, applyErr.Error())
+		c.retryOrFail(ctx, ch, d, false, applyErr.Error())
 		return
 	}
 	c.metrics.Demand(change.held)
@@ -164,7 +168,8 @@ func (c *Consumer) declareTopology(ch *amqp091.Channel) error {
 
 // retryOrFail публикует копию упавшего сообщения в `<rk>.retry`/`<rk>.parking`
 // и подтверждает исходное; паузу между попытками делает брокер.
-func (c *Consumer) retryOrFail(ch *amqp091.Channel, d amqp091.Delivery, poison bool, errText string) {
+func (c *Consumer) retryOrFail(ctx context.Context, ch *amqp091.Channel, d amqp091.Delivery, poison bool, errText string) {
+	tracing.MarkError(ctx, errors.New(errText))
 	attempt := attempts(d) + 1
 	target := "retry"
 	if poison || attempt >= c.maxAttempts {
