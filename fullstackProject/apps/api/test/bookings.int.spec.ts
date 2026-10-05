@@ -80,11 +80,13 @@ describe('CineBooking API: жизненный цикл брони (фейков�
           bookingId: res.body.id,
           totalRub: movie.priceRub * 2,
         }),
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
       expect(rabbitPublish).not.toHaveBeenCalledWith(
         'cinema',
         'booking.created',
         expect.anything(),
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
     });
 
@@ -320,6 +322,7 @@ describe('CineBooking API: жизненный цикл брони (фейков�
           seats: ['3-3'],
           totalRub: created.totalRub,
         }),
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
     });
 
@@ -459,6 +462,7 @@ describe('CineBooking API: жизненный цикл брони (фейков�
         'cinema',
         'waitlist.seat.released',
         expect.objectContaining({ reason: 'CANCELLED_UNPAID', seats: ['4-9'] }),
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
 
       const map = await request(app.getHttpServer())

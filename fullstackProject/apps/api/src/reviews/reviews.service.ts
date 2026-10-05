@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+import { tracePublishOptions } from '../tracing/rabbit-trace';
 import { AuthUser } from '../auth/auth-user';
 import { Booking } from '../bookings/booking.entity';
 import { Movie } from '../movies/movie.entity';
@@ -118,7 +119,7 @@ export class ReviewsService {
       reviewId: review.id,
       occurredAt: new Date().toISOString(),
     };
-    this.rabbit.publish('cinema', 'recommendation.review.created', signal);
+    this.rabbit.publish('cinema', 'recommendation.review.created', signal, tracePublishOptions());
 
     this.logger.log(
       `Отзыв ${review.id} на фильм ${movieId} от ${user.email}: ${dto.rating}/5`,

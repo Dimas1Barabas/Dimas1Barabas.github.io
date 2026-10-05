@@ -82,6 +82,7 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
           bookingId: 'booking-1',
           occurredAt: expect.any(String),
         },
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
     });
 
@@ -103,6 +104,7 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
         'cinema',
         'recommendation.booking.confirmed',
         expect.anything(),
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
     });
 

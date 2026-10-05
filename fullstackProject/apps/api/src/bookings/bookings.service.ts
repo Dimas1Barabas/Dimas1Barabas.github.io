@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
+import { tracePublishOptions } from '../tracing/rabbit-trace';
 import {
   BONUS_BALANCE_SQL,
   BONUS_BOOKING_ROWS_SQL,
@@ -177,7 +178,7 @@ export class BookingsService {
       reason,
       releasedAt: new Date().toISOString(),
     };
-    this.rabbit.publish('cinema', 'waitlist.seat.released', event);
+    this.rabbit.publish('cinema', 'waitlist.seat.released', event, tracePublishOptions());
     // живая карта мест: все четыре освобождения закрываются здесь одним
     // сигналом (вызывается уже после occupancy.delete — гейтвей перечитает
     // пост-состояние)
@@ -376,7 +377,7 @@ export class BookingsService {
     // транзакция закоммитилась — места заняты: сигнал живой карте
     // (внутри замыкания транзакции нельзя: гейтвей раздал бы докоммитное)
     this.seatStream.emit({ sessionId: booking.sessionId });
-    this.rabbit.publish('cinema', 'booking.payment.wait', waitEvent);
+    this.rabbit.publish('cinema', 'booking.payment.wait', waitEvent, tracePublishOptions());
     this.logger.log(
       `Бронь ${booking.id} (${movie.title}, ${session.hall} ${session.startsAt.toISOString()}, места ${booking.seats.join(', ')}, ${quote.priceRub} ₽/место ${quote.dynamic ? '(тарификатор)' : '(базовая — тарификатор недоступен)'}) ждёт оплаты до ${waitEvent.expiresAt}`,
     );
@@ -529,6 +530,7 @@ export class BookingsService {
       'cinema',
       'booking.created',
       this.createdEventOf(booking, movie, session),
+      tracePublishOptions(),
     );
     this.logger.log(
       `Оплата брони ${booking.id} (${booking.totalRub} ₽${applied ? `, промокод ${applied.code} −${applied.discountRub} ₽` : ''}${spent ? `, бонусы −${spent}` : ''}) → в очередь`,
@@ -760,7 +762,7 @@ export class BookingsService {
       totalRub: booking.totalRub,
       cancelledAt: new Date().toISOString(),
     };
-    this.rabbit.publish('cinema', 'booking.cancelled', event);
+    this.rabbit.publish('cinema', 'booking.cancelled', event, tracePublishOptions());
     this.logger.log(
       `Отмена брони ${booking.id} (${movie.title}, возврат ${booking.totalRub} ₽) → в очередь`,
     );
@@ -878,7 +880,7 @@ export class BookingsService {
         bookingId: applied.id,
         occurredAt: new Date().toISOString(),
       };
-      this.rabbit.publish('cinema', 'recommendation.booking.confirmed', signal);
+      this.rabbit.publish('cinema', 'recommendation.booking.confirmed', signal, tracePublishOptions());
 
       // напоминание «скоро сеанс» — fire-and-forget: недоступность
       // reminder-сервиса не должна портить вердиктный цикл

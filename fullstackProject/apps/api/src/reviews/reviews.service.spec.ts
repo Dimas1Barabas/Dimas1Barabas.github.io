@@ -186,6 +186,7 @@ describe('ReviewsService (unit)', () => {
           reviewId: 'review-1',
           occurredAt: expect.any(String),
         },
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
     });
 

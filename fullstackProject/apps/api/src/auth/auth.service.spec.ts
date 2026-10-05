@@ -192,6 +192,7 @@ describe('AuthService', () => {
         'cinema',
         'user.password.reset',
         expect.objectContaining({ email: user.email }),
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
       const [, , payload] = rabbit.publish.mock.calls[0] as [
         string,

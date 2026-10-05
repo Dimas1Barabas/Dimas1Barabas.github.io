@@ -3,6 +3,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
+import { tracePublishOptions } from '../tracing/rabbit-trace';
 import { BookingStream } from '../bookings/booking-stream';
 import { HALL_CAPACITY } from '../bookings/hall';
 import { SeatOccupancy } from '../bookings/seat-occupancy.entity';
@@ -211,7 +212,7 @@ export class WaitlistService {
         `(${session.hall}, ${session.startsAt.toLocaleString('ru-RU')}) — ` +
         `успей забронировать: ${webLinkBase()}?movie=${movie.id}`,
     };
-    this.rabbit.publish('cinema', 'user.waitlist.seat', letter);
+    this.rabbit.publish('cinema', 'user.waitlist.seat', letter, tracePublishOptions());
 
     // in-app: тот же SSE-эндпоинт, клиент матчит payload.userId по себе
     const payload: WaitlistStreamPayload = {

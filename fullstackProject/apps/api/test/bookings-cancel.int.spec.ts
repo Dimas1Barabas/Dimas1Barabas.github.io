@@ -78,6 +78,7 @@ describe('CineBooking API: сага отмены (фейковые зависи�
           seats: ['3-5', '3-6'],
           totalRub: created.totalRub,
         }),
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
 
       // до вердикта возврата места держатся занятыми

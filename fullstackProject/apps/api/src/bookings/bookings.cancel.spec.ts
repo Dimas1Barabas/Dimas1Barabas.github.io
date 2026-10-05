@@ -59,6 +59,7 @@ describe('BookingsService: сага отмены (unit)', () => {
           seats: ['5-7', '5-8', '5-9'],
           totalRub: 1200,
         }),
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
     });
 
@@ -109,6 +110,7 @@ describe('BookingsService: сага отмены (unit)', () => {
           bookingId: 'booking-1',
           reason: 'CANCELLED_UNPAID',
         }),
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
     });
 

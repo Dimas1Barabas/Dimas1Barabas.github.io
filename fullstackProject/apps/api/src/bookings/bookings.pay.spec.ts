@@ -54,6 +54,7 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
           seats: ['5-7', '5-8', '5-9'],
           totalRub: 1200,
         }),
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
       expect(stream.emit).toHaveBeenCalledTimes(1);
     });
@@ -125,6 +126,7 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
         'cinema',
         'booking.created',
         expect.objectContaining({ totalRub: 1080 }),
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
     });
 
@@ -219,6 +221,7 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
           'cinema',
           'booking.created',
           expect.objectContaining({ totalRub: 800 }),
+          expect.objectContaining({ headers: expect.any(Object) }),
         );
       });
 

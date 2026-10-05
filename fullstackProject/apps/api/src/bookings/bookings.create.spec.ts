@@ -4,6 +4,8 @@
  * ./bookings.service.harness; каждый домен деструктурирует нужное.
  */
 import { ConflictException } from '@nestjs/common';
+import { context, trace } from '@opentelemetry/api';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { SeatOccupancy } from './seat-occupancy.entity';
 import { buildBookingsHarness, type BookingsHarness, sessionFixture, authUser } from './bookings.service.harness';
 import { CreateBookingDto } from './dto/create-booking.dto';
@@ -123,6 +125,31 @@ describe('BookingsService: создание брони и цена сеанса 
         totalRub: 1200,
         expiresAt: result.expiresAt,
       });
+    });
+
+    it('wait-событие едет с traceparent активного спана (шов OTel)', async () => {
+      // настоящий провайдер: без него глобальный propagator — no-op
+      new NodeTracerProvider().register();
+      const span = trace.getTracer('spec').startSpan('http-request-root');
+
+      await context.with(trace.setSpan(context.active(), span), async () => {
+        await service.create(
+          { sessionId: 'session-1', seats: ['1-1'] },
+          authUser,
+        );
+      });
+      span.end();
+
+      const options = rabbit.publish.mock.calls[0][3] as {
+        headers: Record<string, string>;
+      };
+      expect(options.headers.traceparent).toMatch(
+        /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/,
+      );
+      // trace id совпадает со «спаном HTTP-запроса» — трасса непрерывна
+      expect(options.headers.traceparent.split('-')[1]).toBe(
+        span.spanContext().traceId,
+      );
     });
 
     it('цена брони — от Тарификатора: квот с факторами до транзакции', async () => {

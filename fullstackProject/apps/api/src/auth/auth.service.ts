@@ -7,6 +7,7 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'node:crypto';
+import { tracePublishOptions } from '../tracing/rabbit-trace';
 import * as bcrypt from 'bcryptjs';
 import { IsNull, LessThan, Repository } from 'typeorm';
 import { SessionPair, TokensService } from '../tokens/tokens.service';
@@ -98,10 +99,12 @@ export class AuthService {
       }),
     );
 
-    await this.rabbit.publish('cinema', 'user.password.reset', {
-      email: user.email,
-      message: `${resetLinkBase()}?token=${token}`,
-    });
+    await this.rabbit.publish(
+      'cinema',
+      'user.password.reset',
+      { email: user.email, message: `${resetLinkBase()}?token=${token}` },
+      tracePublishOptions(),
+    );
   }
 
   /**

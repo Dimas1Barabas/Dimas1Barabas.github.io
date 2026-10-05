@@ -341,6 +341,7 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
           reviewId: res.body.id,
           occurredAt: expect.any(String),
         },
+        expect.objectContaining({ headers: expect.any(Object) }),
       );
     });
 
