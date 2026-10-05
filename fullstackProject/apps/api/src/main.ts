@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+// OTel-SDK до загрузки Nest/express: инструментация патчит модули при require
+import './tracing/setup-tracing';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { WsAdapter } from '@nestjs/platform-ws';
