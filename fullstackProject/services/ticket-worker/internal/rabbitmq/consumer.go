@@ -18,6 +18,7 @@ import (
 	"ticket-worker/internal/events"
 	"ticket-worker/internal/processing"
 	"ticket-worker/internal/stats"
+	"ticket-worker/internal/tracing"
 )
 
 // Consumer связывает очереди воркера с обработчиком-«шлюзом».
@@ -96,23 +97,39 @@ func (c *Consumer) Run(ctx context.Context) error {
 }
 
 // handleDelivery разводит потоки по routing key: оплата, возврат или истечение.
+// Трейс продолжается из заголовков доставки: вердикт уедет ребёнком брони API.
 func (c *Consumer) handleDelivery(ch *amqp.Channel, d amqp.Delivery) {
+	ctx, span := tracing.ConsumeSpan(d, queueOf(c.cfg, d.RoutingKey))
+	defer span.End()
+
 	switch d.RoutingKey {
 	case events.KeyCreated:
-		c.handleCreated(ch, d)
+		c.handleCreated(ctx, ch, d)
 	case events.KeyCancelled:
-		c.handleCancelled(ch, d)
+		c.handleCancelled(ctx, ch, d)
 	case events.KeyPaymentTimeout:
-		c.handlePaymentTimeout(ch, d)
+		c.handlePaymentTimeout(ctx, ch, d)
 	default:
 		log.Printf("неизвестный routing key %q", d.RoutingKey)
 		c.stats.Errors.Add(1)
 		// poison: ретраить бессмысленно — сразу в parking
-		c.retryOrFail(ch, d, true, "неизвестный routing key "+d.RoutingKey)
+		c.retryOrFail(ctx, ch, d, true, "неизвестный routing key "+d.RoutingKey)
 	}
 }
 
-func (c *Consumer) handleCreated(ch *amqp.Channel, d amqp.Delivery) {
+// queueOf сопоставляет routing key рабочей очереди для атрибута спана.
+func queueOf(cfg config.Config, rk string) string {
+	switch rk {
+	case events.KeyCancelled:
+		return cfg.CancelQueue
+	case events.KeyPaymentTimeout:
+		return cfg.ExpireQueue
+	default:
+		return cfg.InQueue
+	}
+}
+
+func (c *Consumer) handleCreated(ctx context.Context, ch *amqp.Channel, d amqp.Delivery) {
 	c.stats.Received.Add(1)
 
 	var ev events.BookingCreated
@@ -120,7 +137,7 @@ func (c *Consumer) handleCreated(ch *amqp.Channel, d amqp.Delivery) {
 		log.Printf("битое сообщение: %v", err)
 		c.stats.Errors.Add(1)
 		// poison: тело не разбирается, ретраи не помогут — в parking
-		c.retryOrFail(ch, d, true, fmt.Sprintf("не разбирается JSON: %v", err))
+		c.retryOrFail(ctx, ch, d, true, fmt.Sprintf("не разбирается JSON: %v", err))
 		return
 	}
 
@@ -131,14 +148,14 @@ func (c *Consumer) handleCreated(ch *amqp.Channel, d amqp.Delivery) {
 	body, err := json.Marshal(result)
 	if err != nil {
 		c.stats.Errors.Add(1)
-		c.retryOrFail(ch, d, false, fmt.Sprintf("не сериализуется вердикт: %v", err))
+		c.retryOrFail(ctx, ch, d, false, fmt.Sprintf("не сериализуется вердикт: %v", err))
 		return
 	}
 
-	if err := publishJSON(ch, c.cfg.Exchange, events.KeyProcessed, body); err != nil {
+	if err := tracing.PublishJSON(ctx, ch, c.cfg.Exchange, events.KeyProcessed, body); err != nil {
 		log.Printf("→ ! %s: %v", ev.BookingID, err)
 		c.stats.Errors.Add(1)
-		c.retryOrFail(ch, d, false, fmt.Sprintf("публикация вердикта: %v", err))
+		c.retryOrFail(ctx, ch, d, false, fmt.Sprintf("публикация вердикта: %v", err))
 		return
 	}
 
@@ -151,14 +168,14 @@ func (c *Consumer) handleCreated(ch *amqp.Channel, d amqp.Delivery) {
 	log.Printf("→ %s: %s — %s", ev.BookingID, result.Status, result.Message)
 }
 
-func (c *Consumer) handleCancelled(ch *amqp.Channel, d amqp.Delivery) {
+func (c *Consumer) handleCancelled(ctx context.Context, ch *amqp.Channel, d amqp.Delivery) {
 	c.stats.Received.Add(1)
 
 	var ev events.BookingCancelled
 	if err := json.Unmarshal(d.Body, &ev); err != nil {
 		log.Printf("битое сообщение: %v", err)
 		c.stats.Errors.Add(1)
-		c.retryOrFail(ch, d, true, fmt.Sprintf("не разбирается JSON: %v", err))
+		c.retryOrFail(ctx, ch, d, true, fmt.Sprintf("не разбирается JSON: %v", err))
 		return
 	}
 
@@ -169,14 +186,14 @@ func (c *Consumer) handleCancelled(ch *amqp.Channel, d amqp.Delivery) {
 	body, err := json.Marshal(result)
 	if err != nil {
 		c.stats.Errors.Add(1)
-		c.retryOrFail(ch, d, false, fmt.Sprintf("не сериализуется вердикт: %v", err))
+		c.retryOrFail(ctx, ch, d, false, fmt.Sprintf("не сериализуется вердикт: %v", err))
 		return
 	}
 
-	if err := publishJSON(ch, c.cfg.Exchange, events.KeyRefunded, body); err != nil {
+	if err := tracing.PublishJSON(ctx, ch, c.cfg.Exchange, events.KeyRefunded, body); err != nil {
 		log.Printf("→ ! %s: %v", ev.BookingID, err)
 		c.stats.Errors.Add(1)
-		c.retryOrFail(ch, d, false, fmt.Sprintf("публикация вердикта: %v", err))
+		c.retryOrFail(ctx, ch, d, false, fmt.Sprintf("публикация вердикта: %v", err))
 		return
 	}
 
@@ -192,7 +209,7 @@ func (c *Consumer) handleCancelled(ch *amqp.Channel, d amqp.Delivery) {
 // handlePaymentTimeout гасит просроченный резерв: сообщение уже прождало
 // окно оплаты в wait-очереди, вердикт уходит без задержки. Идемпотентность
 // на стороне API: оплаченная/отменённая бронь вердикт молча пропустит.
-func (c *Consumer) handlePaymentTimeout(ch *amqp.Channel, d amqp.Delivery) {
+func (c *Consumer) handlePaymentTimeout(ctx context.Context, ch *amqp.Channel, d amqp.Delivery) {
 	c.stats.Received.Add(1)
 
 	var ev events.BookingPaymentTimeout
@@ -200,7 +217,7 @@ func (c *Consumer) handlePaymentTimeout(ch *amqp.Channel, d amqp.Delivery) {
 		log.Printf("битое сообщение: %v", err)
 		c.stats.Errors.Add(1)
 		// poison: тело не разбирается, ретраи не помогут — в parking
-		c.retryOrFail(ch, d, true, fmt.Sprintf("не разбирается JSON: %v", err))
+		c.retryOrFail(ctx, ch, d, true, fmt.Sprintf("не разбирается JSON: %v", err))
 		return
 	}
 
@@ -210,14 +227,14 @@ func (c *Consumer) handlePaymentTimeout(ch *amqp.Channel, d amqp.Delivery) {
 	body, err := json.Marshal(result)
 	if err != nil {
 		c.stats.Errors.Add(1)
-		c.retryOrFail(ch, d, false, fmt.Sprintf("не сериализуется вердикт: %v", err))
+		c.retryOrFail(ctx, ch, d, false, fmt.Sprintf("не сериализуется вердикт: %v", err))
 		return
 	}
 
-	if err := publishJSON(ch, c.cfg.Exchange, events.KeyExpired, body); err != nil {
+	if err := tracing.PublishJSON(ctx, ch, c.cfg.Exchange, events.KeyExpired, body); err != nil {
 		log.Printf("→ ! %s: %v", ev.BookingID, err)
 		c.stats.Errors.Add(1)
-		c.retryOrFail(ch, d, false, fmt.Sprintf("публикация вердикта: %v", err))
+		c.retryOrFail(ctx, ch, d, false, fmt.Sprintf("публикация вердикта: %v", err))
 		return
 	}
 
@@ -230,7 +247,8 @@ func (c *Consumer) handlePaymentTimeout(ch *amqp.Channel, d amqp.Delivery) {
 // `<rk>.parking` и подтверждает исходное. Паузу между попытками делает
 // брокер: retry-очередь держит копию TTL и по dead-letter возвращает её
 // в рабочую очередь.
-func (c *Consumer) retryOrFail(ch *amqp.Channel, d amqp.Delivery, poison bool, errText string) {
+func (c *Consumer) retryOrFail(ctx context.Context, ch *amqp.Channel, d amqp.Delivery, poison bool, errText string) {
+	tracing.MarkError(ctx, errors.New(errText))
 	attempt := attempts(d) + 1
 	target := routeFor(attempt, c.cfg.MaxAttempts, poison)
 
@@ -255,14 +273,4 @@ func (c *Consumer) retryOrFail(ch *amqp.Channel, d amqp.Delivery, poison bool, e
 	}
 	_ = d.Ack(false)
 	log.Printf("↻ %s: попытка %d → %s (%s)", d.RoutingKey, attempt, target, errText)
-}
-
-// publishJSON отправляет событие в обмен «cinema» персистентно.
-func publishJSON(ch *amqp.Channel, exchange, rk string, body []byte) error {
-	return ch.Publish(exchange, rk, false, false, amqp.Publishing{
-		ContentType:  "application/json",
-		DeliveryMode: amqp.Persistent,
-		Timestamp:    time.Now(),
-		Body:         body,
-	})
 }

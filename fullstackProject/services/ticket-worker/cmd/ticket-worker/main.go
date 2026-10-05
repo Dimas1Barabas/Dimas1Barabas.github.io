@@ -23,6 +23,7 @@ import (
 	"ticket-worker/internal/processing"
 	"ticket-worker/internal/rabbitmq"
 	"ticket-worker/internal/stats"
+	"ticket-worker/internal/tracing"
 )
 
 func main() {
@@ -43,6 +44,9 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// трейсинг поднимаем ДО потребителей; без OTEL_EXPORTER_OTLP_ENDPOINT — no-op
+	shutdownTracing := tracing.Setup("ticket-worker")
 
 	httpSrv := httpserver.Start(cfg.HTTPAddr, st)
 
@@ -65,6 +69,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
+	_ = shutdownTracing(shutdownCtx)
 	log.Printf("воркер остановлен: обработано %d, подтверждено %d, отказов %d, истекло %d, возвратов %d (неудачных %d)",
 		st.Received.Load(), st.Confirmed.Load(), st.Failed.Load(),
 		st.Expired.Load(), st.Refunds.Load(), st.RefundFailed.Load())
