@@ -16,6 +16,7 @@ import (
 
 	"reminder-service/internal/adapter/out/prom"
 	"reminder-service/internal/domain"
+	"reminder-service/internal/tracing"
 )
 
 const (
@@ -122,6 +123,10 @@ func (p *Publisher) Publish(ctx context.Context, r domain.Reminder) error {
 	if err != nil {
 		return fmt.Errorf("сборка payload напоминания %s: %w", r.BookingID, err)
 	}
+	// «Письмо скоро сеанс» продолжит трейс создателя напоминания
+	ctx, span := tracing.StartProducer(ctx, RoutingKey)
+	defer span.End()
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.channel == nil {
@@ -133,6 +138,7 @@ func (p *Publisher) Publish(ctx context.Context, r domain.Reminder) error {
 		DeliveryMode: amqp091.Persistent,
 		Timestamp:    r.RemindedAt,
 		Body:         body,
+		Headers:      tracing.InjectHeaders(ctx),
 	})
 	if err != nil {
 		p.metrics.PublishFailed()

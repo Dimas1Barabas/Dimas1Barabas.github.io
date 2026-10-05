@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc/reflection"
 
 	"reminder-service/internal/adapter/in/grpcapi"
@@ -30,6 +31,7 @@ import (
 	"reminder-service/internal/domain"
 	pb "reminder-service/internal/pb"
 	"reminder-service/internal/service"
+	"reminder-service/internal/tracing"
 )
 
 func main() {
@@ -66,13 +68,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("слушать %s: %v", cfg.GRPCAddr, err)
 	}
-	grpcSrv := grpc.NewServer()
+	// otelgrpc: серверные спаны gRPC-вызовов, родитель — span клиента API
+	grpcSrv := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
 	pb.RegisterRemindersServer(grpcSrv, grpcapi.New(scheduler, metrics))
 	// reflection — для grpcurl-проверок на живом стенде
 	reflection.Register(grpcSrv)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// трейсинг: без OTEL_EXPORTER_OTLP_ENDPOINT — no-op (см. internal/tracing)
+	shutdownTracing := tracing.Setup("reminder-service")
 
 	httpSrv := httpapi.Start(cfg.HTTPAddr, scheduler, metrics.Handler())
 
@@ -130,5 +136,6 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
+	_ = shutdownTracing(shutdownCtx)
 	log.Printf("reminder остановлен")
 }
