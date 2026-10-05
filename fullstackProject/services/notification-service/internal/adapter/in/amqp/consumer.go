@@ -14,6 +14,7 @@ import (
 
 	"notification-service/internal/domain"
 	"notification-service/internal/service"
+	"notification-service/internal/tracing"
 )
 
 // События обмена «cinema», на которые подписан сервис. Контракт общий
@@ -94,20 +95,23 @@ func (c *Consumer) Run(ctx context.Context) error {
 // (битый JSON, неизвестный routing key или вердикт) едут в parking
 // без ретраев; транзиентные — в retry-очередь с TTL.
 func (c *Consumer) handle(ch *amqp091.Channel, d amqp091.Delivery) {
+	// трейс продолжается из заголовков доставки (W3C traceparent)
+	ctx, span := tracing.ConsumeSpan(d, queueName)
+	defer span.End()
 	outcome, err := toOutcome(d)
 	if err != nil {
 		log.Printf("битое сообщение: %v", err)
-		c.retryOrFail(ch, d, true, err.Error())
+		c.retryOrFail(ctx, ch, d, true, err.Error())
 		return
 	}
 
-	if err := c.svc.HandleOutcome(context.Background(), outcome); err != nil {
+	if err := c.svc.HandleOutcome(ctx, outcome); err != nil {
 		if errors.Is(err, domain.ErrUnknownVerdict) {
-			c.retryOrFail(ch, d, true, err.Error())
+			c.retryOrFail(ctx, ch, d, true, err.Error())
 			return
 		}
 		// собственный сбой (хранилище) — транзиентный, ретраим
-		c.retryOrFail(ch, d, false, err.Error())
+		c.retryOrFail(ctx, ch, d, false, err.Error())
 		return
 	}
 	_ = d.Ack(false)
@@ -157,7 +161,8 @@ func (c *Consumer) declareTopology(ch *amqp091.Channel) error {
 
 // retryOrFail публикует копию упавшего сообщения в `<rk>.retry`/`<rk>.parking`
 // и подтверждает исходное; паузу между попытками делает брокер.
-func (c *Consumer) retryOrFail(ch *amqp091.Channel, d amqp091.Delivery, poison bool, errText string) {
+func (c *Consumer) retryOrFail(ctx context.Context, ch *amqp091.Channel, d amqp091.Delivery, poison bool, errText string) {
+	tracing.MarkError(ctx, errors.New(errText))
 	attempt := attempts(d) + 1
 	target := "retry"
 	if poison || attempt >= c.maxAttempts {

@@ -24,6 +24,7 @@ import (
 	"notification-service/internal/config"
 	"notification-service/internal/domain"
 	"notification-service/internal/service"
+	"notification-service/internal/tracing"
 )
 
 func main() {
@@ -59,6 +60,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// трейсинг: без OTEL_EXPORTER_OTLP_ENDPOINT — no-op (см. internal/tracing)
+	shutdownTracing := tracing.Setup("notification-service")
+
 	httpSrv := httpapi.Start(cfg.HTTPAddr, notifier, metrics.Handler())
 
 	log.Printf("notification-service запущен (RabbitMQ: %s, storage: %s)", cfg.AMQPURL, cfg.Storage)
@@ -80,6 +84,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
+	_ = shutdownTracing(shutdownCtx)
 	log.Printf("notification остановлен: всего %v отправлено, %v неудачно доставлено",
 		metrics.Snapshot()["sent"], metrics.Snapshot()["failed"])
 }
