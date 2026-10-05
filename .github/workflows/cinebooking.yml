@@ -233,7 +233,9 @@ jobs:
       # конфиг общий на все сервисы (fullstackProject/.golangci.yml, набор standard)
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.4.0  # как локально — замечания не расходятся с машиной
+          version: v2.14.0  # как локально — замечания не расходятся с машиной;
+          # v2.14 первый, собранный с go1.26 — модули с директивой 1.26
+          # (otel v1.47) линтуются только с него
           working-directory: fullstackProject/services/${{ matrix.dir }}
           args: --config=../../.golangci.yml
 
