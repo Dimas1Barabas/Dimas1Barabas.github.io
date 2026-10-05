@@ -71,6 +71,9 @@ services:
       # Привратник: gRPC-адрес лимитов (недоступность — fail-open,
       # запрос проходит без проверки)
       GRPC_RATELIMITER_URL: ratelimiter:8090
+      # OpenTelemetry: OTLP/HTTP-эндпоинт Jaeger; без переменной
+      # SDK не поднимается вовсе (CI-e2e без observability)
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - '13000:3000'
     # readiness по факту, а не «процесс стартовал»: на первом boot'е api
@@ -104,6 +107,8 @@ services:
       AMQP_URL: amqp://guest:guest@rabbitmq:5672/
       HTTP_ADDR: :8081
       WORKER_ID: go-worker-1
+      # OpenTelemetry: OTLP gRPC-эндпоинт Jaeger; без переменной — no-op
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
     ports:
       - '8081:8081'
     depends_on:
@@ -122,6 +127,8 @@ services:
       # (initdb-скрипты на уже инициализированном volume не сработают)
       STORAGE: postgres
       DATABASE_URL: postgres://cine:cine@postgres:5432/cine_notifications
+      # OpenTelemetry: OTLP gRPC-эндпоинт Jaeger; без переменной — no-op
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
     ports:
       - '18082:8080'
     depends_on:
@@ -141,6 +148,8 @@ services:
       HTTP_ADDR: :8085
       STORAGE: postgres
       DATABASE_URL: postgres://cine:cine@postgres:5432/cine_recommendations
+      # OpenTelemetry: OTLP gRPC-эндпоинт Jaeger; без переменной — no-op
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
     ports:
       - '18084:8084' # gRPC Recommendations (API ходит внутри сети; хост-порт — для grpcurl)
       - '18085:8085' # /health и /profile?userId= — витрина профиля зрителя
@@ -166,6 +175,8 @@ services:
       # минуты, чтобы письмо было видно руками и в e2e
       REMINDER_LEAD_MINUTES: '2'
       REMINDER_TICK_SECONDS: '5'
+      # OpenTelemetry: OTLP gRPC-эндпоинт Jaeger; без переменной — no-op
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
     ports:
       - '18086:8086' # gRPC Reminders (API ходит внутри сети; хост-порт — для grpcurl)
       - '18087:8087' # /health и /reminders — витрина очереди напоминаний
@@ -189,6 +200,8 @@ services:
       STORAGE: postgres
       DATABASE_URL: postgres://cine:cine@postgres:5432/cine_prices
       TZ: Europe/Moscow
+      # OpenTelemetry: OTLP gRPC-эндпоинт Jaeger; без переменной — no-op
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
     ports:
       - '18088:8088' # gRPC Pricing (API ходит внутри сети; хост-порт — для grpcurl)
       - '18089:8089' # /health, /prices, /demand — витрина квотов и спроса
@@ -213,6 +226,8 @@ services:
       DATABASE_URL: postgres://cine:cine@postgres:5432/cine_ratekeeper
       RATE_BOOKINGS_PER_MIN: '30'
       RATE_LOGIN_PER_MIN: '5'
+      # OpenTelemetry: OTLP gRPC-эндпоинт Jaeger; без переменной — no-op
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
     ports:
       - '18090:8090' # gRPC RateLimiter (API ходит внутри сети; хост-порт — для grpcurl)
       - '18091:8091' # /health, /buckets — витрина корзин
@@ -258,6 +273,16 @@ services:
       - '19000:3000'
     depends_on:
       - prometheus
+
+  # Jaeger v2 — бэкенд трейсов: юниты пишут OTLP (API — http/4318, Go —
+  # grpc/4317), UI на 16686. Образ собран на OTel-коллекторе: memory-хранилище
+  # и приём OTLP включены дефолтами, конфиг-файл не нужен; трейсы живут до
+  # рестарта контейнера (без volume) — демо-стенду достаточно. В CI-e2e не
+  # поднимается: там у юнитов нет OTEL-переменной и трейсинг выключен гейтом
+  jaeger:
+    image: jaegertracing/jaeger:2.21.0
+    ports:
+      - '16686:16686' # UI: поиск трейсов, карта сервисов, сравнение
 
 volumes:
   pgdata:
