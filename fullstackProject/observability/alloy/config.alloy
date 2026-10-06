@@ -1,0 +1,58 @@
+// Alloy — сборщик логов стенда CineBooking (наследник promtail).
+// Цепочка: docker-дискавери контейнеров проекта → релейбл (метка
+// service по имени контейнера) → пайплайн (JSON юнитов: level →
+// метка, регистр выравниваем; чужие строки проходят как есть)
+// → push в Loki.
+
+discovery.docker "stand" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "stand" {
+  targets = discovery.docker.stand.targets
+
+  // только контейнеры compose-проекта cine-booking
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = "cine-booking"
+    action        = "keep"
+  }
+
+  // имя контейнера → метка service (api, worker, pricing, ...)
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "stand" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.stand.output
+  forward_to = [loki.process.units.receiver]
+}
+
+loki.process "units" {
+  // API и Go-юниты пишут JSON-строки: тянем level, чтобы фильтры
+  // вида {service="api", level="error"} работали по метке. Не-JSON
+  // (nginx-комбайн, логи самой инфры) стадия молча пропускает как есть.
+  stage.json {
+    expressions = { level = "" }
+  }
+  // slog пишет уровень в верхнем регистре (INFO/WARN/ERROR) — выравниваем
+  stage.template {
+    source   = "level"
+    template = "{{ ToLower .Value }}"
+  }
+  stage.labels {
+    values = { level = "" }
+  }
+
+  forward_to = [loki.write.loki.receiver]
+}
+
+loki.write "loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

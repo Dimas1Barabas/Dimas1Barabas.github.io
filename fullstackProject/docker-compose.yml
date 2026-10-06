@@ -284,5 +284,35 @@ services:
     ports:
       - '16686:16686' # UI: поиск трейсов, карта сервисов, сравнение
 
+  # Loki — хранилище логов: файловый TSDB в volume, retention неделя.
+  # Приём push-логов от Alloy (3100), host-порт 19310 — конвенция 19xxx
+  # observability-полосы. В CI-e2e не поднимается вместе с Alloy.
+  loki:
+    image: grafana/loki:3.7.8
+    volumes:
+      - ./observability/loki/loki.yml:/etc/loki/loki.yml:ro
+      - lokidata:/loki
+    ports:
+      - '19310:3100'
+
+  # Alloy — шиппер логов (наследник promtail): docker-дискавери всех
+  # контейнеров проекта, JSON-строки юнитов парсятся пайплайном
+  # (level → метка), сырые строки (nginx) проходят как есть. UI отладки
+  # пайплайна — 19245. Читает только docker.sock, файлы не монтируем.
+  alloy:
+    image: grafana/alloy:v1.20.1
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./observability/alloy:/etc/alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - '19245:12345'
+    depends_on:
+      - loki
+
 volumes:
   pgdata:
+  lokidata:
