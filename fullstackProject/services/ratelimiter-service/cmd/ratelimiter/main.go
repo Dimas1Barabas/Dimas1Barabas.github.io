@@ -13,7 +13,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net"
 	"os/signal"
 	"syscall"
@@ -30,13 +29,15 @@ import (
 	"ratelimiter-service/internal/adapter/out/prom"
 	"ratelimiter-service/internal/config"
 	"ratelimiter-service/internal/domain"
+	"ratelimiter-service/internal/logging"
 	pb "ratelimiter-service/internal/pb"
 	"ratelimiter-service/internal/service"
 	"ratelimiter-service/internal/tracing"
 )
 
 func main() {
-	log.SetFlags(log.Ltime)
+	// JSON-логи ДО трейсинга: диагностика tracing.Setup тоже уходит JSON'ом
+	logging.Setup()
 	cfg := config.Load()
 
 	// wiring: за портом BucketStore стоит конкретный адаптер; домен
@@ -53,16 +54,16 @@ func main() {
 		// корзины памяти — для лимитов это осознанно
 		pgStore, err := postgres.NewRepository(context.Background(), cfg.DatabaseURL)
 		if err != nil {
-			log.Fatalf("STORAGE=postgres: %v", err)
+			logging.Fatalf("STORAGE=postgres: %v", err)
 		}
 		defer func() { _ = pgStore.Close() }()
 		store = pgStore
 	default:
-		log.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
+		logging.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
 	}
 
 	if cfg.RateBookingsPerMin < 1 || cfg.RateLoginPerMin < 1 {
-		log.Fatalf("лимиты должны быть ≥ 1 в минуту: bookings=%d login=%d",
+		logging.Fatalf("лимиты должны быть ≥ 1 в минуту: bookings=%d login=%d",
 			cfg.RateBookingsPerMin, cfg.RateLoginPerMin)
 	}
 	policies := map[domain.Action]domain.Policy{
@@ -76,7 +77,7 @@ func main() {
 	// gRPC — главный интерфейс: токены спрашивают гварды NestJS API
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
 	if err != nil {
-		log.Fatalf("слушать %s: %v", cfg.GRPCAddr, err)
+		logging.Fatalf("слушать %s: %v", cfg.GRPCAddr, err)
 	}
 	// otelgrpc: серверные спаны gRPC-вызовов, родитель — span клиента API
 	grpcSrv := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
@@ -93,13 +94,13 @@ func main() {
 	httpSrv := httpapi.Start(cfg.HTTPAddr, limiter, metrics.Handler())
 
 	go func() {
-		log.Printf("gRPC RateLimiter на %s", cfg.GRPCAddr)
+		logging.Info("gRPC RateLimiter на %s", cfg.GRPCAddr)
 		if err := grpcSrv.Serve(lis); err != nil {
-			log.Fatalf("gRPC Serve: %v", err)
+			logging.Fatalf("gRPC Serve: %v", err)
 		}
 	}()
 
-	log.Printf("ratelimiter-service запущен (gRPC: %s, storage: %s, политики: бронь %d/мин, вход %d/мин)",
+	logging.Info("ratelimiter-service запущен (gRPC: %s, storage: %s, политики: бронь %d/мин, вход %d/мин)",
 		cfg.GRPCAddr, cfg.Storage, cfg.RateBookingsPerMin, cfg.RateLoginPerMin)
 
 	// синхронному сервису нечего ждать — только сигнала остановки
@@ -120,5 +121,5 @@ func main() {
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = shutdownTracing(shutdownCtx)
-	log.Printf("ratelimiter остановлен")
+	logging.Info("ratelimiter остановлен")
 }
