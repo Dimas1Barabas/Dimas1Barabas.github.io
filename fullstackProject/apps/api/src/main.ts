@@ -6,6 +6,7 @@ import { NestFactory } from '@nestjs/core';
 import { WsAdapter } from '@nestjs/platform-ws';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { JsonLogger } from './logging/json-logger';
 import { setupSwagger } from './swagger';
 
 /** откуда фронт ходит в API напрямую (без nginx/vite-прокси same-origin) */
@@ -17,7 +18,11 @@ const allowedOrigins = [
 ];
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  // JSON-строки вместо плоского ConsoleLogger: со стартовых сообщений,
+  // пока Nest молотит инициализацию модулей (Loki парсит их же)
+  const app = await NestFactory.create(AppModule, {
+    logger: new JsonLogger(),
+  });
 
   app.setGlobalPrefix('api');
   // ws-гейтвеи (живая карта мест /api/seats) — на общем HTTP-сервере:
