@@ -7,12 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	amqp091 "github.com/rabbitmq/amqp091-go"
 
 	"notification-service/internal/domain"
+	"notification-service/internal/logging"
 	"notification-service/internal/service"
 	"notification-service/internal/tracing"
 )
@@ -76,7 +76,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 		return fmt.Errorf("consume: %w", err)
 	}
 
-	log.Printf("notification слушает %s / booking.processed + booking.refunded + booking.expired + user.password.reset + user.waitlist.seat + user.session.reminder", queueName)
+	logging.Infof(ctx, "notification слушает %s / booking.processed + booking.refunded + booking.expired + user.password.reset + user.waitlist.seat + user.session.reminder", queueName)
 
 	for {
 		select {
@@ -100,7 +100,7 @@ func (c *Consumer) handle(ch *amqp091.Channel, d amqp091.Delivery) {
 	defer span.End()
 	outcome, err := toOutcome(d)
 	if err != nil {
-		log.Printf("битое сообщение: %v", err)
+		logging.Errorf(ctx, "битое сообщение: %v", err)
 		c.retryOrFail(ctx, ch, d, true, err.Error())
 		return
 	}
@@ -183,11 +183,11 @@ func (c *Consumer) retryOrFail(ctx context.Context, ch *amqp091.Channel, d amqp0
 		Body:         d.Body,
 		Headers:      headers,
 	}); err != nil {
-		log.Printf("↻ ! %s: %v", d.RoutingKey, err)
+		logging.Errorf(ctx, "↻ ! %s: %v", d.RoutingKey, err)
 		return
 	}
 	_ = d.Ack(false)
-	log.Printf("↻ %s: попытка %d → %s (%s)", d.RoutingKey, attempt, target, errText)
+	logging.Warnf(ctx, "↻ %s: попытка %d → %s (%s)", d.RoutingKey, attempt, target, errText)
 }
 
 // attempts читает счётчик попыток из заголовков; AMQP-типы целого

@@ -5,10 +5,10 @@ package service
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"notification-service/internal/domain"
+	"notification-service/internal/logging"
 )
 
 // Notifier — сценарий «получили вердикт → уведомили клиента → сохранили».
@@ -41,7 +41,7 @@ func (s *Notifier) HandleOutcome(ctx context.Context, o domain.Outcome) error {
 		n.Status = domain.StatusFailed
 		n.Error = err.Error()
 		s.metrics.Failed()
-		log.Printf("✉ ! %s: доставка не удалась: %v", n.BookingID, err)
+		logging.Warnf(ctx, "✉ ! %s: доставка не удалась: %v", n.BookingID, err)
 	} else {
 		s.metrics.Sent(n.Kind)
 	}
@@ -52,7 +52,7 @@ func (s *Notifier) HandleOutcome(ctx context.Context, o domain.Outcome) error {
 	}
 
 	if n.Status == domain.StatusSent {
-		log.Printf("✉ %s [%s] «%s»", n.BookingID, n.Kind, n.Title)
+		logging.Infof(ctx, "✉ %s [%s] «%s»", n.BookingID, n.Kind, n.Title)
 	}
 	return nil
 }

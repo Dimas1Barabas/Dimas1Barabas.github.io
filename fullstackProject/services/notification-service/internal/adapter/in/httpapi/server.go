@@ -5,11 +5,11 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"strconv"
 
 	"notification-service/internal/domain"
+	"notification-service/internal/logging"
 	"notification-service/internal/service"
 )
 
@@ -19,10 +19,10 @@ func Start(addr string, svc *service.Notifier, metricsHandler http.Handler) *htt
 	srv := New(addr, svc, metricsHandler)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("http: %v", err)
+			logging.Error("http: %v", err)
 		}
 	}()
-	log.Printf("http: /health, /stats, /notifications и /metrics на %s", addr)
+	logging.Info("http: /health, /stats, /notifications и /metrics на %s", addr)
 	return srv
 }
 

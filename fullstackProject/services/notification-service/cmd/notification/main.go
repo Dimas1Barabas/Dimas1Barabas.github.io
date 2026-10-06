@@ -10,7 +10,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"os/signal"
 	"syscall"
 	"time"
@@ -23,12 +22,14 @@ import (
 	"notification-service/internal/adapter/out/prom"
 	"notification-service/internal/config"
 	"notification-service/internal/domain"
+	"notification-service/internal/logging"
 	"notification-service/internal/service"
 	"notification-service/internal/tracing"
 )
 
 func main() {
-	log.SetFlags(log.Ltime)
+	// JSON-логи ДО трейсинга: диагностика tracing.Setup тоже уходит JSON'ом
+	logging.Setup()
 	cfg := config.Load()
 
 	// wiring: за каждым портом домена стоит конкретный адаптер;
@@ -44,12 +45,12 @@ func main() {
 		// fallback на память скрыл бы потерю истории
 		pgRepo, err := postgres.NewRepository(context.Background(), cfg.DatabaseURL)
 		if err != nil {
-			log.Fatalf("STORAGE=postgres: %v", err)
+			logging.Fatalf("STORAGE=postgres: %v", err)
 		}
 		defer func() { _ = pgRepo.Close() }()
 		repo = pgRepo
 	default:
-		log.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
+		logging.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
 	}
 	// счётчики: memory ведёт JSON-витрину /stats, prom-обёртка зеркалит
 	// те же числа в /metrics для Prometheus — use-case видит один порт
@@ -65,7 +66,7 @@ func main() {
 
 	httpSrv := httpapi.Start(cfg.HTTPAddr, notifier, metrics.Handler())
 
-	log.Printf("notification-service запущен (RabbitMQ: %s, storage: %s)", cfg.AMQPURL, cfg.Storage)
+	logging.Info("notification-service запущен (RabbitMQ: %s, storage: %s)", cfg.AMQPURL, cfg.Storage)
 
 	// Реконнект с бэкоффом: брокер может подниматься дольше нас.
 	for attempt := 1; ; attempt++ {
@@ -73,7 +74,7 @@ func main() {
 			break
 		}
 		if err := consumer.Run(ctx); err != nil && ctx.Err() == nil {
-			log.Printf("попытка %d: %v", attempt, err)
+			logging.Warnf(ctx, "попытка %d: %v", attempt, err)
 			select {
 			case <-time.After(3 * time.Second):
 			case <-ctx.Done():
@@ -85,6 +86,6 @@ func main() {
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = shutdownTracing(shutdownCtx)
-	log.Printf("notification остановлен: всего %v отправлено, %v неудачно доставлено",
+	logging.Info("notification остановлен: всего %v отправлено, %v неудачно доставлено",
 		metrics.Snapshot()["sent"], metrics.Snapshot()["failed"])
 }
