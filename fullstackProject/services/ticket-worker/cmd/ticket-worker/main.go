@@ -13,13 +13,13 @@ package main
 
 import (
 	"context"
-	"log"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"ticket-worker/internal/config"
 	"ticket-worker/internal/httpserver"
+	"ticket-worker/internal/logging"
 	"ticket-worker/internal/processing"
 	"ticket-worker/internal/rabbitmq"
 	"ticket-worker/internal/stats"
@@ -27,7 +27,8 @@ import (
 )
 
 func main() {
-	log.SetFlags(log.Ltime)
+	// JSON-логи ДО трейсинга: диагностика tracing.Setup тоже уходит JSON'ом
+	logging.Setup()
 	cfg := config.Load()
 	st := stats.New(cfg.WorkerID)
 
@@ -50,7 +51,7 @@ func main() {
 
 	httpSrv := httpserver.Start(cfg.HTTPAddr, st)
 
-	log.Printf("ticket-worker %s запущен (RabbitMQ: %s)", cfg.WorkerID, cfg.AMQPURL)
+	logging.Info("ticket-worker %s запущен (RabbitMQ: %s)", cfg.WorkerID, cfg.AMQPURL)
 
 	// Реконнект с бэкоффом: брокер может подниматься дольше нас.
 	for attempt := 1; ; attempt++ {
@@ -58,7 +59,7 @@ func main() {
 			break
 		}
 		if err := consumer.Run(ctx); err != nil && ctx.Err() == nil {
-			log.Printf("попытка %d: %v", attempt, err)
+			logging.Warnf(ctx, "попытка %d: %v", attempt, err)
 			select {
 			case <-time.After(3 * time.Second):
 			case <-ctx.Done():
@@ -70,7 +71,7 @@ func main() {
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = shutdownTracing(shutdownCtx)
-	log.Printf("воркер остановлен: обработано %d, подтверждено %d, отказов %d, истекло %d, возвратов %d (неудачных %d)",
+	logging.Info("воркер остановлен: обработано %d, подтверждено %d, отказов %d, истекло %d, возвратов %d (неудачных %d)",
 		st.Received.Load(), st.Confirmed.Load(), st.Failed.Load(),
 		st.Expired.Load(), st.Refunds.Load(), st.RefundFailed.Load())
 }

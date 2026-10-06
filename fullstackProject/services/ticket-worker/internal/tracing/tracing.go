@@ -10,7 +10,6 @@ package tracing
 
 import (
 	"context"
-	"log"
 	"os"
 
 	"go.opentelemetry.io/otel"
@@ -19,6 +18,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+
+	"ticket-worker/internal/logging"
 )
 
 // Setup регистрирует глобальный TracerProvider и W3C-пропагатор. Возвращает
@@ -37,7 +38,7 @@ func Setup(serviceName string) (shutdown func(context.Context) error) {
 		otlptracegrpc.WithInsecure(),
 	)
 	if err != nil {
-		log.Printf("tracing: OTLP-экспортер не собрался: %v", err)
+		logging.Warn("tracing: OTLP-экспортер не собрался: %v", err)
 		return func(context.Context) error { return nil }
 	}
 
@@ -46,7 +47,7 @@ func Setup(serviceName string) (shutdown func(context.Context) error) {
 		resource.NewSchemaless(semconv.ServiceName(serviceName)),
 	)
 	if err != nil {
-		log.Printf("tracing: ресурс не собрался: %v", err)
+		logging.Warn("tracing: ресурс не собрался: %v", err)
 		return func(context.Context) error { return nil }
 	}
 
@@ -57,6 +58,6 @@ func Setup(serviceName string) (shutdown func(context.Context) error) {
 	otel.SetTracerProvider(tp)
 	// глобальный пропагатор Go по умолчанию no-op — W3C ставим сами
 	otel.SetTextMapPropagator(propagation.TraceContext{})
-	log.Printf("tracing: OTLP → %s (%s)", endpoint, serviceName)
+	logging.Info("tracing: OTLP → %s (%s)", endpoint, serviceName)
 	return tp.Shutdown
 }

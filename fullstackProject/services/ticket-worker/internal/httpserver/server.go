@@ -5,9 +5,9 @@ package httpserver
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 
+	"ticket-worker/internal/logging"
 	"ticket-worker/internal/promstats"
 	"ticket-worker/internal/stats"
 )
@@ -18,10 +18,10 @@ func Start(addr string, st *stats.Stats) *http.Server {
 	srv := New(addr, st)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("http: %v", err)
+			logging.Error("http: %v", err)
 		}
 	}()
-	log.Printf("http: /health, /stats и /metrics на %s", addr)
+	logging.Info("http: /health, /stats и /metrics на %s", addr)
 	return srv
 }
 

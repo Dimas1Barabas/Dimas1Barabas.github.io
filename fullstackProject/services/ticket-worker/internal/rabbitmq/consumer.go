@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 
 	"ticket-worker/internal/config"
 	"ticket-worker/internal/events"
+	"ticket-worker/internal/logging"
 	"ticket-worker/internal/processing"
 	"ticket-worker/internal/stats"
 	"ticket-worker/internal/tracing"
@@ -70,7 +70,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 		return fmt.Errorf("consume %s: %w", c.cfg.ExpireQueue, err)
 	}
 
-	log.Printf("воркер %s слушает %s / booking.created + booking.cancelled + booking.payment.timeout",
+	logging.Infof(ctx, "воркер %s слушает %s / booking.created + booking.cancelled + booking.payment.timeout",
 		c.cfg.WorkerID, c.cfg.InQueue)
 
 	for {
@@ -110,7 +110,7 @@ func (c *Consumer) handleDelivery(ch *amqp.Channel, d amqp.Delivery) {
 	case events.KeyPaymentTimeout:
 		c.handlePaymentTimeout(ctx, ch, d)
 	default:
-		log.Printf("неизвестный routing key %q", d.RoutingKey)
+		logging.Warnf(ctx, "неизвестный routing key %q", d.RoutingKey)
 		c.stats.Errors.Add(1)
 		// poison: ретраить бессмысленно — сразу в parking
 		c.retryOrFail(ctx, ch, d, true, "неизвестный routing key "+d.RoutingKey)
@@ -134,14 +134,14 @@ func (c *Consumer) handleCreated(ctx context.Context, ch *amqp.Channel, d amqp.D
 
 	var ev events.BookingCreated
 	if err := json.Unmarshal(d.Body, &ev); err != nil {
-		log.Printf("битое сообщение: %v", err)
+		logging.Errorf(ctx, "битое сообщение: %v", err)
 		c.stats.Errors.Add(1)
 		// poison: тело не разбирается, ретраи не помогут — в parking
 		c.retryOrFail(ctx, ch, d, true, fmt.Sprintf("не разбирается JSON: %v", err))
 		return
 	}
 
-	log.Printf("← %s: «%s», места %s, %d ₽",
+	logging.Infof(ctx, "← %s: «%s», места %s, %d ₽",
 		ev.BookingID, ev.MovieTitle, strings.Join(ev.Seats, ", "), ev.TotalRub)
 
 	result := c.proc.Process(ev)
@@ -153,7 +153,7 @@ func (c *Consumer) handleCreated(ctx context.Context, ch *amqp.Channel, d amqp.D
 	}
 
 	if err := tracing.PublishJSON(ctx, ch, c.cfg.Exchange, events.KeyProcessed, body); err != nil {
-		log.Printf("→ ! %s: %v", ev.BookingID, err)
+		logging.Warnf(ctx, "→ ! %s: %v", ev.BookingID, err)
 		c.stats.Errors.Add(1)
 		c.retryOrFail(ctx, ch, d, false, fmt.Sprintf("публикация вердикта: %v", err))
 		return
@@ -165,7 +165,7 @@ func (c *Consumer) handleCreated(ctx context.Context, ch *amqp.Channel, d amqp.D
 	} else {
 		c.stats.Failed.Add(1)
 	}
-	log.Printf("→ %s: %s — %s", ev.BookingID, result.Status, result.Message)
+	logging.Infof(ctx, "→ %s: %s — %s", ev.BookingID, result.Status, result.Message)
 }
 
 func (c *Consumer) handleCancelled(ctx context.Context, ch *amqp.Channel, d amqp.Delivery) {
@@ -173,13 +173,13 @@ func (c *Consumer) handleCancelled(ctx context.Context, ch *amqp.Channel, d amqp
 
 	var ev events.BookingCancelled
 	if err := json.Unmarshal(d.Body, &ev); err != nil {
-		log.Printf("битое сообщение: %v", err)
+		logging.Errorf(ctx, "битое сообщение: %v", err)
 		c.stats.Errors.Add(1)
 		c.retryOrFail(ctx, ch, d, true, fmt.Sprintf("не разбирается JSON: %v", err))
 		return
 	}
 
-	log.Printf("← возврат %s: «%s», места %s, %d ₽",
+	logging.Infof(ctx, "← возврат %s: «%s», места %s, %d ₽",
 		ev.BookingID, ev.MovieTitle, strings.Join(ev.Seats, ", "), ev.TotalRub)
 
 	result := c.proc.Refund(ev)
@@ -191,7 +191,7 @@ func (c *Consumer) handleCancelled(ctx context.Context, ch *amqp.Channel, d amqp
 	}
 
 	if err := tracing.PublishJSON(ctx, ch, c.cfg.Exchange, events.KeyRefunded, body); err != nil {
-		log.Printf("→ ! %s: %v", ev.BookingID, err)
+		logging.Warnf(ctx, "→ ! %s: %v", ev.BookingID, err)
 		c.stats.Errors.Add(1)
 		c.retryOrFail(ctx, ch, d, false, fmt.Sprintf("публикация вердикта: %v", err))
 		return
@@ -203,7 +203,7 @@ func (c *Consumer) handleCancelled(ctx context.Context, ch *amqp.Channel, d amqp
 	} else {
 		c.stats.RefundFailed.Add(1)
 	}
-	log.Printf("→ %s: %s — %s", ev.BookingID, result.Status, result.Message)
+	logging.Infof(ctx, "→ %s: %s — %s", ev.BookingID, result.Status, result.Message)
 }
 
 // handlePaymentTimeout гасит просроченный резерв: сообщение уже прождало
@@ -214,14 +214,14 @@ func (c *Consumer) handlePaymentTimeout(ctx context.Context, ch *amqp.Channel, d
 
 	var ev events.BookingPaymentTimeout
 	if err := json.Unmarshal(d.Body, &ev); err != nil {
-		log.Printf("битое сообщение: %v", err)
+		logging.Errorf(ctx, "битое сообщение: %v", err)
 		c.stats.Errors.Add(1)
 		// poison: тело не разбирается, ретраи не помогут — в parking
 		c.retryOrFail(ctx, ch, d, true, fmt.Sprintf("не разбирается JSON: %v", err))
 		return
 	}
 
-	log.Printf("← таймаут %s: окно оплаты истекло", ev.BookingID)
+	logging.Infof(ctx, "← таймаут %s: окно оплаты истекло", ev.BookingID)
 
 	result := c.proc.Expired(ev, time.Now())
 	body, err := json.Marshal(result)
@@ -232,7 +232,7 @@ func (c *Consumer) handlePaymentTimeout(ctx context.Context, ch *amqp.Channel, d
 	}
 
 	if err := tracing.PublishJSON(ctx, ch, c.cfg.Exchange, events.KeyExpired, body); err != nil {
-		log.Printf("→ ! %s: %v", ev.BookingID, err)
+		logging.Warnf(ctx, "→ ! %s: %v", ev.BookingID, err)
 		c.stats.Errors.Add(1)
 		c.retryOrFail(ctx, ch, d, false, fmt.Sprintf("публикация вердикта: %v", err))
 		return
@@ -240,7 +240,7 @@ func (c *Consumer) handlePaymentTimeout(ctx context.Context, ch *amqp.Channel, d
 
 	_ = d.Ack(false)
 	c.stats.Expired.Add(1)
-	log.Printf("→ %s: EXPIRED — %s", ev.BookingID, result.Message)
+	logging.Infof(ctx, "→ %s: EXPIRED — %s", ev.BookingID, result.Message)
 }
 
 // retryOrFail публикует копию упавшего сообщения в `<rk>.retry` или
@@ -268,9 +268,9 @@ func (c *Consumer) retryOrFail(ctx context.Context, ch *amqp.Channel, d amqp.Del
 			Headers:      headers,
 		}); err != nil {
 		// канал, скорее всего, мёртв: не ack'аем — брокер вернёт сообщение
-		log.Printf("↻ ! %s: %v", d.RoutingKey, err)
+		logging.Errorf(ctx, "↻ ! %s: %v", d.RoutingKey, err)
 		return
 	}
 	_ = d.Ack(false)
-	log.Printf("↻ %s: попытка %d → %s (%s)", d.RoutingKey, attempt, target, errText)
+	logging.Warnf(ctx, "↻ %s: попытка %d → %s (%s)", d.RoutingKey, attempt, target, errText)
 }
