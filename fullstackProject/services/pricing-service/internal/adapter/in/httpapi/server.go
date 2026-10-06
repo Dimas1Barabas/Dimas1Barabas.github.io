@@ -6,9 +6,9 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 
+	"pricing-service/internal/logging"
 	"pricing-service/internal/service"
 )
 
@@ -18,10 +18,10 @@ func Start(addr string, svc *service.Pricer, metricsHandler http.Handler) *http.
 	srv := New(addr, svc, metricsHandler)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("http: %v", err)
+			logging.Error("http: %v", err)
 		}
 	}()
-	log.Printf("http: /health, /prices, /demand и /metrics на %s", addr)
+	logging.Info("http: /health, /prices, /demand и /metrics на %s", addr)
 	return srv
 }
 

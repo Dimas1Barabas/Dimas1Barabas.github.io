@@ -11,7 +11,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net"
 	"os/signal"
 	"syscall"
@@ -29,13 +28,15 @@ import (
 	"pricing-service/internal/adapter/out/prom"
 	"pricing-service/internal/config"
 	"pricing-service/internal/domain"
+	"pricing-service/internal/logging"
 	pb "pricing-service/internal/pb"
 	"pricing-service/internal/service"
 	"pricing-service/internal/tracing"
 )
 
 func main() {
-	log.SetFlags(log.Ltime)
+	// JSON-логи ДО трейсинга: диагностика tracing.Setup тоже уходит JSON'ом
+	logging.Setup()
 	cfg := config.Load()
 
 	// wiring: за портом DemandStore стоит конкретный адаптер; домен
@@ -51,12 +52,12 @@ func main() {
 		// fallback на память скрыл бы потерю спроса
 		pgStore, err := postgres.NewRepository(context.Background(), cfg.DatabaseURL)
 		if err != nil {
-			log.Fatalf("STORAGE=postgres: %v", err)
+			logging.Fatalf("STORAGE=postgres: %v", err)
 		}
 		defer func() { _ = pgStore.Close() }()
 		store = pgStore
 	default:
-		log.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
+		logging.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
 	}
 
 	pricer := service.NewPricer(store)
@@ -67,7 +68,7 @@ func main() {
 	// gRPC — главный интерфейс: квот цены спрашивает NestJS API
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
 	if err != nil {
-		log.Fatalf("слушать %s: %v", cfg.GRPCAddr, err)
+		logging.Fatalf("слушать %s: %v", cfg.GRPCAddr, err)
 	}
 	// otelgrpc: серверные спаны gRPC-вызовов, родитель — span клиента API
 	grpcSrv := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
@@ -84,13 +85,13 @@ func main() {
 	httpSrv := httpapi.Start(cfg.HTTPAddr, pricer, metrics.Handler())
 
 	go func() {
-		log.Printf("gRPC Pricing на %s", cfg.GRPCAddr)
+		logging.Info("gRPC Pricing на %s", cfg.GRPCAddr)
 		if err := grpcSrv.Serve(lis); err != nil {
-			log.Fatalf("gRPC Serve: %v", err)
+			logging.Fatalf("gRPC Serve: %v", err)
 		}
 	}()
 
-	log.Printf("pricing-service запущен (RabbitMQ: %s, gRPC: %s, storage: %s, локальное время: %s)",
+	logging.Info("pricing-service запущен (RabbitMQ: %s, gRPC: %s, storage: %s, локальное время: %s)",
 		cfg.AMQPURL, cfg.GRPCAddr, cfg.Storage, time.Local)
 
 	// Реконнект с бэкоффом: брокер может подниматься дольше нас.
@@ -99,7 +100,7 @@ func main() {
 			break
 		}
 		if err := consumer.Run(ctx); err != nil && ctx.Err() == nil {
-			log.Printf("попытка %d: %v", attempt, err)
+			logging.Warnf(ctx, "попытка %d: %v", attempt, err)
 			select {
 			case <-time.After(3 * time.Second):
 			case <-ctx.Done():
@@ -122,5 +123,5 @@ func main() {
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = shutdownTracing(shutdownCtx)
-	log.Printf("pricing остановлен")
+	logging.Info("pricing остановлен")
 }

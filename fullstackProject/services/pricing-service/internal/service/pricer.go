@@ -4,10 +4,10 @@ package service
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"pricing-service/internal/domain"
+	"pricing-service/internal/logging"
 )
 
 // Pricer — use-case ценообразования: спрос читает из проекции,
@@ -43,7 +43,7 @@ func (p *Pricer) Quote(ctx context.Context, req QuoteRequest) (domain.Quote, err
 	// история квотов — витрина, а не бухгалтерия: сбой записи не должен
 	// портить цену, следующая запись её догонит
 	if err := p.store.LogQuote(ctx, req.SessionID, quote); err != nil {
-		log.Printf("витрина квотов: запись по сеансу %s: %v", req.SessionID, err)
+		logging.Warnf(ctx, "витрина квотов: запись по сеансу %s: %v", req.SessionID, err)
 	}
 	return quote, nil
 }
