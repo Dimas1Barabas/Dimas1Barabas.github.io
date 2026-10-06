@@ -4,10 +4,10 @@ package service
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"reminder-service/internal/domain"
+	"reminder-service/internal/logging"
 )
 
 // Scheduler — use-case напоминаний: планирует по запросу API
@@ -65,18 +65,18 @@ func (s *Scheduler) Cancel(ctx context.Context, bookingID string) (string, error
 func (s *Scheduler) Tick(ctx context.Context) {
 	due, err := s.store.Due(ctx, s.now())
 	if err != nil {
-		log.Printf("tick: чтение наступивших напоминаний: %v", err)
+		logging.Errorf(ctx, "tick: чтение наступивших напоминаний: %v", err)
 		return
 	}
 	for _, r := range due {
 		now := s.now()
 		r.RemindedAt = now
 		if err := s.pub.Publish(ctx, r); err != nil {
-			log.Printf("tick: публикация напоминания %s: %v (следующий тик повторит)", r.BookingID, err)
+			logging.Warnf(ctx, "tick: публикация напоминания %s: %v (следующий тик повторит)", r.BookingID, err)
 			continue
 		}
 		if err := s.store.MarkSent(ctx, r.BookingID, now); err != nil {
-			log.Printf("tick: отметка отправленным %s: %v", r.BookingID, err)
+			logging.Warnf(ctx, "tick: отметка отправленным %s: %v", r.BookingID, err)
 		}
 	}
 }
