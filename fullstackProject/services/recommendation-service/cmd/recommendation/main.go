@@ -10,31 +10,32 @@ package main
 
 import (
 	"context"
-	"log"
 	"net"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"google.golang.org/grpc"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
 	"recommendation-service/internal/adapter/in/amqp"
 	"recommendation-service/internal/adapter/in/grpcapi"
 	"recommendation-service/internal/adapter/in/httpapi"
 	"recommendation-service/internal/adapter/out/memory"
-	"recommendation-service/internal/adapter/out/prom"
 	"recommendation-service/internal/adapter/out/postgres"
+	"recommendation-service/internal/adapter/out/prom"
 	"recommendation-service/internal/config"
 	"recommendation-service/internal/domain"
+	"recommendation-service/internal/logging"
 	pb "recommendation-service/internal/pb"
 	"recommendation-service/internal/service"
 	"recommendation-service/internal/tracing"
 )
 
 func main() {
-	log.SetFlags(log.Ltime)
+	// JSON-логи ДО трейсинга: диагностика tracing.Setup тоже уходит JSON'ом
+	logging.Setup()
 	cfg := config.Load()
 
 	// wiring: за портом SignalStore стоит конкретный адаптер; домен
@@ -50,12 +51,12 @@ func main() {
 		// fallback на память скрыл бы потерю сигналов
 		pgStore, err := postgres.NewRepository(context.Background(), cfg.DatabaseURL)
 		if err != nil {
-			log.Fatalf("STORAGE=postgres: %v", err)
+			logging.Fatalf("STORAGE=postgres: %v", err)
 		}
 		defer func() { _ = pgStore.Close() }()
 		store = pgStore
 	default:
-		log.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
+		logging.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
 	}
 
 	advisor := service.NewAdvisor(store)
@@ -65,7 +66,7 @@ func main() {
 	// gRPC — главный интерфейс: рекомендации спрашивает NestJS API
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
 	if err != nil {
-		log.Fatalf("слушать %s: %v", cfg.GRPCAddr, err)
+		logging.Fatalf("слушать %s: %v", cfg.GRPCAddr, err)
 	}
 	// otelgrpc: серверные спаны gRPC-вызовов, родитель — span клиента API
 	grpcSrv := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
@@ -82,13 +83,13 @@ func main() {
 	httpSrv := httpapi.Start(cfg.HTTPAddr, advisor, metrics.Handler())
 
 	go func() {
-		log.Printf("gRPC Recommendations на %s", cfg.GRPCAddr)
+		logging.Info("gRPC Recommendations на %s", cfg.GRPCAddr)
 		if err := grpcSrv.Serve(lis); err != nil {
-			log.Fatalf("gRPC Serve: %v", err)
+			logging.Fatalf("gRPC Serve: %v", err)
 		}
 	}()
 
-	log.Printf("recommendation-service запущен (RabbitMQ: %s, gRPC: %s, storage: %s)",
+	logging.Info("recommendation-service запущен (RabbitMQ: %s, gRPC: %s, storage: %s)",
 		cfg.AMQPURL, cfg.GRPCAddr, cfg.Storage)
 
 	// Реконнект с бэкоффом: брокер может подниматься дольше нас.
@@ -97,7 +98,7 @@ func main() {
 			break
 		}
 		if err := consumer.Run(ctx); err != nil && ctx.Err() == nil {
-			log.Printf("попытка %d: %v", attempt, err)
+			logging.Warnf(ctx, "попытка %d: %v", attempt, err)
 			select {
 			case <-time.After(3 * time.Second):
 			case <-ctx.Done():
@@ -120,5 +121,5 @@ func main() {
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = shutdownTracing(shutdownCtx)
-	log.Printf("recommendation остановлен")
+	logging.Info("recommendation остановлен")
 }
