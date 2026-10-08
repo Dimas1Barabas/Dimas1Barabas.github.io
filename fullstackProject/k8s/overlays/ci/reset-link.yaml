@@ -1,0 +1,9 @@
+# RESET_LINK_BASE для CI-кластера: фронт раннера живёт на localhost
+# через ingress (kind extraPortMappings 80). Strategic-merge патч
+# перекрывает один ключ ConfigMap, остальное из base
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-env
+data:
+  RESET_LINK_BASE: http://localhost/#/reset-password

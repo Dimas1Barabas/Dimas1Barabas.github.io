@@ -1,0 +1,59 @@
+# reminder-service — gRPC Schedule/Cancel на 8086, тикер напоминаний
+# (служебный HTTP /health и /reminders на 8087).
+apiVersion: v1
+kind: Service
+metadata:
+  name: reminder
+spec:
+  selector:
+    app: reminder
+  ports:
+    - name: grpc
+      port: 8086
+      targetPort: 8086
+    - name: http
+      port: 8087
+      targetPort: 8087
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reminder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reminder
+  template:
+    metadata:
+      labels:
+        app: reminder
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: postgres:16-alpine
+          command: ['sh', '-c', 'until pg_isready -h postgres -p 5432 -U cine -q; do echo ждём postgres; sleep 2; done']
+      containers:
+        - name: reminder
+          image: cine-booking-reminder
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: reminder-env
+          ports:
+            - containerPort: 8086
+            - containerPort: 8087
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8087
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

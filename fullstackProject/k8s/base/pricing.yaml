@@ -1,0 +1,59 @@
+# pricing-service («Тарификатор») — gRPC Pricing на 8088, служебный
+# HTTP /health, /prices, /demand на 8089.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pricing
+spec:
+  selector:
+    app: pricing
+  ports:
+    - name: grpc
+      port: 8088
+      targetPort: 8088
+    - name: http
+      port: 8089
+      targetPort: 8089
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pricing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pricing
+  template:
+    metadata:
+      labels:
+        app: pricing
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: postgres:16-alpine
+          command: ['sh', '-c', 'until pg_isready -h postgres -p 5432 -U cine -q; do echo ждём postgres; sleep 2; done']
+      containers:
+        - name: pricing
+          image: cine-booking-pricing
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: pricing-env
+          ports:
+            - containerPort: 8088
+            - containerPort: 8089
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8089
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

@@ -1,0 +1,89 @@
+# API (NestJS) — входная точка стенда: HTTP + WebSocket живой карты.
+#
+# k8s-эквивалент depends_on из compose — initContainers: пока проба
+# зависимого сервиса не зелёная, основной контейнер не стартует.
+# У API нет ретраев коннекта (TypeORM/golevelup падают на boot'е),
+# в compose это закрывал condition: service_healthy.
+#
+# Каждый ожидатель использует образ самой зависимости: нужные
+# утилиты уже внутри (pg_isready / redis-cli / nc) и не тянет новых
+# образов в кластер.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector:
+    app: api
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: postgres:16-alpine
+          command: ['sh', '-c', 'until pg_isready -h postgres -p 5432 -U cine -q; do echo ждём postgres; sleep 2; done']
+        - name: wait-redis
+          image: redis:7-alpine
+          command: ['sh', '-c', 'until redis-cli -h redis ping | grep -q PONG; do echo ждём redis; sleep 2; done']
+        # nc -z: TCP-порт брокера открыт = app-слушатель поднялся
+        # (rabbitmq-diagnostics — только локально внутри самого брокера)
+        - name: wait-rabbitmq
+          image: rabbitmq:3.13-management-alpine
+          command: ['sh', '-c', 'until nc -z rabbitmq 5672; do echo ждём rabbitmq; sleep 2; done']
+      containers:
+        - name: api
+          image: cine-booking-api
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: api-env
+            - secretRef:
+                name: cine-secrets
+          ports:
+            - containerPort: 3000
+          # пробы по /api/health — тот же эндпоинт, что healthcheck
+          # в compose. startupProbe первым: на первом boot'е API гоняет
+          # миграции и объявляет топологию брокера, до 90с на это;
+          # пока он не загорелся, readiness/liveness не опрашиваются
+          # и liveness не убивает под в момент старта
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 18
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              memory: 768Mi

@@ -1,0 +1,60 @@
+# recommendation-service («КиноСоветник») — gRPC Recommendations на 8084
+# (ходит API), служебный HTTP /health и /profile на 8085. Порт gRPC в
+# Service обязателен: GRPC_RECOMMENDATION_URL у API = recommendation:8084.
+apiVersion: v1
+kind: Service
+metadata:
+  name: recommendation
+spec:
+  selector:
+    app: recommendation
+  ports:
+    - name: grpc
+      port: 8084
+      targetPort: 8084
+    - name: http
+      port: 8085
+      targetPort: 8085
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recommendation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: recommendation
+  template:
+    metadata:
+      labels:
+        app: recommendation
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: postgres:16-alpine
+          command: ['sh', '-c', 'until pg_isready -h postgres -p 5432 -U cine -q; do echo ждём postgres; sleep 2; done']
+      containers:
+        - name: recommendation
+          image: cine-booking-recommendation
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: recommendation-env
+          ports:
+            - containerPort: 8084
+            - containerPort: 8085
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8085
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

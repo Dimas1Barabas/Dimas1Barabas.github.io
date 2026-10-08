@@ -1,0 +1,52 @@
+# ticket-worker — Go-консьюмер вердиктов оплаты/возврата. Брокера
+# ждёт собственным циклом реконнекта с бэкоффом (main.go), initContainer
+# не нужен: k8s даёт поду стартовать, воркер сам догонит брокер.
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+spec:
+  selector:
+    app: worker
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: cine-booking-worker
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: worker-env
+          ports:
+            - containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

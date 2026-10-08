@@ -1,0 +1,50 @@
+# web — SPA на nginx: статика Vite-сборки + внутренний reverse-proxy
+# (/api → api:3000, апгрейд WS живой карты, SSE без буферизации —
+# всё уже решено в nginx.conf, переносимом без правок: имя api —
+# это имя k8s-Service). Вход снаружи — Ingress overlay'я окружения.
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: cine-booking-web
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 30m
+              memory: 32Mi
+            limits:
+              cpu: 150m
+              memory: 64Mi

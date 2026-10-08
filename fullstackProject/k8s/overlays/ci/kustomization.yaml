@@ -1,0 +1,39 @@
+# Overlay CI (kind в GitHub Actions): base + специфика эфемерного
+# кластера раннера.
+#
+# Образы собираются в самой джобе и грузятся в ноду kind напрямую
+# (kind load docker-image) — registry не нужен, поэтому фиксированный
+# тег kind-ci: иммутабельность тега не важна, кластер живёт один прогон.
+# imagePullPolicy: IfNotPresent (в base) заставляет kubelet взять
+# загруженный образ, не тянуть из Docker Hub.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+images:
+  - name: cine-booking-api
+    newTag: kind-ci
+  - name: cine-booking-web
+    newTag: kind-ci
+  - name: cine-booking-worker
+    newTag: kind-ci
+  - name: cine-booking-notification
+    newTag: kind-ci
+  - name: cine-booking-recommendation
+    newTag: kind-ci
+  - name: cine-booking-reminder
+    newTag: kind-ci
+  - name: cine-booking-pricing
+    newTag: kind-ci
+  - name: cine-booking-ratelimiter
+    newTag: kind-ci
+
+patches:
+  # API наружу раннера: NodePort 30100 (extraPortMappings в kind-конфиге
+  # пробрасывает его на localhost). e2e ходит на E2E_BASE_URL=
+  # http://localhost:30100/api
+  - path: api-nodeport.yaml
+  # сброс-ссылка указывает на фронт через ingress раннера
+  - path: reset-link.yaml

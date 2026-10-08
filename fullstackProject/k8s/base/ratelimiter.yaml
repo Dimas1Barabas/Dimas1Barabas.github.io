@@ -1,0 +1,60 @@
+# ratelimiter-service («Привратник») — gRPC Check на 8090, служебный
+# HTTP /health и /buckets на 8091. Синхронный сервис, брокера нет —
+# ждёт только Postgres (STORAGE=postgres, fail fast).
+apiVersion: v1
+kind: Service
+metadata:
+  name: ratelimiter
+spec:
+  selector:
+    app: ratelimiter
+  ports:
+    - name: grpc
+      port: 8090
+      targetPort: 8090
+    - name: http
+      port: 8091
+      targetPort: 8091
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ratelimiter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ratelimiter
+  template:
+    metadata:
+      labels:
+        app: ratelimiter
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: postgres:16-alpine
+          command: ['sh', '-c', 'until pg_isready -h postgres -p 5432 -U cine -q; do echo ждём postgres; sleep 2; done']
+      containers:
+        - name: ratelimiter
+          image: cine-booking-ratelimiter
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: ratelimiter-env
+          ports:
+            - containerPort: 8090
+            - containerPort: 8091
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8091
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

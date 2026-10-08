@@ -1,0 +1,14 @@
+# NodePort для API: единственная дверь стенда наружу до Ingress.
+# 30100 выбран из «высоких» — конвенция 1xxxx/3xxxx портов стенда
+# (как 13000/18080 в compose)
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      nodePort: 30100

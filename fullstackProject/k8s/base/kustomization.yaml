@@ -20,6 +20,14 @@ resources:
   - postgres.yaml
   - redis.yaml
   - rabbitmq.yaml
+  - api.yaml
+  - worker.yaml
+  - notification.yaml
+  - recommendation.yaml
+  - reminder.yaml
+  - pricing.yaml
+  - ratelimiter.yaml
+  - web.yaml
 
 # Секреты через generator: суффикс-хэш в имени → при смене значения
 # секрет пересоздаётся, а ссылки из Deployment'ов (nameReference)
