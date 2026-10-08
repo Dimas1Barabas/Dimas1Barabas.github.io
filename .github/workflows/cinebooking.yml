@@ -365,6 +365,15 @@ jobs:
       - name: docker compose config
         run: docker compose --file fullstackProject/docker-compose.yml config --quiet
 
+      # nginx-конфиг веба (security-заголовки, прокси, WS-апгрейд):
+      # синтаксис проверяем в том же образе, что и стенд; контейнер
+      # сразу выходит после -t — стенд не поднимается
+      - name: nginx -t (apps/web/nginx.conf)
+        run: |
+          docker run --rm \
+            -v "$PWD/fullstackProject/apps/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:1.27-alpine nginx -t
+
       # дашборды Grafana (*.json) и конфиги Prometheus/provisioning (*.yml):
       # ошибки синтаксиса ловим до деплоя стенда
       - name: parse observability JSON/YAML
