@@ -41,6 +41,7 @@ import { Promo } from '../src/promos/promo.entity';
 import { PricingClient } from '../src/pricing/pricing.client';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
+import { setupHelmet } from '../src/security/helmet';
 import { User } from '../src/users/user.entity';
 import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
 import { randomUUID } from 'node:crypto';
@@ -463,6 +464,8 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
 
   const app = moduleRef.createNestApplication();
   app.setGlobalPrefix('api');
+  // как в main.ts: спеки доменных маршрутов видят те же security-заголовки
+  setupHelmet(app);
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true }),
   );

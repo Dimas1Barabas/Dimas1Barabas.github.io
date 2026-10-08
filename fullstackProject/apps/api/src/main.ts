@@ -7,6 +7,7 @@ import { WsAdapter } from '@nestjs/platform-ws';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { JsonLogger } from './logging/json-logger';
+import { setupHelmet } from './security/helmet';
 import { setupSwagger } from './swagger';
 
 /** откуда фронт ходит в API напрямую (без nginx/vite-прокси same-origin) */
@@ -25,6 +26,8 @@ async function bootstrap(): Promise<void> {
   });
 
   app.setGlobalPrefix('api');
+  // security-заголовки до роутов: helmet — обычная express-middleware
+  setupHelmet(app);
   // ws-гейтвеи (живая карта мест /api/seats) — на общем HTTP-сервере:
   // префикс 'api' на них не действует, путь задан в самом гейтвее
   app.useWebSocketAdapter(new WsAdapter(app));

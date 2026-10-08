@@ -31,6 +31,7 @@ import { TokensService } from '../src/tokens/tokens.service';
 import { UsersController } from '../src/users/users.controller';
 import { UsersService } from '../src/users/users.service';
 import { setupSwagger } from '../src/swagger';
+import { setupHelmet } from '../src/security/helmet';
 
 /**
  * Интеграционный тест Swagger-документации: все контроллеры настоящего API
@@ -80,6 +81,8 @@ describe('Swagger UI /api/docs (integration)', () => {
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
+    // как в main.ts — docs-страница живёт под теми же security-заголовками
+    setupHelmet(app);
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
