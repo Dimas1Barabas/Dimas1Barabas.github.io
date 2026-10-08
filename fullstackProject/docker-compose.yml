@@ -74,6 +74,10 @@ services:
       # OpenTelemetry: OTLP/HTTP-эндпоинт Jaeger; без переменной
       # SDK не поднимается вовсе (CI-e2e без observability)
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      # Secure-флаг refresh-cookie (httpOnly + SameSite=Lax — всегда):
+      # включать только когда стенд за TLS — по http браузер куку
+      # с Secure не сохранит и вход развалится
+      COOKIE_SECURE: 'false'
     ports:
       - '13000:3000'
     # readiness по факту, а не «процесс стартовал»: на первом boot'е api
