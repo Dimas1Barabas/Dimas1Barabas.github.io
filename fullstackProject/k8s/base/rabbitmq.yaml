@@ -1,0 +1,54 @@
+# RabbitMQ — брокер событийного контура (брони → вердикты → уведомления).
+# Без персистентности (как в compose-стенде): топологию объявляют сами
+# сервисы при старте, CI-кластер каждый прогон поднимается с нуля.
+# Management-UI (15672) наружу не выносим — она внутри кластера.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
+    - name: management
+      port: 15672
+      targetPort: 15672
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.13-management-alpine
+          ports:
+            - containerPort: 5672
+            - containerPort: 15672
+          # та же проба, что healthcheck в compose; слушатель app-уровня
+          # оживает последним — по готовности стартуют потребители
+          readinessProbe:
+            exec:
+              command: ['rabbitmq-diagnostics', '-q', 'ping']
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi

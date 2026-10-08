@@ -1,0 +1,79 @@
+# Postgres — StatefulSet: у_Stateful-нагрузки стабильное имя пода и
+# собственный PVC (volumeClaimTemplates), переживает пересоздание пода.
+# В kind данные живут на ноде (StorageClass standard, hostPath) — для
+# эфемерного CI-кластера достаточно.
+#
+# Креды dev-стенда (cine/cine) — как в compose, открытым текстом:
+# демо-стенд без внешнего входа. Прод-overlay вынесет их в Secret.
+# Шесть БД (cine + 5 сервисных) создают сами сервисы при старте.
+apiVersion: v1
+kind: Service
+metadata:
+  # имя = DNS-имя в кластере: postgres:5432, на него смотрят
+  # DATABASE_URL всех сервисов и initContainers-ожидатели
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - name: POSTGRES_USER
+              value: cine
+            - name: POSTGRES_PASSWORD
+              value: cine
+            - name: POSTGRES_DB
+              value: cine
+          ports:
+            - containerPort: 5432
+          # готовность по факту приёма соединений — та же проба,
+          # что healthcheck в compose (pg_isready -U cine -d cine);
+          # по ней стартуют initContainers зависимых сервисов
+          readinessProbe:
+            exec:
+              command: ['sh', '-c', 'pg_isready -U cine -d cine']
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ['ReadWriteOnce']
+        # дефолтный класс kind (hostPath на ноде); в облаке подменится
+        # классом провайдера без правки манифеста
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 2Gi

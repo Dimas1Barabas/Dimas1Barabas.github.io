@@ -1,0 +1,112 @@
+# Конфигурация сервисов — 1:1 из docker-compose.yml (блоки environment).
+#
+# Ключевое свойство, которое делает перенос дешёвым: в compose имена
+# соседей (postgres, rabbitmq, redis, recommendation:8084, …) — это DNS
+# имена docker-сети, в k8s — имена Service. Совпадают один в один,
+# значения переезжают без правок; даже nginx.conf веба (proxy_pass
+# http://api:3000) остаётся нетронутым.
+#
+# ConfigMap на сервис (а не один общий): у каждого своё DATABASE_URL
+# и служебные переменные, а envFrom раскатывает map целиком — общая
+# корзина проливала бы чужие ключи в каждый контейнер.
+#
+# Отличается от pod-конфигурации окружения только RESET_LINK_BASE
+# (внешний адрес фронта) — его перекрывает overlay окружения.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-env
+data:
+  PORT: '3000'
+  DATABASE_URL: postgres://cine:cine@postgres:5432/cine
+  REDIS_URL: redis://redis:6379
+  RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+  # окно оплаты брони: TTL wait-очереди RabbitMQ + expires_at
+  PAYMENT_TIMEOUT_MS: '120000'
+  # кэшбэк бонусной программы, % от оплаченной суммы
+  BONUS_CASHBACK_PERCENT: '5'
+  # gRPC-адреса сервисов — имена Service кластера (см. выше)
+  GRPC_RECOMMENDATION_URL: recommendation:8084
+  GRPC_REMINDER_URL: reminder:8086
+  GRPC_PRICING_URL: pricing:8088
+  GRPC_RATELIMITER_URL: ratelimiter:8090
+  # база одноразовой ссылки сброса пароля; overlay подменяет на
+  # адрес, видимый браузером снаружи кластера
+  RESET_LINK_BASE: http://localhost:18080/#/reset-password
+  # Secure-флаг refresh-cookie: включать только за TLS
+  COOKIE_SECURE: 'false'
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worker-env
+data:
+  AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+  HTTP_ADDR: :8081
+  WORKER_ID: go-worker-1
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-env
+data:
+  AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+  HTTP_ADDR: :8080
+  # история уведомлений — собственная БД cine_notifications,
+  # базу адаптер создаёт сам при старте
+  STORAGE: postgres
+  DATABASE_URL: postgres://cine:cine@postgres:5432/cine_notifications
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recommendation-env
+data:
+  AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+  GRPC_ADDR: :8084
+  HTTP_ADDR: :8085
+  STORAGE: postgres
+  DATABASE_URL: postgres://cine:cine@postgres:5432/cine_recommendations
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reminder-env
+data:
+  AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+  GRPC_ADDR: :8086
+  HTTP_ADDR: :8087
+  STORAGE: postgres
+  DATABASE_URL: postgres://cine:cine@postgres:5432/cine_reminders
+  # стендовая семантика «за 2 минуты», тикер часто — письмо видно
+  # руками и в e2e (прод-значения — 120 минут и редкий тик)
+  REMINDER_LEAD_MINUTES: '2'
+  REMINDER_TICK_SECONDS: '5'
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pricing-env
+data:
+  AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+  GRPC_ADDR: :8088
+  HTTP_ADDR: :8089
+  STORAGE: postgres
+  DATABASE_URL: postgres://cine:cine@postgres:5432/cine_prices
+  # «часы кинотеатра» для правил времени суток
+  TZ: Europe/Moscow
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ratelimiter-env
+data:
+  GRPC_ADDR: :8090
+  HTTP_ADDR: :8091
+  STORAGE: postgres
+  DATABASE_URL: postgres://cine:cine@postgres:5432/cine_ratekeeper
+  # лимит брони отпущен шире продуктового (30 вместо 10/мин):
+  # e2e-сьют сам создаёт больше десяти броней в минуту одним
+  # ботовским пользователем (как в compose-стенде)
+  RATE_BOOKINGS_PER_MIN: '30'
+  RATE_LOGIN_PER_MIN: '5'

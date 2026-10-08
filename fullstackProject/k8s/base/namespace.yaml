@@ -1,0 +1,9 @@
+# Namespace стенда. Все ресурсы base получают его автоматически —
+# kustomization.yaml задаёт `namespace: cine-booking` каждому объекту,
+# вручную поле namespace в манифестах не дублируем
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cine-booking
+  labels:
+    app.kubernetes.io/part-of: cine-booking

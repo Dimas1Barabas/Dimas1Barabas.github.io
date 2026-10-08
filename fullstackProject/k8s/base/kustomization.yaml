@@ -1,0 +1,32 @@
+# Сборка base-манифестов. Полный стенд — overlay'ем (overlays/ci):
+# там же подменяются теги образов и внешние адреса.
+#
+# commonLabels/namespace касаются всех ресурсов ниже: метка part-of
+# на каждом объекте (включая селекторы подов), namespace cine-booking
+# проставляется без явного поля в манифестах.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cine-booking
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: cine-booking
+    includeSelectors: true
+
+resources:
+  - namespace.yaml
+  - configmaps.yaml
+  - postgres.yaml
+  - redis.yaml
+  - rabbitmq.yaml
+
+# Секреты через generator: суффикс-хэш в имени → при смене значения
+# секрет пересоздаётся, а ссылки из Deployment'ов (nameReference)
+# kustomize переписывает сам — поды перекатываются на новые значения.
+# Значения dev-стенда, как дефолты compose; prod-overlay подменит.
+secretGenerator:
+  - name: cine-secrets
+    literals:
+      - JWT_SECRET=dev-cine-secret
+      - TICKETS_SECRET=dev-cine-tickets-secret
