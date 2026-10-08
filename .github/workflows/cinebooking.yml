@@ -407,3 +407,12 @@ jobs:
               print("\n".join(bad), file=sys.stderr)
               sys.exit(1)
           EOF
+
+      # k8s-манифесты (k8s/base + overlays): рендер kustomize ловит
+      # битый YAML и кривые ссылки ресурсов за секунды — до kind-джобы.
+      # Кластер не поднимается, только клиентская сборка манифестов
+      - name: kustomize render (k8s/base + overlays/ci)
+        run: |
+          objects=$(kubectl kustomize fullstackProject/k8s/overlays/ci | grep -c '^kind:')
+          echo "render OK: $objects объектов"
+          [ "$objects" -gt 0 ]
