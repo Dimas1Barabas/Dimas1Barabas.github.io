@@ -28,6 +28,11 @@ export function setupHelmet(app: INestApplication): void {
           scriptSrc: ["'self'"],
           styleSrc: ["'self'", "'unsafe-inline'"],
           imgSrc: ["'self'", 'data:'],
+          // дефолт helmet вносит upgrade-insecure-requests: браузер стал бы
+          // апгрейдить сабресурсы docs на https и ронял их на http-стенде.
+          // За https-деплоя страница сама https — апгрейдять нечего,
+          // поэтому директиву снимаем явно
+          upgradeInsecureRequests: null,
         },
       },
     }),

@@ -101,6 +101,19 @@ describe('Swagger UI /api/docs (integration)', () => {
     expect(res.type).toBe('text/html');
   });
 
+  it('docs под Helmet-CSP: скрипты self (init.js — файл, не инлайн), style unsafe-inline', async () => {
+    const res = await request(app.getHttpServer()).get('/api/docs');
+    const csp = res.headers['content-security-policy'];
+
+    // ассеты swagger-ui обслуживаются с того же origin отдельными файлами —
+    // unsafe-inline нужен только инжектимым <style>; см. src/security/helmet.ts
+    expect(res.status).toBe(200);
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("img-src 'self' data:");
+  });
+
   it('200: /api/docs-json — валидная OpenAPI 3 спека с заголовком проекта', async () => {
     const res = await request(app.getHttpServer()).get('/api/docs-json');
 
