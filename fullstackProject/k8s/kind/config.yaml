@@ -1,0 +1,22 @@
+# kind-кластер для CI (GitHub Actions): один control-plane-узел.
+# extraPortMappings пробрасывает порты ноды-контейнера на хост раннера:
+#   30100 → NodePort API (e2e ходит на http://localhost:30100/api)
+#   80    → ingress-nginx (фронтовая цепочка, hostPort в kind-манифесте
+#           контроллера слушает ноду с меткой ingress-ready)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 30100
+        hostPort: 30100
+        protocol: TCP
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
