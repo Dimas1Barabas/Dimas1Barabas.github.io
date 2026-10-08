@@ -1435,6 +1435,98 @@ JSON-строки с `trace_id`/`span_id` активного спана, Alloy �
 | Ожидаемый результат | 2) бронь проходит — юниты пишут в stdout и от Loki не зависят 3) JSON-строки читаемы прямо из docker-лога 4) сбор возобновляется, retention неделя (компактор чистит сам) |
 | Постусловия | нет |
 
+## Модуль «Security-заголовки (Helmet + nginx + cookie-флаги)»
+
+Гигиена ответов, не пользовательская функциональность: API отдаёт
+Helmet-набор (nosniff, X-Frame-Options, HSTS, CSP) на каждом ответе,
+причём CSP настроена под Swagger UI (ослабление только в style-src);
+nginx добавляет статике SPA собственную CSP с sha256-хэшем единственного
+инлайн-скрипта — темы до первой отрисовки; refresh-cookie получает
+Secure-флаг за env `COOKIE_SECURE` — включается на https-деплое,
+на http-стенде кука без него (иначе браузер её не сохранит).
+Заголовки покрыты спеками живого HTTP-стека (security.int, swagger.int)
+и юнитами cookies; поведение в браузере — ручные кейсы ниже и CL-24.
+
+### TC-HLM-001 — API: Helmet-набор на каждом ответе, включая ошибки
+| Поле | Значение |
+|---|---|
+| Приоритет / Тип | High / функц. |
+| Автотест | `apps/api/test/security.int.spec.ts` |
+| Предусловия | мини-стенд health-роута с `setupHelmet` — тот же вызов, что в `main.ts` |
+| Шаги | 1) `GET /api/health` 2) сверить шапку ответа 3) `GET /api/nope` (404) |
+| Ожидаемый результат | 1) `x-content-type-options: nosniff`, `x-frame-options: SAMEORIGIN`, `strict-transport-security: max-age=31536000; includeSubDomains` (на http браузер игнорирует — заработает на https-деплое), `cross-origin-resource-policy`/`cross-origin-opener-policy: same-origin`, `referrer-policy: no-referrer` 3) тот же набор и на 404 |
+| Постусловия | нет |
+
+### TC-HLM-002 — API: CSP — скрипты только свои, инлайн-атрибуты и плагины запрещены, UIR снята
+| Поле | Значение |
+|---|---|
+| Приоритет / Тип | High / функц. |
+| Автотест | `apps/api/test/security.int.spec.ts` |
+| Предусловия | тот же мини-стенд |
+| Шаги | 1) `GET /api/health` 2) разобрать `content-security-policy` |
+| Ожидаемый результат | `default-src 'self'`; `script-src 'self'` без `unsafe-inline`; `script-src-attr 'none'`; `object-src 'none'`; ослабление только `style-src 'self' 'unsafe-inline'` (Swagger UI инжектит `<style>` из JS — JSON-ответы стили не исполняют); `upgrade-insecure-requests` нет — иначе http-стенд апгрейдил бы ассеты docs на https и ронял их |
+| Постусловия | нет |
+
+### TC-HLM-003 — API: Swagger UI живёт под Helmet-CSP, ослабление только в style-src
+| Поле | Значение |
+|---|---|
+| Приоритет / Тип | High / функц. |
+| Автотест | `apps/api/test/swagger.int.spec.ts` |
+| Предусловия | приложение со всеми контроллерами + `setupHelmet` + `setupSwagger` |
+| Шаги | 1) `GET /api/docs` 2) разобрать CSP ответа |
+| Ожидаемый результат | 200 `text/html`; CSP содержит `script-src 'self'` (init-скрипт и бандлы swagger-ui обслуживаются отдельными файлами с того же origin — unsafe-inline не нужен), `style-src 'self' 'unsafe-inline'`, `img-src 'self' data:` |
+| Постусловия | нет |
+
+### TC-HLM-004 — API: refresh-cookie — httpOnly + SameSite=Lax + Path + TTL, без Secure на http
+| Поле | Значение |
+|---|---|
+| Приоритет / Тип | High / функц. |
+| Автотест | `apps/api/src/tokens/cookies.spec.ts` |
+| Предусловия | env `COOKIE_SECURE` не задан (http-стенд) |
+| Шаги | 1) `setRefreshCookie(res, token)` 2) посмотреть опции `res.cookie` |
+| Ожидаемый результат | `httpOnly: true`, `sameSite: 'lax'`, `path: '/api/auth'`, `secure: false`, `maxAge` = TTL refresh-сессии (протухают одновременно) |
+| Постусловия | нет |
+
+### TC-HLM-005 — API: COOKIE_SECURE=true добавляет Secure; logout гасит куку теми же флагами
+| Поле | Значение |
+|---|---|
+| Приоритет / Тип | High / функц. |
+| Автотест | `apps/api/src/tokens/cookies.spec.ts` |
+| Предусловия | env `COOKIE_SECURE=true` (https-деплой за TLS-прокси) |
+| Шаги | 1) `setRefreshCookie` 2) `clearRefreshCookie` |
+| Ожидаемый результат | обе операции с `secure: true` — флаги set/clear совпадают, иначе браузер не найдёт куку при logout; env читается на момент вызова, не на импорт модуля |
+| Постусловия | нет |
+
+### TC-HLM-006 — CI: nginx-конфиг веба валиден (nginx -t в образе стенда)
+| Поле | Значение |
+|---|---|
+| Приоритет / Тип | Medium / инфрастр. |
+| Автотест | `.github/workflows/cinebooking.yml` (джоба `infra`, шаг `nginx -t`) |
+| Предусловия | пуш в main / PR |
+| Шаги | 1) джоба infra монтирует `apps/web/nginx.conf` в `nginx:1.27-alpine` и запускает `nginx -t` |
+| Ожидаемый результат | `syntax is ok, test is successful`; контейнер сразу выходит — стенд не поднимается (web в CI-e2e отсутствует, конфиг иначе не проверялся бы вовсе) |
+| Постусловия | нет |
+
+### TC-HLM-007 — Стенд: браузер — Swagger UI под Helmet-CSP
+| Поле | Значение |
+|---|---|
+| Приоритет / Тип | High / функц. |
+| Автотест | — (ручной: нужен браузер) |
+| Предусловия | стенд :18080, devtools открыты |
+| Шаги | 1) открыть `:18080/api/docs` 2) развернуть спеку, кликнуть Authorize 3) Console/Network |
+| Ожидаемый результат | страница рендерится, спека видна, авторизация работает; css/js swagger-ui — 200 (same-origin файлы); Console без CSP-violations |
+| Постусловия | нет |
+
+### TC-HLM-008 — Стенд: браузер — SPA под nginx-CSP: тема, живая карта, QR-билеты
+| Поле | Значение |
+|---|---|
+| Приоритет / Тип | High / функц. |
+| Автотест | — (ручной: нужен браузер) |
+| Предусловия | стенд :18080, devtools открыты |
+| Шаги | 1) переключить тему, перезагрузить 2) забронировать место (живая карта — WS) 3) открыть QR-билет 4) Console + шапка ответа `/api/movies` |
+| Ожидаемый результат | 1) тема сохранена — инлайн-скрипт отработал по sha256-хэшу, FOUC нет 2–3) без сетевых ошибок, QR — SVG 4) Console без CSP-violations; ответ `/api/*` несёт Helmet-заголовки и НЕ несёт nginx-дубли (`X-Frame-Options` один) |
+| Постусловия | нет |
+
 ## Отчёт о прогоне (шаблон)
 
 ```text

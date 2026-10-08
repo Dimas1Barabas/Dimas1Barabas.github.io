@@ -168,7 +168,7 @@ cd apps/web && npm run lint && npm test
 # с подсказкой)
 cd apps/web && npm run test:ui
 
-# API: юнит (298 тестов) — логика брони, места/конфликт, pay/expire/cancel,
+# API: юнит (301 тест) — логика брони, места/конфликт, pay/expire/cancel,
 # SSE, кэш, расписание сеансов, health, пользователи/посев админа,
 # JWT-логин, retry/parking, отзывы (право/дубль/агрегаты/удаление),
 # промокоды (скидка-математика, превью, атомарное списание в оплате,
@@ -188,10 +188,11 @@ cd apps/web && npm run test:ui
 # retry-топологии брокера (уникальность деклараций при нескольких rk),
 # швы трейсинга OTel: гейт SDK по env и URL OTLP, traceparent
 # в публикациях (wiring create), консьюмер-спаны-дети публикатора
-# с ERROR-статусом и пробросом в retry
+# с ERROR-статусом и пробросом в retry, флаги refresh-cookie (Secure
+# за env COOKIE_SECURE, одинаковые у set и clear)
 cd apps/api && npm test
 
-# API: интеграционные (177) — полный HTTP-стек Nest (роутинг, ValidationPipe,
+# API: интеграционные (185) — полный HTTP-стек Nest (роутинг, ValidationPipe,
 # контроллеры → сервисы → фейковые Postgres/RabbitMQ/Redis на Map),
 # включая 409-конфликт мест, изоляцию мест между сеансами, контракт /pay,
 # экспирацию резерва, сагу отмены, SSE-стрим по живому HTTP,
@@ -212,6 +213,8 @@ cd apps/api && npm test
 # деградация на базовую при отказе), Привратник (гвард лимитов: 429
 # с retryAfterSec и заголовком Retry-After до валидации, ключ email
 # нормализуется, fail-open при сбое, маршрут без декоратора не спрашивает),
+# security-заголовки Helmet живым HTTP (nosniff/XFO/HSTS/CORP/COOP на всех
+# ответах, CSP с ослаблением только в style-src, Swagger-ассеты self),
 # спецификацию Swagger (маршруты, схемы DTO, bearer-security)
 cd apps/api && npm run test:integration
 
@@ -1023,6 +1026,37 @@ Alloy (наследник promtail) собирает docker-логи конте�
   `services/*/internal/logging/logging_test.go`); живая картина —
   ручные TC-LOK-004..007 и CL-23.
 
+### Security-заголовки (Helmet, nginx, cookie-флаги)
+
+Гигиена ответов на трёх уровнях. API: Helmet (`helmet` 8, настройка —
+`apps/api/src/security/helmet.ts`, вызывается и из `main.ts`, и из
+int-харнессов — спеки видят прод-условия) отдаёт на каждом ответе
+nosniff, `X-Frame-Options: SAMEORIGIN`, HSTS, CORP/COOP same-origin,
+`Referrer-Policy: no-referrer` и CSP. CSP настроена под единственную
+HTML-страницу API — Swagger UI: ассеты swagger-ui обслуживаются
+отдельными файлами того же origin, поэтому `script-src 'self'` без
+`unsafe-inline`, а ослабление только в `style-src` (swagger-ui
+инжектит `<style>` из JS; JSON-ответы стили не исполняют).
+`upgrade-insecure-requests` снята осознанно: http-стенд не должен
+апгрейдить ассеты docs на https; за https-деплоя страница сама https.
+
+- **Nginx**: security-заголовки только статике SPA (`apps/web/nginx.conf`,
+  location `/`) — ответы `/api/*` их не получают, у API свой Helmet,
+  дублей `X-Frame-Options` нет. CSP веба строже: скрипты только
+  `self` + sha256-хэш единственного инлайн-скрипта (тема до первой
+  отрисовки; Vite не переписывает его при сборке — хэш стабилен,
+  напоминание о пересчёте стоит в `index.html`), `img-src data:`
+  (favicon, QR-SVG), `connect-src 'self'` покрывает и WS живой карты.
+- **Cookie**: refresh-cookie всегда `httpOnly` + `SameSite=Lax` +
+  `Path=/api/auth` + TTL сессии; `Secure` — за env `COOKIE_SECURE=true`,
+  включится на https-деплое (по http браузер куку с Secure не сохранил бы
+  и вход развалился бы); logout гасит её теми же флагами.
+- **CI**: джоба `infra` валидирует `nginx -t` в том же образе, что и
+  стенд (web в CI-e2e отсутствует — конфиг иначе не проверялся бы вовсе).
+- **Проверки**: `security.int.spec.ts` (заголовки живым HTTP, включая
+  404), CSP-кейс в `swagger.int.spec.ts`, `cookies.spec.ts` (флаги);
+  браузерная картина — ручные TC-HLM-007..008 и CL-24.
+
 ### Админ-аналитика
 
 `GET /api/admin/stats` — дашборд владельца кинотеатра. Только роль admin
@@ -1188,6 +1222,11 @@ e2e берёт окно из `E2E_PAYMENT_TIMEOUT_MS` (дефолт 120 000 = с
 «письме»: дефолт `http://localhost:18080/#/reset-password` (фронт стенда).
 Историю уведомлений для e2e-сброса задаёт `E2E_NOTIF_URL`
 (дефолт `http://localhost:18082`).
+
+`COOKIE_SECURE` (только API) — `Secure`-флаг refresh-cookie: `true`
+ставить только когда API отвечает по https (за TLS-прокси); по http
+браузер куку с Secure не сохранит и вход развалился бы. Дефолт
+выключен, httpOnly + SameSite=Lax + Path — всегда.
 
 Напоминания: API ходит по `GRPC_REMINDER_URL` (compose — `reminder:8086`,
 dev-дефолт `localhost:18086`) с дедлайном `GRPC_REMINDER_TIMEOUT_MS`

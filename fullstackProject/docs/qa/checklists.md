@@ -231,3 +231,14 @@
 - [ ] строки вне спанов (старт сервисов, реконнекты) без trace_id — полей нет вовсе, а не пустые
 - [ ] `docker compose stop loki alloy` — стенд жив, брони проходят, логи пишутся в stdout как раньше; `start` — сбор возобновляется
 - [ ] retention: логи недельной давности компактор выметает сам (файловый TSDB в volume lokidata)
+
+## CL-24. Security-заголовки (Helmet + nginx + cookie-флаги)
+
+- [ ] API: каждый ответ (включая ошибки и `/api/docs`) несёт Helmet-набор — nosniff, X-Frame-Options SAMEORIGIN, HSTS (на http браузер игнорирует), CORP/COOP same-origin, referrer no-referrer
+- [ ] CSP API: `script-src 'self'` без unsafe-inline, `script-src-attr 'none'`, `object-src 'none'`; ослабление только `style-src 'unsafe-inline'` — Swagger UI инжектит `<style>` из JS, JSON-ответы стили не исполняют
+- [ ] `upgrade-insecure-requests` снята осознанно: http-стенд не должен апгрейдить ассеты docs на https; за https-деплоя страница сама https — апгрейдять нечего
+- [ ] ✋ Swagger UI `:18080/api/docs` живой под CSP: спека рендерится, Authorize работает, консоль без violations
+- [ ] refresh-cookie: httpOnly + SameSite=Lax + Path=/api/auth + TTL сессии — всегда; Secure появляется только с `COOKIE_SECURE=true` (https-деплой); logout гасит куку теми же флагами
+- [ ] ✋ SPA `:18080` под nginx-CSP: тема переживает перезагрузку (инлайн-скрипт по sha256-хэшу), QR-SVG и живая карта грузятся, консоль чистая
+- [ ] ответы `/api/*` через nginx идут без nginx-заголовков — единственный источник заголовков API это Helmet (нет дублей X-Frame-Options)
+- [ ] CI: джоба infra проверяет `nginx -t` в образе стенда; правка инлайн-скрипта темы → пересчитать sha256 в `apps/web/nginx.conf` (напоминание стоит в index.html)

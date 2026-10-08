@@ -1809,3 +1809,119 @@ ID: TC-LOK-007
   3) JSON-строки читаемы прямо из docker-лога
   4) сбор возобновляется; retention неделя, компактор чистит сам
 Постусловия: нет
+
+================================================================================
+
+ID: TC-HLM-001
+Название: API: Helmet-набор на каждом ответе, включая ошибки (404)
+Приоритет/Тип: High / Ф            Автотест: apps/api/test/security.int.spec.ts
+Предусловия: мини-стенд health-роута с setupHelmet (тот же вызов, что в main.ts)
+Шаги:
+  1) GET /api/health
+  2) сверить шапку ответа
+  3) GET /api/nope (404)
+Ожидание:
+  1) x-content-type-options: nosniff; x-frame-options: SAMEORIGIN;
+     strict-transport-security: max-age=31536000; includeSubDomains
+     (на http браузер игнорирует — заработает на https-деплое);
+     CORP/COOP same-origin; referrer-policy: no-referrer
+  3) тот же набор и на 404
+Постусловия: нет
+
+ID: TC-HLM-002
+Название: API: CSP — скрипты свои; инлайн-атрибуты и плагины запрещены; UIR снята
+Приоритет/Тип: High / Ф            Автотест: apps/api/test/security.int.spec.ts
+Предусловия: тот же мини-стенд
+Шаги:
+  1) GET /api/health
+  2) разобрать content-security-policy
+Ожидание:
+  1) default-src 'self'; script-src 'self' без unsafe-inline;
+     script-src-attr 'none'; object-src 'none'
+  2) ослабление только style-src 'self' 'unsafe-inline'
+     (Swagger инжектит style из JS; JSON-ответы стили не исполняют)
+  3) upgrade-insecure-requests нет — иначе http-стенд апгрейдил бы
+     ассеты docs на https и ронял их
+Постусловия: нет
+
+ID: TC-HLM-003
+Название: API: Swagger UI живёт под Helmet-CSP — ослабление только в style-src
+Приоритет/Тип: High / Ф            Автотест: apps/api/test/swagger.int.spec.ts
+Предусловия: приложение со всеми контроллерами + setupHelmet + setupSwagger
+Шаги:
+  1) GET /api/docs
+  2) разобрать CSP ответа
+Ожидание:
+  1) 200 text/html
+  2) script-src 'self' (init-скрипт и бандлы swagger-ui — отдельные
+     файлы того же origin, unsafe-inline не нужен);
+     style-src 'self' 'unsafe-inline'; img-src 'self' data:
+Постусловия: нет
+
+ID: TC-HLM-004
+Название: API: refresh-cookie — httpOnly+SameSite=Lax+Path+TTL; без Secure на http
+Приоритет/Тип: High / Ф            Автотест: apps/api/src/tokens/cookies.spec.ts
+Предусловия: env COOKIE_SECURE не задан (http-стенд)
+Шаги:
+  1) setRefreshCookie(res, token)
+  2) опции res.cookie
+Ожидание:
+  1) httpOnly true, sameSite lax, path /api/auth, secure false
+  2) maxAge = TTL refresh-сессии (протухают одновременно)
+Постусловия: нет
+
+ID: TC-HLM-005
+Название: API: COOKIE_SECURE=true добавляет Secure; logout гасит с теми же флагами
+Приоритет/Тип: High / Ф            Автотест: apps/api/src/tokens/cookies.spec.ts
+Предусловия: env COOKIE_SECURE=true (https-деплой за TLS-прокси)
+Шаги:
+  1) setRefreshCookie
+  2) clearRefreshCookie
+Ожидание:
+  1) обе операции с secure: true — флаги set/clear совпадают,
+     иначе браузер не найдёт куку при logout
+  2) env читается на момент вызова, не на импорт модуля
+Постусловия: нет
+
+ID: TC-HLM-006
+Название: CI: nginx-конфиг веба валиден (nginx -t в образе стенда)
+Приоритет/Тип: Medium / И          Автотест: .github/workflows/cinebooking.yml (infra)
+Предусловия: пуш в main / PR
+Шаги:
+  1) джоба монтирует apps/web/nginx.conf в nginx:1.27-alpine
+     и запускает nginx -t
+Ожидание:
+  1) syntax is ok, test is successful; контейнер сразу выходит —
+     стенд не поднимается (web в CI-e2e нет, конфиг иначе
+     не проверялся бы вовсе)
+Постусловия: нет
+
+ID: TC-HLM-007
+Название: Стенд: браузер — Swagger UI под Helmet-CSP
+Приоритет/Тип: High / Ф            Автотест: — (ручной)
+Предусловия: стенд :18080, devtools открыты
+Шаги:
+  1) открыть :18080/api/docs
+  2) развернуть спеку, кликнуть Authorize
+  3) Console/Network
+Ожидание:
+  1) страница рендерится, спека видна, авторизация работает
+  2) css/js swagger-ui — 200 (same-origin файлы)
+  3) Console без CSP-violations
+Постусловия: нет
+
+ID: TC-HLM-008
+Название: Стенд: браузер — SPA под nginx-CSP: тема (hash-скрипт) и живая карта
+Приоритет/Тип: High / Ф            Автотест: — (ручной)
+Предусловия: стенд :18080, devtools открыты
+Шаги:
+  1) переключить тему, перезагрузить
+  2) бронь через живую карту (WS)
+  3) открыть QR-билет
+  4) Console + шапка ответа /api/movies
+Ожидание:
+  1) тема сохранена — инлайн-скрипт отработал по sha256, FOUC нет
+  2-3) без сетевых ошибок, QR — SVG
+  4) Console без CSP-violations; /api/* с Helmet-заголовками
+     и без nginx-дублей (X-Frame-Options один)
+Постусловия: нет
