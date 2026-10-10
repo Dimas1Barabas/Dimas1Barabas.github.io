@@ -347,6 +347,14 @@ jobs:
           docker build -t cine-booking-ratelimiter:kind-ci ./services/ratelimiter-service
         working-directory: fullstackProject
 
+      # Инфра-образы стенда (PG/Redis/RabbitMQ) нода не должна тянуть
+      # из Docker Hub сама: shared-раннеры упираются в rate limit,
+      # под повисает в ImagePullBackOff, а rollout wait — на таймауте.
+      # Притягиваем на хост (в build-кэше они уже есть как FROM-базы)
+      # и перекладываем в ноду вместе с прикладными
+      - name: docker pull (инфра-образы)
+        run: docker pull postgres:16-alpine redis:7-alpine rabbitmq:3.13-management-alpine
+
       # kind-кластер одним узлом; конфиг с extraPortMappings (30100 → API,
       # 80 — под ingress) в k8s/kind/config.yaml. Действие ставит kind
       # и kubectl, создаёт кластер «cine» и прописывает kubeconfig
@@ -358,21 +366,42 @@ jobs:
       # образы уже на раннере — перекладываем в containerd ноды,
       # kubelet с IfNotPresent возьмёт их без выхода в registry
       - name: kind load docker-image
-        run: kind load docker-image cine-booking-api:kind-ci cine-booking-web:kind-ci cine-booking-worker:kind-ci cine-booking-notification:kind-ci cine-booking-recommendation:kind-ci cine-booking-reminder:kind-ci cine-booking-pricing:kind-ci cine-booking-ratelimiter:kind-ci --name cine
+        run: |
+          kind load docker-image \
+            cine-booking-api:kind-ci cine-booking-web:kind-ci \
+            cine-booking-worker:kind-ci cine-booking-notification:kind-ci \
+            cine-booking-recommendation:kind-ci cine-booking-reminder:kind-ci \
+            cine-booking-pricing:kind-ci cine-booking-ratelimiter:kind-ci \
+            postgres:16-alpine redis:7-alpine rabbitmq:3.13-management-alpine \
+            --name cine
 
       - name: kubectl apply -k overlays/ci
         run: kubectl apply -k fullstackProject/k8s/overlays/ci
 
       # порядок ожидания = порядок зависимостей: сначала инфраструктура,
-      # потом сервисы; rollout status краснеет по таймауту 300с
+      # потом сервисы; rollout status краснеет по таймауту 300с.
+      # Прогресс пишем в step summary: страница прогона публична, логи
+      # шагов — нет; из summary видно, на каком ресурсе зависло
       - name: rollout wait
         run: |
+          summary="$GITHUB_STEP_SUMMARY"
+          {
+            echo "## rollout wait"
+            echo
+            echo "| ресурс | статус |"
+            echo "| --- | --- |"
+          } >> "$summary"
           for resource in statefulset/postgres deploy/redis deploy/rabbitmq \
                           deploy/ratelimiter deploy/pricing deploy/recommendation \
                           deploy/reminder deploy/notification deploy/worker \
                           deploy/api deploy/web; do
             echo "⏳ $resource"
-            kubectl -n cine-booking rollout status "$resource" --timeout=300s
+            if kubectl -n cine-booking rollout status "$resource" --timeout=300s; then
+              echo "| \`$resource\` | ok |" >> "$summary"
+            else
+              echo "| \`$resource\` | **таймаут 300с** |" >> "$summary"
+              exit 1
+            fi
           done
 
       # страховка, как в compose-e2e: явная проба /api/health снаружи
@@ -387,12 +416,38 @@ jobs:
           done
           echo "api не ожил за 150с"; exit 1
 
-      # посмертная диагностика: статус подов, события, хвосты логов всех
-      # деплойментов — по образцу compose-e2e
+      # посмертная диагностика: статус подов, PVC (не забиндился ли том),
+      # описания подов (events: ImagePullBackOff, Pending, CrashLoop) и
+      # события namespace. Животрепещущее дублируем в step summary —
+      # страница прогона публична и читается без логов; полные логи
+      # контейнеров остаются в этом шаге (видны владельцу репозитория)
       - name: k8s diagnose (только при падении)
         if: failure()
         run: |
-          kubectl -n cine-booking get pods -o wide
+          summary="$GITHUB_STEP_SUMMARY"
+          {
+            echo "## k8s diagnose"
+            echo
+            echo "### pods"
+            echo '```'
+            kubectl -n cine-booking get pods -o wide
+            echo '```'
+            echo
+            echo "### pvc"
+            echo '```'
+            kubectl -n cine-booking get pvc
+            echo '```'
+            echo
+            echo "### describe pods"
+            echo '```'
+            kubectl -n cine-booking describe pods
+            echo '```'
+            echo
+            echo "### events"
+            echo '```'
+            kubectl -n cine-booking get events --sort-by=.lastTimestamp | tail -40
+            echo '```'
+          } >> "$summary" 2>&1
           echo '--- events ---'
           kubectl -n cine-booking get events --sort-by=.lastTimestamp | tail -40
           for d in api worker notification recommendation reminder pricing ratelimiter web; do
