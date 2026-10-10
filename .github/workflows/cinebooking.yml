@@ -422,6 +422,42 @@ jobs:
           done
           echo "api не ожил за 150с"; exit 1
 
+      # e2e-сьют из apps/api — те же спеки, что против compose-стенда
+      # (уровень e2e), но транспорт — NodePort кластера вместо маппинга
+      # compose. E2E_BASE_URL — единственная разница с compose-e2e
+      # (дефолт localhost:13000/api см. test/e2e-context.ts); node
+      # ставим здесь, чтобы при красном rollout не тратить время на npm ci
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fullstackProject/apps/api/package-lock.json
+
+      - run: npm ci
+        working-directory: fullstackProject/apps/api
+
+      # вывод дублируем в файл: при падении упавшие спеки уходят
+      # error-аннотацией (публично видна), а не только в лог шага
+      - name: run e2e (NodePort 30100)
+        run: |
+          set -o pipefail
+          status=0
+          npm run test:e2e 2>&1 | tee /tmp/e2e.log || status=$?
+          if [ "$status" -ne 0 ]; then
+            msg="$(
+              echo 'УПАВШИЕ СПЕКИ:'
+              grep -E '^FAIL ' /tmp/e2e.log | sort -u | head -15 || true
+              echo '--- ХВОСТ ЛОГА ---'
+              tail -15 /tmp/e2e.log
+            )"
+            encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' | head -c 3000)
+            echo "::error::title=e2e (k8s-стенд)::$encoded"
+            exit "$status"
+          fi
+        working-directory: fullstackProject/apps/api
+        env:
+          E2E_BASE_URL: http://localhost:30100/api
+
       # посмертная диагностика: статус подов, PVC (не забиндился ли том),
       # описания подов (events: ImagePullBackOff, Pending, CrashLoop) и
       # события namespace. Животрепещущее дублируем в step summary —
@@ -477,6 +513,12 @@ jobs:
           echo "::error::title=k8s diagnose::$encoded"
           echo '--- events ---'
           kubectl -n cine-booking get events --sort-by=.lastTimestamp | tail -40 || true
+          # инфраструктура: при упавшей e2e-спеке контекст часто в логах
+          # брокера/базы (TTL-очередь, блокировки), а не в приложениях
+          for inf in sts/postgres deploy/redis deploy/rabbitmq; do
+            echo "--- logs $inf ---"
+            kubectl -n cine-booking logs "$inf" --tail=50 || true
+          done
           for d in api worker notification recommendation reminder pricing ratelimiter web; do
             echo "--- logs deploy/$d ---"
             kubectl -n cine-booking logs deploy/$d --tail=100 || true
