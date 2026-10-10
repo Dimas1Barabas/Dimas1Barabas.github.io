@@ -348,12 +348,15 @@ jobs:
         working-directory: fullstackProject
 
       # Инфра-образы стенда (PG/Redis/RabbitMQ) нода не должна тянуть
-      # из Docker Hub сама: shared-раннеры упираются в rate limit,
-      # под повисает в ImagePullBackOff, а rollout wait — на таймауте.
-      # Притягиваем на хост (в build-кэше они уже есть как FROM-базы)
-      # и перекладываем в ноду вместе с прикладными
+      # из Docker Hub сама: если pull упадёт — под повиснет в
+      # ImagePullBackOff, а rollout wait — на таймауте. Притягиваем
+      # на хост (по одному образу за команду — docker pull не принимает
+      # список) и перекладываем в ноду вместе с прикладными
       - name: docker pull (инфра-образы)
-        run: docker pull postgres:16-alpine redis:7-alpine rabbitmq:3.13-management-alpine
+        run: |
+          for image in postgres:16-alpine redis:7-alpine rabbitmq:3.13-management-alpine; do
+            docker pull "$image"
+          done
 
       # kind-кластер одним узлом; конфиг с extraPortMappings (30100 → API,
       # 80 — под ingress) в k8s/kind/config.yaml. Действие ставит kind
@@ -425,31 +428,37 @@ jobs:
         if: failure()
         run: |
           summary="$GITHUB_STEP_SUMMARY"
+          # если джоба упала раньше kind-action, kubectl не установлен —
+          # диагностики кластера нет, шаг не должен краснеть сам по себе
+          if ! command -v kubectl >/dev/null 2>&1; then
+            echo "kubectl недоступен — падение раньше kind-action, кластера нет" >> "$summary"
+            exit 0
+          fi
           {
             echo "## k8s diagnose"
             echo
             echo "### pods"
             echo '```'
-            kubectl -n cine-booking get pods -o wide
+            kubectl -n cine-booking get pods -o wide || true
             echo '```'
             echo
             echo "### pvc"
             echo '```'
-            kubectl -n cine-booking get pvc
+            kubectl -n cine-booking get pvc || true
             echo '```'
             echo
             echo "### describe pods"
             echo '```'
-            kubectl -n cine-booking describe pods
+            kubectl -n cine-booking describe pods || true
             echo '```'
             echo
             echo "### events"
             echo '```'
-            kubectl -n cine-booking get events --sort-by=.lastTimestamp | tail -40
+            kubectl -n cine-booking get events --sort-by=.lastTimestamp | tail -40 || true
             echo '```'
-          } >> "$summary" 2>&1
+          } >> "$summary" 2>&1 || true
           echo '--- events ---'
-          kubectl -n cine-booking get events --sort-by=.lastTimestamp | tail -40
+          kubectl -n cine-booking get events --sort-by=.lastTimestamp | tail -40 || true
           for d in api worker notification recommendation reminder pricing ratelimiter web; do
             echo "--- logs deploy/$d ---"
             kubectl -n cine-booking logs deploy/$d --tail=100 || true
