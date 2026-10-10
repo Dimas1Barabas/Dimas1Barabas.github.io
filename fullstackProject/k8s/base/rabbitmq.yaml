@@ -37,11 +37,15 @@ spec:
           ports:
             - containerPort: 5672
             - containerPort: 15672
-          # та же проба, что healthcheck в compose; слушатель app-уровня
-          # оживает последним — по готовности стартуют потребители
+          # готовность = слушатель AMQP поднялся (потребителям нужен порт,
+          # а не нода Erlang). rabbitmq-diagnostics из compose-healthcheck
+          # в поде опрашивает распределённый Erlang-узел и в kind не
+          # загорался — первый вид-джобы rollout wait висел на deploy/rabbitmq
+          # полный таймаут; TCP-проба к 5672 эквивалентна по смыслу и без
+          # зависимости от резолвинга имени ноды
           readinessProbe:
-            exec:
-              command: ['rabbitmq-diagnostics', '-q', 'ping']
+            tcpSocket:
+              port: 5672
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 12

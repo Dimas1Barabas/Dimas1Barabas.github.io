@@ -382,9 +382,11 @@ jobs:
         run: kubectl apply -k fullstackProject/k8s/overlays/ci
 
       # порядок ожидания = порядок зависимостей: сначала инфраструктура,
-      # потом сервисы; rollout status краснеет по таймауту 300с.
-      # Прогресс пишем в step summary: страница прогона публична, логи
-      # шагов — нет; из summary видно, на каком ресурсе зависло
+      # потом сервисы; rollout status краснеет по таймауту 180с (самый
+      # медленный ресурс — api с миграциями — укладывается в ~90с).
+      # Прогресс пишем в step summary, зависший ресурс — ещё и workflow
+      # error-аннотацией: она видна на странице прогона анонимно (логи
+      # шагов и summary требуют входа)
       - name: rollout wait
         run: |
           summary="$GITHUB_STEP_SUMMARY"
@@ -399,10 +401,11 @@ jobs:
                           deploy/reminder deploy/notification deploy/worker \
                           deploy/api deploy/web; do
             echo "⏳ $resource"
-            if kubectl -n cine-booking rollout status "$resource" --timeout=300s; then
+            if kubectl -n cine-booking rollout status "$resource" --timeout=180s; then
               echo "| \`$resource\` | ok |" >> "$summary"
             else
-              echo "| \`$resource\` | **таймаут 300с** |" >> "$summary"
+              echo "| \`$resource\` | **таймаут 180с** |" >> "$summary"
+              echo "::error::title=rollout wait::$resource — таймаут 180с (детали ниже в k8s diagnose)"
               exit 1
             fi
           done
@@ -457,6 +460,21 @@ jobs:
             kubectl -n cine-booking get events --sort-by=.lastTimestamp | tail -40 || true
             echo '```'
           } >> "$summary" 2>&1 || true
+          # Снимок — workflow error-аннотацией: она рендерится на странице
+          # прогона анонимно (summary и логи — только владельцу). Переводы
+          # строк в аннотации кодируются %0A
+          snap="$(
+            echo 'PODS:'
+            kubectl -n cine-booking get pods --no-headers -o custom-columns='NAME:.metadata.name,READY:.status.containerStatuses[*].ready,RESTARTS:.status.containerStatuses[*].restartCount,REASON:.status.containerStatuses[*].state.waiting.reason' 2>/dev/null
+            echo 'PVC:'
+            kubectl -n cine-booking get pvc --no-headers 2>/dev/null
+            echo 'EVENTS:'
+            kubectl -n cine-booking get events --sort-by=.lastTimestamp --no-headers -o custom-columns='TIME:.lastTimestamp,TYPE:.type,REASON:.reason,OBJECT:.involvedObject.name,MESSAGE:.message' 2>/dev/null | tail -12
+          )"
+          # % → %25 до кодирования переносов: сырой процент в тексте
+          # события иначе съелся бы как escape-последовательность
+          encoded=$(printf '%s' "$snap" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' | head -c 4000)
+          echo "::error::title=k8s diagnose::$encoded"
           echo '--- events ---'
           kubectl -n cine-booking get events --sort-by=.lastTimestamp | tail -40 || true
           for d in api worker notification recommendation reminder pricing ratelimiter web; do

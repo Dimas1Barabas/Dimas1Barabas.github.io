@@ -41,11 +41,12 @@ spec:
         - name: wait-redis
           image: redis:7-alpine
           command: ['sh', '-c', 'until redis-cli -h redis ping | grep -q PONG; do echo ждём redis; sleep 2; done']
-        # nc -z: TCP-порт брокера открыт = app-слушатель поднялся
-        # (rabbitmq-diagnostics — только локально внутри самого брокера)
+        # TCP-коннект к брокеру: busybox-nc в alpine-образах не знает
+        # флага -z (это netcat-openbsd), поэтому проверяем коннект с
+        # немедленным EOF на stdin — exit 0, если порт открыт
         - name: wait-rabbitmq
           image: rabbitmq:3.13-management-alpine
-          command: ['sh', '-c', 'until nc -z rabbitmq 5672; do echo ждём rabbitmq; sleep 2; done']
+          command: ['sh', '-c', 'until nc rabbitmq 5672 </dev/null >/dev/null 2>&1; do echo ждём rabbitmq; sleep 2; done']
       containers:
         - name: api
           image: cine-booking-api
