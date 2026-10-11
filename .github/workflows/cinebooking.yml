@@ -383,13 +383,15 @@ jobs:
       # видит такой Service и поднимает docker-контейнер-балансер на сети
       # kind — его адрес попадает в status шлюза; раннер ходит на этот
       # IP напрямую, hostPort не нужен. Запускаем раньше EG, чтобы к
-      # появлению Envoy-сервиса контроллер уже слушал
+      # появлению Envoy-сервиса контроллер уже слушал.
+      # Образ с v0.4.0 живёт в registry.k8s.io (тега latest нет —
+      # пиннутая версия), ghcr-путь из старых гайдов не существует
       - name: cloud-provider-kind (LB-контроллер)
         run: |
           docker run -d --name cloud-provider-kind \
             --network kind \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            ghcr.io/kubernetes-sigs/cloud-provider-kind:latest
+            registry.k8s.io/cloud-provider-kind/cloud-controller-manager:v0.12.0
 
       # Envoy Gateway — реализация Gateway API (ingress-nginx заморожен
       # с марта 2026). Чарт ставит CRD (GatewayClass/Gateway/HTTPRoute)
