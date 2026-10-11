@@ -344,7 +344,13 @@ e2e — живой compose-стенд целиком на раннере (PG+Red
 прогонов; локально тот же стенд поднимается руками,
 web-ui — Playwright против демо-режима: `build:demo-test` + vite
 preview на раннере (chromium в кэше Actions, трейсы упавших —
-артефактом прогона) — браузерный уровень без стенда и бэкенда.
+артефактом прогона) — браузерный уровень без стенда и бэкенда,
+k8s — одноразовый kind-кластер на раннере: 8 прикладных образов +
+инфра грузятся в ноду, стенд из kustomize-манифестов (`kubectl
+apply -k`), вход — Gateway API (Envoy Gateway helm-чарт +
+cloud-provider-kind как LB), и тот же `test:e2e` через шлюз —
+живой стенд вторым оркестратором (детали — раздел
+«Kubernetes (kind в CI)»).
 Пороги зафиксированы чуть ниже текущего уровня (расти можно, падать
 нет).
 
@@ -1056,6 +1062,45 @@ HTML-страницу API — Swagger UI: ассеты swagger-ui обслужи
 - **Проверки**: `security.int.spec.ts` (заголовки живым HTTP, включая
   404), CSP-кейс в `swagger.int.spec.ts`, `cookies.spec.ts` (флаги);
   браузерная картина — ручные TC-HLM-007..008 и CL-24.
+
+### Kubernetes (kind в CI)
+
+Стенд умеет жить не только в compose: те же восемь приложений и три
+инфра-сервиса описаны декларативно в `k8s/` (kustomize: `base` + overlay
+`ci`), а CI-джоба `k8s` поднимает их в одноразовом kind-кластере и гоняет
+против кластера полный e2e — уровень «тот же продукт, другой оркестратор».
+
+- **Манифесты** (`k8s/base`): ConfigMap'ы 1:1 из env compose (имена
+  сервисов = имена k8s-Service — env переезжает без правок), Postgres —
+  StatefulSet+PVC, Redis/RabbitMQ — Deployment, секреты —
+  `secretGenerator` (суффикс-хэш → смена значения перекатывает поды).
+  Порядок старта вместо `depends_on` — initContainers-ожидатели
+  (`nc -z` по PG/Redis/Rabbit у api; PG-сервисы ждут базу fail fast),
+  миграции API — под `startupProbe` 90 с.
+- **Вход — Gateway API** (ingress-nginx заморожен с марта 2026;
+  реализация — Envoy Gateway v1.8.3, helm-чарт, `k8s/overlays/ci/
+  gateway.yaml`): GatewayClass `cine` → Gateway :80 → HTTPRoute на
+  `web:80` — внутренний роутинг `/api` → api и SSE/WS-агностика уже
+  решены в nginx веба. Таймауты маршрута `3600s`: дефолтные 15 с Envoy
+  рвали бы SSE-ленту и WS живой карты посреди ожидания вердикта оплаты.
+  У kind нет своего LB: `cloud-provider-kind` даёт Envoy-сервису адрес
+  (docker-контейнер-балансер на сети kind), e2e ходит на этот IP
+  напрямую. Namespace у Gateway/HTTPRoute прописан явно — kustomize не
+  знает kinds Gateway API и пропускает их namespace-трансформером.
+- **Джоба `k8s`** (после e2e): build 8 образов → kind-кластер → `kind
+  load` 11 образов (инфру тянем на хост заранее — нода не упирается в
+  rate-limit Docker Hub) → helm Envoy Gateway (CRD до `apply -k`) →
+  `kubectl apply -k` → rollout по порядку зависимостей (таймаут 180 с,
+  прогресс в step summary) → health через NodePort 30100 (страховка
+  мимо шлюза) → адрес шлюза из `status.addresses` → smoke `/api/health`
+  и `/` через шлюз → `test:e2e` с `E2E_BASE_URL=http://$GATEWAY_HOST/api`
+  — тот же сьют, что против compose.
+- **Диагностика при падении**: pods/PVC/describe/gateway/events в step
+  summary + публичные error-аннотации (упавшие e2e-спеки, зависший
+  ресурс rollout), логи контейнеров — в лог шага; cloud-provider-kind
+  пиннат (`registry.k8s.io/...:v0.12.0`, тега latest у проекта нет).
+- **Проверки**: рендер-валидация `kubectl kustomize` — джоба `infra`;
+  кластерный контур целиком — TC-K8S-001…008, чек-лист CL-25.
 
 ### Админ-аналитика
 

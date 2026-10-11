@@ -242,3 +242,14 @@
 - [ ] ✋ SPA `:18080` под nginx-CSP: тема переживает перезагрузку (инлайн-скрипт по sha256-хэшу), QR-SVG и живая карта грузятся, консоль чистая
 - [ ] ответы `/api/*` через nginx идут без nginx-заголовков — единственный источник заголовков API это Helmet (нет дублей X-Frame-Options)
 - [ ] CI: джоба infra проверяет `nginx -t` в образе стенда; правка инлайн-скрипта темы → пересчитать sha256 в `apps/web/nginx.conf` (напоминание стоит в index.html)
+
+## CL-25. Kubernetes (kind в CI)
+
+- [ ] рендер `kubectl kustomize` base и overlay ci зелёный в джобе infra; gateway-ресурсы в рендере несут namespace `cine-booking` — kustomize не знает kinds Gateway API и пропускает их namespace-трансформером (явный namespace в gateway.yaml)
+- [ ] джоба k8s: все 11 ресурсов проходят rollout за таймаут 180 с, прогресс — таблицей в step summary; зависший ресурс дублируется error-аннотацией
+- [ ] api стартует без CrashLoop: initContainers ждут PG/Redis/Rabbit (`nc -z`), миграции — под startupProbe 90 с
+- [ ] health через NodePort 30100 зелёный — стенд жив независимо от входа
+- [ ] Gateway `cine` Programmed, адрес в `status.addresses` от cloud-provider-kind (запущен раньше EG; образ пиннат `registry.k8s.io/cloud-provider-kind/cloud-controller-manager:v0.12.0` — тега latest у проекта нет)
+- [ ] smoke через шлюз: `/api/health` 200 (Gateway → web nginx → api) и `/` 200 (SPA)
+- [ ] e2e через шлюз зелёный (`E2E_BASE_URL=http://$GATEWAY_HOST/api`) — тот же сьют, что против compose; SSE-спеки не рвутся (таймауты маршрута 3600s)
+- [ ] при любом падении diagnose собирает pods/PVC/gateway/events в step summary + аннотацию, логи инфры и envoy-cine — в лог шага; сам diagnose не может краснеть (guard на kubectl, `|| true`)

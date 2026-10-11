@@ -1,8 +1,8 @@
 ================================================================================
 ТЕСТ-КЕЙСЫ: CineBooking                          Выгрузка из docs/qa/test-cases.md
-Дата: 2026-10-06  |  Коммит: этап «Loki-логи»  |  Всего кейсов: 134  |  Автоматизировано: 126
+Дата: 2026-10-11  |  Коммит: этап «Kubernetes (kind в CI)»  |  Всего кейсов: 150  |  Автоматизировано: 142
 Приоритеты: High = блокер релиза, Medium = фикс в итерации, Low = редкие ветки
-Типы: Ф=функциональный, Н=негативный, Г=граничный, К=конкурентный, О=отказоуст.
+Типы: Ф=функциональный, Н=негативный, Г=граничный, К=конкурентный, О=отказоуст., И=инфраструктура/CI, E=e2e
 ================================================================================
 
 ID: TC-MOV-001
@@ -1924,4 +1924,97 @@ ID: TC-HLM-008
   2-3) без сетевых ошибок, QR — SVG
   4) Console без CSP-violations; /api/* с Helmet-заголовками
      и без nginx-дублей (X-Frame-Options один)
+Постусловия: нет
+
+ID: TC-K8S-001
+Название: CI: манифесты рендерятся без ошибок
+Приоритет/Тип: Medium / И         Автотест: .github/workflows/cinebooking.yml (infra)
+Предусловия: пуш в main / PR
+Шаги:
+  1) kubectl kustomize k8s/base
+  2) kubectl kustomize k8s/overlays/ci
+Ожидание:
+  оба рендера без ошибок; gateway-ресурсы несут namespace cine-booking
+  (namespace-трансформер kustomize не знает kinds Gateway API)
+Постусловия: нет
+
+ID: TC-K8S-002
+Название: Стенд целиком поднимается в kind
+Приоритет/Тип: High / И           Автотест: .github/workflows/cinebooking.yml (k8s: apply, rollout)
+Предусловия: kind-кластер; 11 образов в ноде (инфра — pull заранее)
+Шаги:
+  1) kubectl apply -k overlays/ci
+  2) rollout по порядку: postgres → redis → rabbitmq → Go → api → web
+Ожидание:
+  все 11 ресурсов готовы, каждый в таймаут 180 с (api с миграциями ~90 с);
+  прогресс — таблицей в step summary
+Постусловия: эфемерный кластер живёт до конца джобы
+
+ID: TC-K8S-003
+Название: Порядок старта: initContainers-ожидатели вместо depends_on
+Приоритет/Тип: High / И           Автотест: .github/workflows/cinebooking.yml (k8s: rollout — косвенно)
+Предусловия: TC-K8S-002
+Шаги:
+  1) старт api: initContainers nc -z ждут postgres/redis/rabbitmq
+  2) миграции под startupProbe 90 с
+Ожидание:
+  api без CrashLoop на старте; PG-сервисы ждут базу fail fast
+Постусловия: нет
+
+ID: TC-K8S-004
+Название: API доступен снаружи кластера: NodePort
+Приоритет/Тип: Medium / И         Автотест: .github/workflows/cinebooking.yml (k8s: health 30100)
+Предусловия: rollout завершён
+Шаги:
+  1) curl http://localhost:30100/api/health, до 30 проб через 5 с
+Ожидание:
+  200 в течение 150 с; проба мимо шлюза — различает «стенд не жив»
+  и «вход не работает»
+Постусловия: нет
+
+ID: TC-K8S-005
+Название: Вход Gateway API: Envoy Gateway + LB-адрес
+Приоритет/Тип: High / И           Автотест: .github/workflows/cinebooking.yml (k8s: helm, gateway address)
+Предусловия: cloud-provider-kind запущен раньше Envoy Gateway
+Шаги:
+  1) helm envoyproxy/gateway-helm v1.8.3 (--wait)
+  2) kubectl wait --for=condition=Programmed gateway/cine
+  3) прочитать status.addresses[0].value
+Ожидание:
+  Gateway Programmed за 180 с; адрес от cloud-provider-kind
+  (docker-балансер на сети kind)
+Постусловия: нет
+
+ID: TC-K8S-006
+Название: Маршрутизация HTTPRoute: фронт и API через шлюз
+Приоритет/Тип: High / Ф           Автотест: .github/workflows/cinebooking.yml (k8s: smoke)
+Предусловия: TC-K8S-005, адрес в GATEWAY_HOST
+Шаги:
+  1) GET http://$GATEWAY_HOST/api/health
+  2) HEAD http://$GATEWAY_HOST/
+Ожидание:
+  1) 200 от api — путь Gateway → web nginx → api
+  2) 200 — SPA отдаётся
+Постусловия: нет
+
+ID: TC-K8S-007
+Название: e2e-сьют проходит против кластерного стенда
+Приоритет/Тип: High / E           Автотест: .github/workflows/cinebooking.yml (k8s: run e2e)
+Предусловия: smoke пройден
+Шаги:
+  1) npm run test:e2e, E2E_BASE_URL=http://$GATEWAY_HOST/api
+Ожидание:
+  все спеки зелёные — тот же сьют, что против compose (цикл брони
+  с вердиктами воркера, gRPC, SSE); упавшие — error-аннотацией
+Постусловия: нет
+
+ID: TC-K8S-008
+Название: Долгие соединения не рвутся шлюзом (SSE/WS)
+Приоритет/Тип: Medium / О         Автотест: .github/workflows/cinebooking.yml (k8s: e2e — косвенно)
+Предусловия: шлюз маршрутизирует на web
+Шаги:
+  1) HTTPRoute несёт timeouts request/backendRequest 3600s
+  2) e2e держит SSE-ленту дольше дефолтных 15 с Envoy
+Ожидание:
+  стрим не обрывается посреди ожидания вердикта оплаты
 Постусловия: нет
