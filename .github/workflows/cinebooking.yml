@@ -309,7 +309,26 @@ jobs:
           exit 1
         working-directory: fullstackProject
 
-      - run: npm run test:e2e
+      # вывод дублируем в файл: при падении упавшие спеки уходят
+      # error-аннотацией (публично видна) — тот же приём, что в k8s-e2e;
+      # compose-e2e падал 2 раза из 3 последних прогонов, без аннотации
+      # какая спека виновата — не видно (логи шага требуют входа)
+      - name: run e2e
+        run: |
+          set -o pipefail
+          status=0
+          npm run test:e2e 2>&1 | tee /tmp/e2e.log || status=$?
+          if [ "$status" -ne 0 ]; then
+            msg="$(
+              echo 'УПАВШИЕ СПЕКИ:'
+              grep -E '^FAIL ' /tmp/e2e.log | sort -u | head -15 || true
+              echo '--- ХВОСТ ЛОГА ---'
+              tail -15 /tmp/e2e.log
+            )"
+            encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' | head -c 3000)
+            echo "::error::title=e2e (compose-стенд)::$encoded"
+            exit "$status"
+          fi
         working-directory: fullstackProject/apps/api
 
       # посмертные логи стенда: на упавшей спеке видно, что делали сервисы
@@ -323,8 +342,9 @@ jobs:
   # билдятся из тех же Dockerfile, грузятся в ноду kind напрямую
   # (registry не нужен), конфигурация — манифесты k8s/ (kustomize).
   # Зависимости запуска (depends_on из compose) заменены initContainers
-  # и пробами готовности; e2e-сьют ходит через NodePort 30100,
-  # проброшенный extraPortMappings'ом на localhost раннера.
+  # и пробами готовности; вход — Gateway API (Envoy Gateway + LB от
+  # cloud-provider-kind), e2e-сьют ходит через шлюз; NodePort 30100 —
+  # страховочная health-проба мимо шлюза.
   k8s:
     name: k8s — kind-кластер + стенд из манифестов
     runs-on: ubuntu-latest
