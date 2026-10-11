@@ -11,6 +11,9 @@ kind: Kustomization
 
 resources:
   - ../../base
+  # вход кластера — Gateway API (GatewayClass/Gateway/HTTPRoute);
+  # CRD Gateway API ставит helm-чарт Envoy Gateway в джобе ДО apply -k
+  - gateway.yaml
 
 images:
   - name: cine-booking-api

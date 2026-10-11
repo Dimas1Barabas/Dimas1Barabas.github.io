@@ -1,6 +1,7 @@
-# RESET_LINK_BASE для CI-кластера: фронт раннера живёт на localhost
-# через ingress (kind extraPortMappings 80). Strategic-merge патч
-# перекрывает один ключ ConfigMap, остальное из base
+# RESET_LINK_BASE для CI-кластера: условный внешний адрес фронта
+# (ссылка в письме сброса пароля — для человека, не для пробы; реальный
+# вход раннера — IP шлюза из cloud-provider-kind). Strategic-merge
+# патч перекрывает один ключ ConfigMap, остальное из base
 apiVersion: v1
 kind: ConfigMap
 metadata:

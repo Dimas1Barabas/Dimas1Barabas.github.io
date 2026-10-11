@@ -1,0 +1,65 @@
+# Вход кластера — Gateway API (преемник Ingress; ingress-nginx
+# заморожен с марта 2026, см. блог Kubernetes). Реализация — Envoy
+# Gateway: GatewayClass+CRD ставит helm-чарт в джобе, здесь — сами
+# ресурсы стенда.
+#
+# Gateway — точка входа: слушатель HTTP :80 (Envoy маппит привилегировный
+# порт на непривилегированный сам). Service типа LoadBalancer даёт
+# cloud-provider-kind (в kind нет своего LB-контроллера); адрес появится
+# в status.addresses — e2e берёт его оттуда.
+#
+# ВАЖНО: применить можно только после установки CRD (helm install
+# Envoy Gateway в джобе идёт ДО kubectl apply -k).
+#
+# ВАЖНО: namespace Gateway/HTTPRoute прописан явно — kustomize не знает
+# kinds Gateway API и namespace-трансформер их пропускает (без этого
+# ресурсы уехали бы в default, HTTPRoute искал бы web не там).
+# GatewayClass — кластерный ресурс, namespace не получает
+#
+# Свой GatewayClass вместо дефолтного из чарта: имя подконтрольно нам,
+# а controllerName — контракт Envoy Gateway (класс с таким контроллером
+# подхватывается автоматически)
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: cine
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: cine
+  namespace: cine-booking
+spec:
+  gatewayClassName: cine
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# Маршрут: весь HTTP-трафик шлюза — на web:80 (внутренний роутинг
+# /api → api:3000, апгрейд WS и SSE без буферизации уже решены в
+# nginx.conf веба). Без hostnames — маршрут матчит любой Host:
+# LB-адрес cloud-provider-kind заранее неизвестен.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web
+  namespace: cine-booking
+spec:
+  parentRefs:
+    - name: cine
+  rules:
+    - backendRefs:
+        - name: web
+          port: 80
+      timeouts:
+        # SSE-лента и WS живой карты держат соединение минутами:
+        # дефолтный таймаут маршрута Envoy (15с) рвал бы поток
+        # посреди ожидания вердикта оплаты
+        request: '3600s'
+        backendRequest: '3600s'

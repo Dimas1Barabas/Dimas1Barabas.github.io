@@ -378,6 +378,31 @@ jobs:
             postgres:16-alpine redis:7-alpine rabbitmq:3.13-management-alpine \
             --name cine
 
+      # LB-контроллер для kind: у kind нет своего LoadBalancer, а Envoy
+      # Gateway выставляет шлюз Service'ом типа LoadBalancer. Контроллер
+      # видит такой Service и поднимает docker-контейнер-балансер на сети
+      # kind — его адрес попадает в status шлюза; раннер ходит на этот
+      # IP напрямую, hostPort не нужен. Запускаем раньше EG, чтобы к
+      # появлению Envoy-сервиса контроллер уже слушал
+      - name: cloud-provider-kind (LB-контроллер)
+        run: |
+          docker run -d --name cloud-provider-kind \
+            --network kind \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            ghcr.io/kubernetes-sigs/cloud-provider-kind:latest
+
+      # Envoy Gateway — реализация Gateway API (ingress-nginx заморожен
+      # с марта 2026). Чарт ставит CRD (GatewayClass/Gateway/HTTPRoute)
+      # и контроллер; --wait — контроллер успевает подняться до apply -k
+      # стендовых gateway-ресурсов (без CRD apply упал бы на no matches
+      # for kind Gateway)
+      - name: helm install envoy gateway
+        run: |
+          helm install eg oci://docker.io/envoyproxy/gateway-helm \
+            --version v1.8.3 \
+            --namespace envoy-gateway-system --create-namespace \
+            --wait --timeout 5m
+
       - name: kubectl apply -k overlays/ci
         run: kubectl apply -k fullstackProject/k8s/overlays/ci
 
@@ -422,10 +447,39 @@ jobs:
           done
           echo "api не ожил за 150с"; exit 1
 
+      # адрес шлюза: Programmed = EG сконфигурировал Envoy, адрес в
+      # status.addresses даёт cloud-provider-kind (IP LB-контейнера на
+      # docker-сети kind). Пробуем с ретраями — между Programmed и
+      # записью адреса бывает зазор. GATEWAY_HOST через $GITHUB_ENV —
+      # шагам ниже (smoke, e2e)
+      - name: gateway address (Programmed + IP)
+        run: |
+          kubectl -n cine-booking wait --for=condition=Programmed gateway/cine --timeout=180s
+          for i in $(seq 1 30); do
+            GATEWAY_HOST=$(kubectl -n cine-booking get gateway cine \
+              -o jsonpath='{.status.addresses[0].value}')
+            if [ -n "$GATEWAY_HOST" ]; then
+              echo "адрес шлюза: $GATEWAY_HOST (проба $i)"
+              echo "GATEWAY_HOST=$GATEWAY_HOST" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::title=gateway address::Gateway cine Programmed, но адрес пуст 150с (cloud-provider-kind?)"
+          exit 1
+
+      # smoke входа: полный путь шлюза — Gateway → web nginx → api
+      # (health) и сам фронт (index). Проба через NodePort выше —
+      # страховка стенда мимо шлюза, эта — сам вход
+      - name: smoke через gateway
+        run: |
+          set -o pipefail
+          curl -fsS "http://$GATEWAY_HOST/api/health"
+          curl -fsSI "http://$GATEWAY_HOST/" | head -n1
+
       # e2e-сьют из apps/api — те же спеки, что против compose-стенда
-      # (уровень e2e), но транспорт — NodePort кластера вместо маппинга
-      # compose. E2E_BASE_URL — единственная разница с compose-e2e
-      # (дефолт localhost:13000/api см. test/e2e-context.ts); node
+      # (уровень e2e), но транспорт — вход кластера: Gateway → web nginx
+      # → api (NodePort остаётся страховочной health-пробой). node
       # ставим здесь, чтобы при красном rollout не тратить время на npm ci
       - uses: actions/setup-node@v4
         with:
@@ -438,7 +492,7 @@ jobs:
 
       # вывод дублируем в файл: при падении упавшие спеки уходят
       # error-аннотацией (публично видна), а не только в лог шага
-      - name: run e2e (NodePort 30100)
+      - name: run e2e (gateway)
         run: |
           set -o pipefail
           status=0
@@ -456,7 +510,7 @@ jobs:
           fi
         working-directory: fullstackProject/apps/api
         env:
-          E2E_BASE_URL: http://localhost:30100/api
+          E2E_BASE_URL: http://${{ env.GATEWAY_HOST }}/api
 
       # посмертная диагностика: статус подов, PVC (не забиндился ли том),
       # описания подов (events: ImagePullBackOff, Pending, CrashLoop) и
@@ -484,6 +538,11 @@ jobs:
             echo "### pvc"
             echo '```'
             kubectl -n cine-booking get pvc || true
+            echo '```'
+            echo
+            echo "### gateway"
+            echo '```'
+            kubectl -n cine-booking describe gateway cine || true
             echo '```'
             echo
             echo "### describe pods"
@@ -519,7 +578,9 @@ jobs:
             echo "--- logs $inf ---"
             kubectl -n cine-booking logs "$inf" --tail=50 || true
           done
-          for d in api worker notification recommendation reminder pricing ratelimiter web; do
+          # envoy-cine — Envoy-прокси шлюза (создаётся EG в namespace
+          # Gateway); при проблемах входа его лог — первый кандидат
+          for d in api worker notification recommendation reminder pricing ratelimiter web envoy-cine; do
             echo "--- logs deploy/$d ---"
             kubectl -n cine-booking logs deploy/$d --tail=100 || true
           done
