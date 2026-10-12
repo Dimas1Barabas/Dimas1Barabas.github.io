@@ -3,6 +3,11 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import type { Booking, Movie } from '@/shared/api/types';
 import { ApiError, retryAfterFrom } from '@/shared/api/client';
 import {
+  createDwellClock,
+  trackAnalytics,
+  type DwellClock,
+} from '@/shared/api/analytics';
+import {
   formatDayShort,
   formatPrice,
   formatSession,
@@ -37,6 +42,21 @@ const error = ref<string | null>(null);
 const { cooldownSec, startCooldown } = useCooldown();
 /** сам диалог — фокусируем при открытии, чтобы Esc закрывал без клика */
 const modalEl = ref<HTMLElement | null>(null);
+
+/** аналитика: время в модалке (активное, фон не считается) и глубина пути */
+let dwellClock: DwellClock | null = null;
+let deepestStep: '' | 'session' | 'seats' | 'created' = '';
+
+/** закрытие модалки: dwell с достигнутой глубиной уходит в очередь трекера */
+function closeDwell(movieId: string | null): void {
+  if (!dwellClock || !movieId) return;
+  trackAnalytics('modal_dwell', {
+    movieId,
+    ms: dwellClock.stop(),
+    ...(deepestStep ? { deepest: deepestStep } : {}),
+  });
+  dwellClock = null;
+}
 
 /** в live-режиме бронь требует JWT: имя и владелец придут из токена */
 const needLogin = computed(
@@ -140,6 +160,12 @@ async function submit(): Promise<void> {
     error.value = 'Выберите хотя бы одно место';
     return;
   }
+  // намерение забронировать: места выбраны и отправлены (409/429 — тоже путь)
+  trackAnalytics('seats_selected', {
+    sessionId: selectedSessionId.value,
+    count: selected.value.length,
+  });
+  deepestStep = deepestStep === 'created' ? 'created' : 'seats';
   submitting.value = true;
   error.value = null;
   try {
@@ -149,6 +175,12 @@ async function submit(): Promise<void> {
       ...(askName.value ? { customerName: customerName.value } : {}),
       seats: selected.value,
     });
+    trackAnalytics('booking_created', {
+      bookingId: booking.id,
+      movieId: props.movie.id,
+      sessionId: selectedSessionId.value,
+    });
+    deepestStep = 'created';
     emit('created', booking);
   } catch (err) {
     const retryAfter = retryAfterFrom(err);
@@ -177,11 +209,17 @@ async function submit(): Promise<void> {
 // при каждом открытии — ближайший сеанс, свежая карта зала и пустой выбор
 watch(
   () => props.movie,
-  async (movie) => {
+  async (movie, previous) => {
+    // закрытие (в т.ч. переходом на оплату): dwell этой сессии модалки — в очередь
+    closeDwell(previous?.id ?? null);
     customerName.value = '';
     selected.value = [];
     error.value = null;
     if (movie) {
+      // аналитика: интерес к фильку = открытие модалки; часы — до закрытия
+      trackAnalytics('booking_modal_open', { movieId: movie.id });
+      dwellClock = createDwellClock();
+      deepestStep = '';
       // дефолт — ближайший будущий сеанс (loadSeats здесь: при переоткрытии
       // того же сеанса watch(selectedSessionId) не сработает — id не сменится)
       selectedSessionId.value = upcomingSessions(movie.sessions)[0]?.id ?? null;
@@ -203,6 +241,29 @@ watch(
   },
   { immediate: true },
 );
+
+/** осознанный выбор сеанса (клик по чипу): автодефолт открытия не в счёт */
+function pickSession(id: string): void {
+  if (id === selectedSessionId.value) return;
+  selectedSessionId.value = id;
+  trackAnalytics('session_selected', {
+    movieId: props.movie?.id,
+    sessionId: id,
+  });
+  if (deepestStep === '') deepestStep = 'session';
+}
+
+// тепловая карта мест: каждое добавленное в выбор место — клик по залу
+// (эвикция живой картой и 409-фильтр только убирают — diff их не видит)
+watch(selected, (next, prev) => {
+  const hall = selectedSession.value?.hall;
+  if (!selectedSessionId.value || !hall) return;
+  for (const seat of next) {
+    if (!prev.includes(seat)) {
+      trackAnalytics('seat_click', { sessionId: selectedSessionId.value, hall, seat });
+    }
+  }
+});
 
 // смена сеанса — своя карта занятости, цена и пустой выбор мест
 watch(selectedSessionId, (sessionId) => {
@@ -246,7 +307,10 @@ watch(seatMap, (map) => {
 });
 
 // страховка: компонент размонтирован (ушли со страницы с открытой модалкой)
-onUnmounted(() => moviesStore.stopSeatStream());
+onUnmounted(() => {
+  moviesStore.stopSeatStream();
+  closeDwell(props.movie?.id ?? null);
+});
 
 /**
  * Заполненность зала дышит (живая карта) — спрос фактор цены, квот
@@ -339,7 +403,7 @@ watch(
                   :class="{
                     'session-chip--active': session.id === selectedSessionId,
                   }"
-                  @click="selectedSessionId = session.id"
+                  @click="pickSession(session.id)"
                 >
                   <span class="session-chip__when">
                     {{ formatDayShort(session.startsAt) }}

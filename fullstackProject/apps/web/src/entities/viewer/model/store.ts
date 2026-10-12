@@ -6,6 +6,7 @@ import {
   storedToken,
   storedUser,
 } from '@/shared/api/client';
+import { setAnalyticsUser } from '@/shared/api/analytics';
 import { demoEngine } from '@/shared/api/demo-engine';
 import { useAppStore } from '@/shared/api/app-mode';
 import type {
@@ -51,6 +52,9 @@ export const useAuthStore = defineStore('auth', {
     apply(result: LoginResult, options: { persist?: boolean } = {}): void {
       this.token = result.accessToken;
       this.user = result.user;
+      // аналитика: события под аккаунтом получают userId (очередь под
+      // прежнюю личность трекер отправляет до смены)
+      setAnalyticsUser(result.user.id);
       if (options.persist !== false) {
         saveAuth(result.accessToken, result.user);
       }
@@ -69,6 +73,7 @@ export const useAuthStore = defineStore('auth', {
       }
       this.token = null;
       this.user = null;
+      setAnalyticsUser(null);
       clearAuth();
     },
 

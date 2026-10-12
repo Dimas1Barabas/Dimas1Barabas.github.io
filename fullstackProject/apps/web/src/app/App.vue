@@ -2,6 +2,8 @@
 import { onMounted } from 'vue';
 import AppHeader from '@/widgets/app-header/ui/AppHeader.vue';
 import { useAppStore } from '@/shared/api/app-mode';
+import { initAnalytics, setAnalyticsUser } from '@/shared/api/analytics';
+import { storedUser } from '@/shared/api/client';
 import { useThemeStore } from '@/shared/lib/theme.store';
 
 const appStore = useAppStore();
@@ -9,7 +11,12 @@ const themeStore = useThemeStore();
 
 onMounted(() => {
   themeStore.init();
-  void appStore.init();
+  void appStore.init().then(() => {
+    // аналитика поведения — только live: демо на Pages ничего не шлёт;
+    // перезагрузка с живой сессией сразу знает userId
+    initAnalytics(appStore.mode === 'live');
+    setAnalyticsUser(appStore.mode === 'live' ? storedUser()?.id ?? null : null);
+  });
 });
 </script>
 

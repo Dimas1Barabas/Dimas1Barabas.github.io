@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import StatusBadge from '@/entities/booking/ui/StatusBadge.vue';
 import { api, ApiError } from '@/shared/api/client';
 import { demoEngine } from '@/shared/api/demo-engine';
+import { trackAnalytics } from '@/shared/api/analytics';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useBookingsStore } from '@/entities/booking/model/store';
@@ -58,6 +59,8 @@ const now = ref(Date.now());
 let tick: ReturnType<typeof setInterval> | null = null;
 
 onMounted(async () => {
+  // шаг воронки: открыт экран оплаты (дальше — транзакционные события брокера)
+  trackAnalytics('payment_opened', { bookingId: bookingId.value });
   store.startListening();
   await store.refresh();
   if (app.mode === 'live' && auth.isAuthed) {

@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
+import { enterRoute } from '@/shared/api/analytics';
 
 // hash-история: на GitHub Pages глубокие ссылки работают без серверных редиректов
 const router = createRouter({
@@ -64,5 +65,9 @@ const router = createRouter({
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 });
+
+// просмотры страниц и активное время на маршруте: трекер сам закрывает
+// dwell предыдущего и открывает новый (до пробы режима — буферизация)
+router.afterEach((to) => enterRoute(to.name?.toString() ?? to.path));
 
 export default router;
