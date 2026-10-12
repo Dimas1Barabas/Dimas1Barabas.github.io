@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminModule } from './admin/admin.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { AuthModule } from './auth/auth.module';
 import { BonusModule } from './bonus/bonus.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
@@ -45,6 +46,8 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     MetricsModule,
     MoviesModule,
     BookingsModule,
+    // инжест событий поведения: веб → брокер → Go-Аналитик
+    AnalyticsModule,
     ReviewsModule,
     AdminModule,
     PromosModule,

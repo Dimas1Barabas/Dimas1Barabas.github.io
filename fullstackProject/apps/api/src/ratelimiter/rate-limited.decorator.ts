@@ -3,7 +3,10 @@ import { SetMetadata } from '@nestjs/common';
 export const RATE_LIMITED_ACTION = 'rateLimitedAction';
 
 /** Действия из таблицы политик Привратника */
-export type RateLimitedAction = 'bookings.create' | 'auth.login';
+export type RateLimitedAction =
+  | 'bookings.create'
+  | 'auth.login'
+  | 'analytics.ingest';
 
 /**
  * Помечает маршрут для RateLimitGuard: действие лимитируется, ключ

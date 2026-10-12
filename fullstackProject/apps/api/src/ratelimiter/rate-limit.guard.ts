@@ -40,12 +40,19 @@ export class RateLimitGuard implements CanActivate {
     if (!action) return true; // без метки гвард нейтрален
 
     const req = context.switchToHttp().getRequest<
-      { user?: AuthUser; body?: { email?: unknown }; ip?: string } & Record<string, unknown>
+      {
+        user?: AuthUser;
+        body?: { email?: unknown; aid?: unknown };
+        ip?: string;
+      } & Record<string, unknown>
     >();
-    // ключ: у авторизованного — id из JWT, у входа — email, прочее — ip
+    // ключ: у авторизованного — id из JWT, у входа — email,
+    // у батча аналитики — aid посетителя, прочее — ip
     const email =
       typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const key = req.user?.id ?? (email || `ip:${req.ip ?? 'unknown'}`);
+    const aid = typeof req.body?.aid === 'string' ? req.body.aid : '';
+    const key =
+      req.user?.id ?? (email || (aid || `ip:${req.ip ?? 'unknown'}`));
 
     let res: CheckRateGrpcResponse;
     try {
