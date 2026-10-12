@@ -240,6 +240,28 @@ services:
       postgres:
         condition: service_healthy
 
+  # гексагональный Go-сервис «Аналитик»: поведенческая статистика из
+  # двух потоков — события поведения с веба (инжест через API:
+  # страницы, воронка бронирования, клики по местам) и транзакционные
+  # события броней (booking.created/booking.processed); агрегаты —
+  # в собственной БД cine_analytics, витрина «Поведение» — /insights
+  analytics:
+    build: ./services/analytics-service
+    environment:
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+      HTTP_ADDR: :8092
+      STORAGE: postgres
+      DATABASE_URL: postgres://cine:cine@postgres:5432/cine_analytics
+      # OpenTelemetry: OTLP gRPC-эндпоинт Jaeger; без переменной — no-op
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+    ports:
+      - '18092:8092' # /health, /insights — витрина «Поведение»
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
   web:
     build: ./apps/web
     ports:

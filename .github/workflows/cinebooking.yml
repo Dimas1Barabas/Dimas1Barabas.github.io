@@ -11,10 +11,10 @@
 #                 миграции, uq-констрейнты, настоящий брокер и кэш.
 #                 Живой прогон делает робот, локально спеки скипаются —
 #                 как у Go-сервисов
-#   go           — matrix по шести Go-сервисам: build + vet + lint + test -race
+#   go           — matrix по семи Go-сервисам: build + vet + lint + test -race
 #                 с порогом покрытия per-service
 #                 (ticket-worker, notification, recommendation, reminder,
-#                  pricing, ratelimiter); live-PG адаптеры пяти сервисов —
+#                  pricing, ratelimiter, analytics); live-PG адаптеры сервисов —
 #                 против одноразовых Postgres (testcontainers, TESTCONTAINERS=1):
 #                 живой прогон делает робот, локально тесты честно скипаются
 #   proto        — buf lint (STANDARD) + buf breaking (дрейф gRPC-контрактов)
@@ -218,6 +218,11 @@ jobs:
           - name: ratelimiter
             dir: ratelimiter-service
             threshold: 43
+          # 39.4 локально (без live-PG); CI с testcontainers выше —
+          # postgres-адаптер раскрывается живым прогоном
+          - name: analytics
+            dir: analytics-service
+            threshold: 39
     defaults:
       run:
         working-directory: fullstackProject/services/${{ matrix.dir }}
@@ -292,7 +297,7 @@ jobs:
         run: |
           docker compose up --build --wait --wait-timeout 300 -d \
             postgres redis rabbitmq \
-            worker notification recommendation reminder pricing ratelimiter api
+            worker notification recommendation reminder pricing ratelimiter analytics api
         working-directory: fullstackProject
 
       # страховка на случай, если --wait пропустил (healthcheck-флейк):
