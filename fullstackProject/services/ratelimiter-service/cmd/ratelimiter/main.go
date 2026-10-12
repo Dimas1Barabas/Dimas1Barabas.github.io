@@ -1,6 +1,7 @@
 // ratelimiter-service («Привратник») — микросервис на Go: держит
 // token-корзины лимитов частоты (создание брони на пользователя,
-// вход на email) и по gRPC решает, допустить ли действие. Отказ —
+// вход на email, батчи событий аналитики на aid посетителя)
+// и по gRPC решает, допустить ли действие. Отказ —
 // штатный вердикт с ожиданием, а не ошибка RPC; падение самого
 // сервиса вызывающая сторона гасит fail-open'ом.
 //
@@ -62,13 +63,14 @@ func main() {
 		logging.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
 	}
 
-	if cfg.RateBookingsPerMin < 1 || cfg.RateLoginPerMin < 1 {
-		logging.Fatalf("лимиты должны быть ≥ 1 в минуту: bookings=%d login=%d",
-			cfg.RateBookingsPerMin, cfg.RateLoginPerMin)
+	if cfg.RateBookingsPerMin < 1 || cfg.RateLoginPerMin < 1 || cfg.RateAnalyticsPerMin < 1 {
+		logging.Fatalf("лимиты должны быть ≥ 1 в минуту: bookings=%d login=%d analytics=%d",
+			cfg.RateBookingsPerMin, cfg.RateLoginPerMin, cfg.RateAnalyticsPerMin)
 	}
 	policies := map[domain.Action]domain.Policy{
-		domain.ActionBookingsCreate: domain.PolicyOf(cfg.RateBookingsPerMin),
-		domain.ActionAuthLogin:      domain.PolicyOf(cfg.RateLoginPerMin),
+		domain.ActionBookingsCreate:  domain.PolicyOf(cfg.RateBookingsPerMin),
+		domain.ActionAuthLogin:       domain.PolicyOf(cfg.RateLoginPerMin),
+		domain.ActionAnalyticsIngest: domain.PolicyOf(cfg.RateAnalyticsPerMin),
 	}
 	limiter := service.NewLimiter(store, policies)
 	// счётчики вердиктов/длительностей Check — на границе gRPC-адаптера

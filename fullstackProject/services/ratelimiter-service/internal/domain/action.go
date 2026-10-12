@@ -9,6 +9,8 @@ type Action string
 const (
 	ActionBookingsCreate Action = "bookings.create"
 	ActionAuthLogin      Action = "auth.login"
+	// батч событий поведенческой аналитики с веба (ключ — aid посетителя)
+	ActionAnalyticsIngest Action = "analytics.ingest"
 )
 
 // ErrUnknownAction — действие вне таблицы политик: конфигурационная

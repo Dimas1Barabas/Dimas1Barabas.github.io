@@ -230,6 +230,7 @@ services:
       DATABASE_URL: postgres://cine:cine@postgres:5432/cine_ratekeeper
       RATE_BOOKINGS_PER_MIN: '30'
       RATE_LOGIN_PER_MIN: '5'
+      RATE_ANALYTICS_PER_MIN: '120' # аналитика: батчи с вкладок широким темпом
       # OpenTelemetry: OTLP gRPC-эндпоинт Jaeger; без переменной — no-op
       OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
     ports:

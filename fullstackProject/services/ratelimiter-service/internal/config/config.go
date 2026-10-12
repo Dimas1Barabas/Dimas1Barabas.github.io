@@ -16,8 +16,9 @@ type Config struct {
 	// Политики действий: пределы в минуту. «N в минуту» = ёмкость N
 	// и долив N/60 в секунду (domain.PolicyOf) — burst-дружелюбно:
 	// двойной клик не наказываем, наказываем спам.
-	RateBookingsPerMin int // POST /bookings на пользователя
-	RateLoginPerMin    int // POST /auth/login на email (брутфорс)
+	RateBookingsPerMin   int // POST /bookings на пользователя
+	RateLoginPerMin      int // POST /auth/login на email (брутфорс)
+	RateAnalyticsPerMin  int // POST /analytics/events на aid (батчи с веба)
 }
 
 // Load собирает конфиг из окружения; дефолты — честные продуктовые
@@ -28,8 +29,9 @@ func Load() Config {
 		HTTPAddr:           env("HTTP_ADDR", ":8091"),
 		Storage:            env("STORAGE", "memory"),
 		DatabaseURL:        env("DATABASE_URL", "postgres://cine:cine@localhost:15432/cine_ratekeeper"),
-		RateBookingsPerMin: envInt("RATE_BOOKINGS_PER_MIN", 10),
-		RateLoginPerMin:    envInt("RATE_LOGIN_PER_MIN", 5),
+		RateBookingsPerMin:  envInt("RATE_BOOKINGS_PER_MIN", 10),
+		RateLoginPerMin:     envInt("RATE_LOGIN_PER_MIN", 5),
+		RateAnalyticsPerMin: envInt("RATE_ANALYTICS_PER_MIN", 30),
 	}
 }
 

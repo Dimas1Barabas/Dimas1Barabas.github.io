@@ -36,8 +36,9 @@ func (f *fakeStore) ListBuckets(_ context.Context) ([]domain.BucketRecord, error
 
 func policies() map[domain.Action]domain.Policy {
 	return map[domain.Action]domain.Policy{
-		domain.ActionBookingsCreate: domain.PolicyOf(10),
-		domain.ActionAuthLogin:      domain.PolicyOf(5),
+		domain.ActionBookingsCreate:  domain.PolicyOf(10),
+		domain.ActionAuthLogin:       domain.PolicyOf(5),
+		domain.ActionAnalyticsIngest: domain.PolicyOf(30),
 	}
 }
 
@@ -77,6 +78,26 @@ func TestCheckSeparateKeysAndActions(t *testing.T) {
 	}
 	if d, err := l.Check(ctx, "auth.login", "user-1@example.local"); err != nil || !d.Allowed {
 		t.Fatalf("у действия своя корзина: %+v / %v", d, err)
+	}
+}
+
+func TestCheckAnalyticsIngestOwnBucket(t *testing.T) {
+	l := NewLimiter(&fakeStore{buckets: map[string]domain.Bucket{}}, policies())
+	ctx := context.Background()
+
+	// аналитика льётся батчами ~раз в 5 с — устойчивый темп в пределах
+	// лимита не должен упираться в корзину
+	for i := 0; i < 30; i++ {
+		if d, err := l.Check(ctx, "analytics.ingest", "aid-abc"); err != nil || !d.Allowed {
+			t.Fatalf("батч %d: %+v / %v", i+1, d, err)
+		}
+	}
+	if d, err := l.Check(ctx, "analytics.ingest", "aid-abc"); err != nil || d.Allowed {
+		t.Fatalf("31-й батч за минуту должен быть отказан: %+v / %v", d, err)
+	}
+	// корзина брони того же посетителя не задета
+	if d, err := l.Check(ctx, "bookings.create", "aid-abc"); err != nil || !d.Allowed {
+		t.Fatalf("действия независимы: %+v / %v", d, err)
 	}
 }
 
