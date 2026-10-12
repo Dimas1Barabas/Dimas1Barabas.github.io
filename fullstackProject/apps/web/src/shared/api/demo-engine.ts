@@ -1,6 +1,8 @@
 import type {
   AdminStats,
   AdminStatsEnvelope,
+  BehaviorInsights,
+  BehaviorInsightsEnvelope,
   Booking,
   BookingStats,
   BonusAccount,
@@ -946,6 +948,15 @@ class DemoEngine {
     };
   }
 
+  /**
+   * Миниатюра GET /api/analytics/insights: витрина «Поведение» из
+   * детерминированных чисел по сидам фильмов — на Pages-демо страница
+   * живая, цифры стабильны между перезагрузками (конверт как у прокси).
+   */
+  behaviorInsights(): BehaviorInsightsEnvelope {
+    return { available: true, data: plainCopy(demoBehavior()) };
+  }
+
   // ── Промокоды: симуляция promos-модуля API ────────────────────────
   // Коды ошибок и тексты — те же, что у живого API: превью не списывает
   // активацию, списание — в pay, гонку за последний код решает счётчик.
@@ -1807,4 +1818,77 @@ if (DEMO_TEST_BUILD && typeof window !== 'undefined') {
  *  каждой выдаче нужны свежие идентичности (как JSON по проводам в live) */
 function plainCopy<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+// ── Витрина «Поведение» для демо: детерминированные правдоподобные числа ──
+// Стабильный хеш id → доля интереса; воронка монотонно убывает, центр
+// зала горячее краёв — как в жизни. Те же поля, что у Go-Аналитика.
+
+/** детерминированный 31-битный хеш строки */
+function stableHash(s: string): number {
+  let h = 7;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+function demoBehavior(): BehaviorInsights {
+  const halls = ['Красный', 'Синий'];
+  const movies = DEMO_MOVIES.map((m, i) => {
+    const h = stableHash(m.id);
+    const opens = 40 + (h % 55) + i * 3;
+    const bookings = Math.max(1, Math.round(opens * (0.08 + ((h >> 3) % 17) / 100)));
+    return {
+      movieId: m.id,
+      opens,
+      bookings,
+      conversionPercent: Math.round((bookings * 100) / opens),
+    };
+  }).sort((a, b) => b.opens - a.opens);
+
+  const totalOpens = movies.reduce((acc, m) => acc + m.opens, 0);
+  const paid = movies.reduce((acc, m) => acc + m.bookings, 0);
+  const confirmed = Math.round(paid * 0.93);
+  const funnel: BehaviorInsights['funnel'] = [
+    { step: 'modal_open', count: totalOpens },
+    { step: 'session_selected', count: Math.round(totalOpens * 0.71) },
+    { step: 'seats_selected', count: Math.round(totalOpens * 0.44) },
+    { step: 'booking_created', count: Math.round(totalOpens * 0.33) },
+    { step: 'payment_opened', count: Math.round(totalOpens * 0.31) },
+    { step: 'paid', count: paid },
+    { step: 'confirmed', count: confirmed },
+    { step: 'failed', count: paid - confirmed },
+  ];
+
+  const pages: BehaviorInsights['pages'] = [
+    { route: 'home', views: 920 + (stableHash('home') % 80), avgDwellMs: 47_000 },
+    { route: 'bookings', views: 260, avgDwellMs: 21_000 },
+    { route: 'pay', views: 210, avgDwellMs: 33_000 },
+    { route: 'my', views: 150, avgDwellMs: 12_000 },
+    { route: 'ticket', views: 120, avgDwellMs: 9_000 },
+    { route: 'login', views: 95, avgDwellMs: 15_000 },
+  ];
+
+  // тепловая карта: центр (ряды 4–6, места 4–8) кликают заметно чаще
+  const seats: BehaviorInsights['seats'] = [];
+  for (const hall of halls) {
+    for (let row = 1; row <= 8; row++) {
+      for (let seat = 1; seat <= 10; seat++) {
+        const centerBonus =
+          row >= 4 && row <= 6 && seat >= 4 && seat <= 8 ? 9 : 1;
+        const clicks = (stableHash(`${hall}:${row}-${seat}`) % 6) + centerBonus;
+        if (clicks > 2) seats.push({ hall, seat: `${row}-${seat}`, clicks });
+      }
+    }
+  }
+  seats.sort((a, b) => b.clicks - a.clicks);
+
+  const modal: BehaviorInsights['modal'] = [
+    { deepest: 'session', events: 310, avgMs: 14_000 },
+    { deepest: 'seats', events: 205, avgMs: 52_000 },
+    { deepest: 'created', events: 140, avgMs: 96_000 },
+  ];
+
+  return { funnel, movies, pages, seats, modal };
 }

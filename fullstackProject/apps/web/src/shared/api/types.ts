@@ -270,6 +270,57 @@ export interface AdminStatsEnvelope {
   data: AdminStats;
 }
 
+/** ── Витрина «Поведение» (Go-Аналитик через GET /api/analytics/insights) ── */
+
+/** шаг воронки пути зрителя */
+export interface BehaviorFunnelRow {
+  step: string;
+  count: number;
+}
+
+/** интерес к фильму: открытия модалки против оплаченных броней */
+export interface BehaviorMovieRow {
+  movieId: string;
+  opens: number;
+  bookings: number;
+  conversionPercent: number;
+}
+
+/** маршрут: просмотры и среднее активное время */
+export interface BehaviorPageRow {
+  route: string;
+  views: number;
+  avgDwellMs: number;
+}
+
+/** клик по месту зала — тепловая карта популярности */
+export interface BehaviorSeatRow {
+  hall: string;
+  seat: string;
+  clicks: number;
+}
+
+/** время в модалке по глубине пройденного пути */
+export interface BehaviorModalRow {
+  deepest: 'session' | 'seats' | 'created' | string;
+  events: number;
+  avgMs: number;
+}
+
+export interface BehaviorInsights {
+  funnel: BehaviorFunnelRow[];
+  movies: BehaviorMovieRow[];
+  pages: BehaviorPageRow[];
+  seats: BehaviorSeatRow[];
+  modal: BehaviorModalRow[];
+}
+
+/** конверт прокси: Аналитик недоступен — available:false, страница рисует заглушку */
+export interface BehaviorInsightsEnvelope {
+  available: boolean;
+  data?: BehaviorInsights;
+}
+
 /** промокод — GET/POST /api/promos (админ) */
 export interface Promo {
   id: string;

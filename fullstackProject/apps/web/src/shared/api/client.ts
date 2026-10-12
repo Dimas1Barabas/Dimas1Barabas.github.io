@@ -1,5 +1,6 @@
 import type {
   AdminStatsEnvelope,
+  BehaviorInsightsEnvelope,
   Booking,
   BookingStats,
   BonusAccount,
@@ -274,6 +275,8 @@ export const api = {
     }),
   /** админ-аналитика: агрегаты дашборда (403 без роли admin) */
   adminStats: () => request<AdminStatsEnvelope>('/admin/stats'),
+  behaviorInsights: () =>
+    request<BehaviorInsightsEnvelope>('/analytics/insights'),
   /** список промокодов для админки (403 без роли admin) */
   adminPromos: () => request<Promo[]>('/promos'),
   /** создать промокод: процент или фикс, лимит активаций, срок */

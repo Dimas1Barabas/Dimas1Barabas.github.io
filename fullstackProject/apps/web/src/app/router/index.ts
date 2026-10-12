@@ -62,6 +62,12 @@ const router = createRouter({
       name: 'admin-stats',
       component: () => import('@/pages/admin-stats/ui/AdminStatsView.vue'),
     },
+    {
+      // витрина «Поведение» (Go-Аналитик): воронка, интерес, места, время
+      path: '/admin/behavior',
+      name: 'admin-behavior',
+      component: () => import('@/pages/admin-behavior/ui/BehaviorView.vue'),
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 });

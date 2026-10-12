@@ -82,6 +82,9 @@ function tiles(data: AdminStats): { value: string; label: string; cls: string }[
       >
         {{ stats.loading ? 'Считаем…' : 'Обновить' }}
       </button>
+      <RouterLink to="/admin/behavior" class="btn btn--ghost btn--sm">
+        Поведение →
+      </RouterLink>
     </div>
 
     <p v-if="!allowed" class="stats__denied">
