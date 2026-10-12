@@ -14,6 +14,6 @@ import { AnalyticsService } from './analytics.service';
 @Module({
   imports: [RatelimiterModule, rabbitMqModule],
   controllers: [AnalyticsController],
-  providers: [AnalyticsService],
+  providers: [AnalyticsService, AnalyticsInsightsClient],
 })
 export class AnalyticsModule {}

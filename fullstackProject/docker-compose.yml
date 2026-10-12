@@ -71,6 +71,9 @@ services:
       # Привратник: gRPC-адрес лимитов (недоступность — fail-open,
       # запрос проходит без проверки)
       GRPC_RATELIMITER_URL: ratelimiter:8090
+      # Аналитик: HTTP-адрес витрины «Поведение» (недоступность —
+      # available:false на /analytics/insights, инжест не страдает)
+      ANALYTICS_URL: http://analytics:8092
       # OpenTelemetry: OTLP/HTTP-эндпоинт Jaeger; без переменной
       # SDK не поднимается вовсе (CI-e2e без observability)
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
@@ -103,6 +106,8 @@ services:
       pricing:
         condition: service_started
       ratelimiter:
+        condition: service_started
+      analytics:
         condition: service_started
 
   worker:
