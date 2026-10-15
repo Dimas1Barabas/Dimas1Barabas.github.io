@@ -4,6 +4,7 @@ import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import request from 'supertest';
 
 import { AnalyticsController } from '../src/analytics/analytics.controller';
+import { AnalyticsInsightsClient } from '../src/analytics/analytics-insights.client';
 import { AnalyticsService } from '../src/analytics/analytics.service';
 import { RateLimitGuard } from '../src/ratelimiter/rate-limit.guard';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
@@ -18,18 +19,23 @@ describe('POST /api/analytics/events (integration)', () => {
   let app: INestApplication;
   let rabbit: { publish: jest.Mock };
   let ratelimiter: { check: jest.Mock };
+  // витрину здесь не тестируем (это отдельный прокси-эндпоинт),
+  // но DI контроллера требует клиент — подставляем болванку
+  let insights: { insights: jest.Mock };
 
   const AID = '11111111-1111-4111-8111-111111111111';
 
   beforeAll(async () => {
     rabbit = { publish: jest.fn() };
     ratelimiter = { check: jest.fn() };
+    insights = { insights: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
       controllers: [AnalyticsController],
       providers: [
         AnalyticsService,
         { provide: AmqpConnection, useValue: rabbit },
+        { provide: AnalyticsInsightsClient, useValue: insights },
         RateLimitGuard,
         { provide: RateLimiterClient, useValue: ratelimiter },
       ],

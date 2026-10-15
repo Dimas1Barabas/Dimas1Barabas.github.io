@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { rabbitMqModule } from '../rabbit/rabbitmq.config';
 import { RatelimiterModule } from '../ratelimiter/ratelimiter.module';
+import { AnalyticsInsightsClient } from './analytics-insights.client';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 
