@@ -1,7 +1,7 @@
 {
   "uid": "cine-go",
   "title": "CineBooking — Go-сервисы",
-  "description": "Событийная кухня: вердикты воркера, письма, лимиты, цены, советы и напоминания",
+  "description": "Событийная кухня: вердикты воркера, письма, лимиты, цены, советы, напоминания и аналитика поведения",
   "tags": ["cine-booking", "go"],
   "timezone": "browser",
   "editable": true,
@@ -253,6 +253,52 @@
           "expr": "sum(rate(cine_reminder_fired_total[5m]))",
           "legendFormat": "письма ушли",
           "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Аналитик: события в агрегатах",
+      "description": "Два потока в витрину «Поведение»: события с веба (analytics.event) и транзакционные брони (booking.created / booking.processed)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(cine_analytics_events_total[5m])) by (routing_key)",
+          "legendFormat": "{{routing_key}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Сбои обработки (аналитик)",
+      "description": "Транзиентные сбои (хранилище лежит и т.п.): событие вернётся в очередь через retry",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(cine_analytics_errors_total[5m]))",
+          "legendFormat": "сбои",
+          "refId": "A"
         }
       ],
       "fieldConfig": {
