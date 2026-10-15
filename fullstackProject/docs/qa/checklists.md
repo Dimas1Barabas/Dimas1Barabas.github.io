@@ -253,3 +253,12 @@
 - [ ] smoke через шлюз: `/api/health` 200 (Gateway → web nginx → api) и `/` 200 (SPA)
 - [ ] e2e через шлюз зелёный (`E2E_BASE_URL=http://$GATEWAY_HOST/api`) — тот же сьют, что против compose; SSE-спеки не рвутся (таймауты маршрута 3600s)
 - [ ] при любом падении diagnose собирает pods/PVC/gateway/events в step summary + аннотацию, логи инфры и envoy-cine — в лог шага; сам diagnose не может краснеть (guard на kubectl, `|| true`)
+
+## CL-26. Аналитика поведения
+
+- [ ] джоба `analytics` (go build + vet + test -race) зелёная; e2e-круг «отправил батч — увидел в витрине» зелёный на compose-стенде
+- [ ] витрина `/admin/behavior` под админом: воронка пути зрителя, интерес к фильмам против броней, страницы с временем пребывания, тепловая карта мест, время в модалке по глубине
+- [ ] ✋ панель «Go-сервисы» в Grafana (:19000): `cine_analytics_events_total` растёт по обоим routing key (прогулка по сайту + брони), `cine_analytics_errors_total` — плоский ноль
+- [ ] лимит инжеста `analytics.ingest` 30/мин на aid: 429 с кодом `rateLimited`, трекер глотает отказ — UX не роняется
+- [ ] k8s-оверлей без Аналитика: прокси отвечает `available:false`, страница рисует заглушку, e2e-контур скипается с warn — джоба `k8s` зелёная
+- [ ] демо на Pages: трекер live-only — Network чист от запросов `/analytics/events`

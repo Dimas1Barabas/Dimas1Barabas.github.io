@@ -51,9 +51,10 @@ docker compose up --build
 | reminder (Go, gRPC) | localhost:18086 (gRPC, reflection); http://localhost:18087/reminders | напоминания «скоро сеанс»: витрина очереди и отправленных писем |
 | pricing (Go, gRPC) | localhost:18088 (gRPC, reflection); http://localhost:18089/prices | «Тарификатор»: история квотов с раскладкой факторов, проекция спроса |
 | ratelimiter (Go, gRPC) | localhost:18090 (gRPC, reflection); http://localhost:18091/buckets | «Привратник»: витрина token-корзин лимитов (бронь, вход) |
+| analytics (Go) | http://localhost:18092/insights | «Аналитик»: витрина «Поведение» — воронка, фильмы, страницы, места, модалка |
 | Prometheus | http://localhost:19090 | UI скрейпера: таргеты, метрики, TSDB |
 | Grafana | http://localhost:19000 | дашборды без логина (Viewer); admin — вход для правок |
-| PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications + cine_recommendations + cine_reminders + cine_prices + cine_ratekeeper |
+| PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications + cine_recommendations + cine_reminders + cine_prices + cine_ratekeeper + cine_analytics |
 | Redis | localhost:6379 | кэш фильмов, TTL 60 c |
 
 Host-порты 13000/15432/18080 выбраны, чтобы не конфликтовать
@@ -940,11 +941,47 @@ WebSocket: `@nestjs/platform-ws` на бэкенде, нативный `WebSocke
   создаёт больше десяти броней в минуту ботовским пользователем, честные
   10/мин — продуктовые дефолты Go-сервиса и демо.
 
+### Аналитика поведения (analytics-service)
+
+Go-сервис без gRPC — асинхронный агрегатор: никого не спрашивает
+синхронно, слушает два потока брокера и отвечает витриной «Поведение».
+
+- **Поток 1 — поведение с веба**: трекер (`shared/api/analytics.ts`)
+  копит события девяти типов (просмотры и время на страницах, шаги
+  воронки брони, клики по местам, глубина модалки) и флешит батчами
+  до 50 на публичный `POST /analytics/events` раз в 8 с, на уходе со
+  страницы — sendBeacon'ом. Честность метрик: время пребывания — только
+  активное (фоновая вкладка останавливает часы), идентичность — anon id
+  из localStorage (+userId после входа), смена аккаунта флешит очередь
+  старому; демо-режим на Pages ничего не отправляет (трекер live-only),
+  ошибки отправки глотаются — UX не роняется.
+- **Инжест в API — тонкая труба**: ValidationPipe (закрытый набор типов,
+  whitelist срезает лишние поля, aid — uuid) → по одному сообщению
+  `cinema ← analytics.event`; 202 без транзакционности — потеря батча
+  не бьёт по продукту. Лимит Привратника `analytics.ingest` — 30/мин
+  на aid посетителя (не на ip): анонимный витринный трафик живёт
+  в своей корзине.
+- **Поток 2 — транзакционные брони**: `booking.created` /
+  `booking.processed` — интерес к фильмам против фактических броней.
+- **Гексагональная архитектура** (по лекалу notification): домен и
+  use-case Analyzer в центре, amqp-консюмер / HTTP-витрина / прометей —
+  адаптеры на границах. Хранилище: память (дефолт — стенд без БД не
+  падает) или postgres (БД `cine_analytics`, адаптер создаёт её сам
+  через служебную базу; fail fast без живого PG). Больное событие умирает
+  в retry/parking, как у воркера — транзиентный сбой вернётся с backoff.
+- **Витрина «Поведение»**: `/admin/behavior` (роль admin) читает прокси
+  `GET /analytics/insights`; конверт `{available, data}` — Аналитик
+  опционален: на стенде без него (k8s-оверлей) страница рисует честную
+  заглушку, e2e-круг скипается с warn.
+- Стенд: HTTP `:18092` (`/health`, `/insights`); метрики
+  `cine_analytics_events_total{routing_key}` и
+  `cine_analytics_errors_total` — панель в Grafana «Go-сервисы».
+
 ### Мониторинг: Prometheus + Grafana
 
 Метрики собирает Prometheus (скрейп `/metrics` всех сервисов раз в 5 с +
 встроенный плагин `rabbitmq_prometheus` брокера на 15692), рисует Grafana:
-датасорс и три дашборда провижинятся из `observability/` при старте,
+датасорс и четыре дашборда провижинятся из `observability/` при старте,
 ручных настроек в UI не нужно.
 
 - **Стенд**: Grafana `:19000` — анонимный Viewer, дашборды открываются
@@ -958,7 +995,8 @@ WebSocket: `@nestjs/platform-ws` на бэкенде, нативный `WebSocke
   и p95 latency по маршрутам, статусы, 5xx, event loop lag, куча,
   активные хендлы (SSE/WS видно живьём); «Go-сервисы» — вердикты/возвраты
   воркера, письма по типам, вердикты Привратника и p95 Check, котировки
-  и распределение цен p50/p90, топы/сигналы КиноСоветника, напоминания.
+  и распределение цен p50/p90, топы/сигналы КиноСоветника, напоминания,
+  события Аналитика по потокам и его сбои обработки.
 - **Кто что экспортирует**: API — prom-client с собственным Registry:
   глобальный интерцептор пишет гистограмму
   `cine_api_http_request_duration_seconds{method,route,status}`
@@ -967,7 +1005,11 @@ WebSocket: `@nestjs/platform-ws` на бэкенде, нативный `WebSocke
   pull-коллектор читает атомики `stats.Stats` на скрейпе
   (`cine_worker_verdicts_total{verdict}` и др.); notification —
   prom-обёртка второй реализацией порта `domain.Metrics` (JSON-витрина
-  `/stats` не меняется); синхронные gRPC-сервисы (pricing, ratelimiter,
+  `/stats` не меняется); Аналитик — счётчики на границе amqp-адаптера:
+  события, лёгшие в агрегаты (`cine_analytics_events_total{routing_key}` —
+  оба потока витрины: поведение с веба и транзакционные брони), и
+  транзиентные сбои обработки (`cine_analytics_errors_total`); синхронные
+  gRPC-сервисы (pricing, ratelimiter,
   recommendation, reminder) считают метрики на границах входящих
   адаптеров. Все Go-сервисы держат собственный Registry (не глобальный)
   и отдают стандартные `go_*`/`process_*`.
