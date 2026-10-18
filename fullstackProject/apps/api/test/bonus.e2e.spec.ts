@@ -164,11 +164,13 @@ describe('бонусная программа', () => {
     }
 
     /**
-     * Вердикт воркера по оплаченной брони. Молчание дольше окна — не
+     * Вердикт воркера по оплаченной брони (pay переводит её в PENDING,
+     * воркер сменит на CONFIRMED/FAILED). Молчание дольше окна — не
      * «потерянная» бронь: её поздний вердикт доначислил бы кэшбэк уже
      * после балансовых ассертов. Финализируем отменой, как живой
-     * пользователь (reminders.e2e): cancel → ждать вердикта; вероятностный
-     * REFUND_FAILED откатывает в CONFIRMED — тогда бронь подтверждена.
+     * пользователь (reminders.e2e): cancel → CANCELLING → вердикт
+     * отмены; вероятностный REFUND_FAILED откатывает в CONFIRMED —
+     * тогда бронь подтверждена.
      */
     async function verdictOf(id: string): Promise<string> {
       const settle = async (busy: string[]): Promise<string | undefined> => {
@@ -179,11 +181,11 @@ describe('бонусная программа', () => {
         }
         return undefined;
       };
-      const verdict = await settle(['PROCESSING']);
+      const verdict = await settle(['PENDING']);
       if (verdict) return verdict;
       for (let attempt = 0; attempt < 2; attempt++) {
         await as(jwt, `/bookings/${id}/cancel`, { method: 'POST' }).catch(() => {});
-        const settled = await settle(['PROCESSING', 'CANCELLING']);
+        const settled = await settle(['PENDING', 'CANCELLING']);
         if (settled) return settled;
       }
       throw new Error(`бронь ${id}: вердикт не пришёл, отмена не финализировалась`);
