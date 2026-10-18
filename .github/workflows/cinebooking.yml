@@ -317,7 +317,9 @@ jobs:
       # вывод дублируем в файл: при падении упавшие спеки уходят
       # error-аннотацией (публично видна) — тот же приём, что в k8s-e2e;
       # compose-e2e падал 2 раза из 3 последних прогонов, без аннотации
-      # какая спека виновата — не видно (логи шага требуют входа)
+      # какая спека виновата — не видно (логи шага требуют входа).
+      # ●-блоки jest дают не только файл, но и имя теста с дельтой
+      # ассерта — grep'аем их отдельно: в хвост итогов они не попадают
       - name: run e2e
         run: |
           set -o pipefail
@@ -327,10 +329,12 @@ jobs:
             msg="$(
               echo 'УПАВШИЕ СПЕКИ:'
               grep -E '^FAIL ' /tmp/e2e.log | sort -u | head -15 || true
+              echo '--- ДЕТАЛИ ПАДЕНИЙ (jest) ---'
+              grep -B1 -A 30 '●' /tmp/e2e.log | head -70 || true
               echo '--- ХВОСТ ЛОГА ---'
               tail -15 /tmp/e2e.log
             )"
-            encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' | head -c 3000)
+            encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' | head -c 4000)
             echo "::error::title=e2e (compose-стенд)::$encoded"
             exit "$status"
           fi
@@ -518,7 +522,10 @@ jobs:
         working-directory: fullstackProject/apps/api
 
       # вывод дублируем в файл: при падении упавшие спеки уходят
-      # error-аннотацией (публично видна), а не только в лог шага
+      # error-аннотацией (публично видна), а не только в лог шага;
+      # ●-блоки jest дают имя теста с дельтой ассерта — grep'аем их
+      # отдельно: в хвост итогов они не попадают (первое падение k8s-e2e
+      # 15.10 аннотация показала файл, но не тест)
       - name: run e2e (gateway)
         run: |
           set -o pipefail
@@ -528,10 +535,12 @@ jobs:
             msg="$(
               echo 'УПАВШИЕ СПЕКИ:'
               grep -E '^FAIL ' /tmp/e2e.log | sort -u | head -15 || true
+              echo '--- ДЕТАЛИ ПАДЕНИЙ (jest) ---'
+              grep -B1 -A 30 '●' /tmp/e2e.log | head -70 || true
               echo '--- ХВОСТ ЛОГА ---'
               tail -15 /tmp/e2e.log
             )"
-            encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' | head -c 3000)
+            encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' | head -c 4000)
             echo "::error::title=e2e (k8s-стенд)::$encoded"
             exit "$status"
           fi
