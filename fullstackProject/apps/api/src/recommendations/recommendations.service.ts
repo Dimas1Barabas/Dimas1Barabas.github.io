@@ -69,13 +69,27 @@ export class RecommendationsService {
     private readonly redis: RedisService,
   ) {}
 
-  /** персональный топ афиши; кэш — как у каталога (60 c от источника) */
+  /**
+   * Персональный топ афиши; кэш — как у каталога (60 c от источника),
+   * но недоступность КиноСоветника НЕ кэшируется: минутное «морзание»
+   * gRPC-сервиса не должно прятать блок «Вам понравится» на весь TTL
+   * (сигнал-инвалидация к этому моменту уже прилетела и ключ не погасит).
+   */
   async my(userId: string): Promise<RecommendationsDto> {
-    const { value } = await this.redis.withCache<RecommendationsDto>(
+    const cached = await this.redis.getJson<RecommendationsDto>(
       recsKey(userId),
-      RECS_TTL_SEC,
-      async () => this.load(userId),
     );
+    if (cached) return cached;
+    const value = await this.load(userId);
+    if (value.basis !== 'unavailable') {
+      try {
+        await this.redis.setJson(recsKey(userId), value, RECS_TTL_SEC);
+      } catch (err) {
+        this.logger.warn(
+          `Не удалось записать кэш ${recsKey(userId)}: ${(err as Error).message}`,
+        );
+      }
+    }
     return value;
   }
 

@@ -103,6 +103,24 @@ describe('RecommendationsService (unit)', () => {
     expect(top).toEqual({ items: [], basis: 'unavailable' });
   });
 
+  it('unavailable не кэшируется: следующий вызов снова идёт в gRPC', async () => {
+    // минутное «морзание» сервиса не должно прятать блок на весь TTL —
+    // сигнал-инвалидация к этому моменту уже прилетела и ключ не погасит
+    recos.forUser
+      .mockRejectedValueOnce(new Error('deadline exceeded'))
+      .mockResolvedValueOnce({ basis: 'popular', items: [] });
+
+    const down = await service.my('user-1');
+    const up = await service.my('user-1');
+
+    expect(down.basis).toBe('unavailable');
+    expect(up.basis).toBe('popular');
+    expect(recos.forUser).toHaveBeenCalledTimes(2);
+    // ожило — снова кэшируем
+    await service.my('user-1');
+    expect(recos.forUser).toHaveBeenCalledTimes(2);
+  });
+
   it('мусорный basis сервиса приводится к unavailable', async () => {
     recos.forUser.mockResolvedValue({ basis: '42', items: [] });
 
