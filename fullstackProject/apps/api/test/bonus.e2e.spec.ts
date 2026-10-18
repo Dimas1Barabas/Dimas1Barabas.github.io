@@ -4,7 +4,14 @@
  * в ./e2e-context. Если API не поднят — тесты файла тихо пропускаются
  * с предупреждением.
  */
-import { api, bootstrap, BASE, available, E2EMovie } from './e2e-context';
+import {
+  api,
+  bootstrap,
+  BASE,
+  available,
+  E2EMovie,
+  freeSeat,
+} from './e2e-context';
 
 jest.setTimeout(30_000);
 
@@ -25,10 +32,9 @@ describe('бонусная программа', () => {
     return (await res.json()) as T;
   }
 
-  /** случайное свободное место — против коллизий между прогонами */
-  function randomSeat(): string {
-    return `${1 + Math.floor(Math.random() * 8)}-${1 + Math.floor(Math.random() * 10)}`;
-  }
+  /** место — из живой карты занятости (freeSeat в e2e-context):
+   *  параллельные спеки бронируют на тот же сеанс, вслепую выбранные
+   *  места ловили 409 placeAlreadyTaken */
 
   it('401 без токена; свежий пользователь — пустой счёт', async () => {
     if (!available) return;
@@ -72,7 +78,10 @@ describe('бонусная программа', () => {
       '/bookings',
       {
         method: 'POST',
-        body: JSON.stringify({ sessionId: session.id, seats: [randomSeat()] }),
+        body: JSON.stringify({
+          sessionId: session.id,
+          seats: [await freeSeat(session.id)],
+        }),
       },
     );
 
@@ -86,6 +95,11 @@ describe('бонусная программа', () => {
     });
     expect(refused.status).toBe(409);
     expect(((await refused.json()) as { code: string }).code).toBe('bonusOverLimit');
+
+    // отказ на pay не финализирует бронь сама — место возвращаем стенду
+    await as(login.accessToken, `/bookings/${booking.id}/cancel`, {
+      method: 'POST',
+    });
   });
 
   it('409 bonusInsufficient: баланса меньше запрошенного', async () => {
@@ -107,7 +121,10 @@ describe('бонусная программа', () => {
       '/bookings',
       {
         method: 'POST',
-        body: JSON.stringify({ sessionId: session.id, seats: [randomSeat()] }),
+        body: JSON.stringify({
+          sessionId: session.id,
+          seats: [await freeSeat(session.id)],
+        }),
       },
     );
 
@@ -140,30 +157,51 @@ describe('бонусная программа', () => {
     const movies = await api<{ data: E2EMovie[] }>('/movies');
     const session = movies.data[0].sessions[0];
 
-    /** бронь+оплата до CONFIRMED (воркер отказывает ~10% — ретраи) */
-    async function confirmedBooking(): Promise<{ id: string; totalRub: number }> {
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const booking = await as<{ id: string; totalRub: number; status: string }>(
-          jwt,
-          '/bookings',
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              sessionId: session.id,
-              seats: [randomSeat()],
-            }),
-          },
-        );
-        await as(jwt, `/bookings/${booking.id}/pay`, { method: 'POST' });
+    /** статус своей брони — из списка /bookings/my */
+    async function statusOf(id: string): Promise<string | undefined> {
+      const mine = await as<{ id: string; status: string }[]>(jwt, '/bookings/my');
+      return mine.find((b) => b.id === id)?.status;
+    }
+
+    /**
+     * Вердикт воркера по оплаченной брони. Молчание дольше окна — не
+     * «потерянная» бронь: её поздний вердикт доначислил бы кэшбэк уже
+     * после балансовых ассертов. Финализируем отменой, как живой
+     * пользователь (reminders.e2e): cancel → ждать вердикта; вероятностный
+     * REFUND_FAILED откатывает в CONFIRMED — тогда бронь подтверждена.
+     */
+    async function verdictOf(id: string): Promise<string> {
+      const settle = async (busy: string[]): Promise<string | undefined> => {
         for (let poll = 0; poll < 20; poll++) {
           await new Promise((r) => setTimeout(r, 700));
-          const mine = await as<
-            { id: string; status: string; totalRub: number }[]
-          >(jwt, '/bookings/my');
-          const done = mine.find((b) => b.id === booking.id);
-          if (done?.status === 'CONFIRMED') return done;
-          if (done?.status === 'FAILED') break; // новый заход с новой бронью
+          const status = await statusOf(id);
+          if (status && !busy.includes(status)) return status;
         }
+        return undefined;
+      };
+      const verdict = await settle(['PROCESSING']);
+      if (verdict) return verdict;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await as(jwt, `/bookings/${id}/cancel`, { method: 'POST' }).catch(() => {});
+        const settled = await settle(['PROCESSING', 'CANCELLING']);
+        if (settled) return settled;
+      }
+      throw new Error(`бронь ${id}: вердикт не пришёл, отмена не финализировалась`);
+    }
+
+    /** бронь+оплата до CONFIRMED (воркер отказывает ~10% — ретраи
+     *  с новой бронью; молчащие финализируются отменой в verdictOf) */
+    async function confirmedBooking(): Promise<{ id: string; totalRub: number }> {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const booking = await as<{ id: string; totalRub: number }>(jwt, '/bookings', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: session.id,
+            seats: [await freeSeat(session.id)],
+          }),
+        });
+        await as(jwt, `/bookings/${booking.id}/pay`, { method: 'POST' });
+        if ((await verdictOf(booking.id)) === 'CONFIRMED') return booking;
       }
       throw new Error('воркер не подтвердил ни одну из 5 броней');
     }
@@ -187,7 +225,10 @@ describe('бонусная программа', () => {
     const spend = Math.min(Math.floor(first.totalRub / 2), cashback);
     const second = await as<{ id: string; totalRub: number }>(jwt, '/bookings', {
       method: 'POST',
-      body: JSON.stringify({ sessionId: session.id, seats: [randomSeat()] }),
+      body: JSON.stringify({
+        sessionId: session.id,
+        seats: [await freeSeat(session.id)],
+      }),
     });
     const paid = await as<{
       totalRub: number;
@@ -200,31 +241,16 @@ describe('бонусная программа', () => {
     expect(paid.bonusSpent).toBe(spend);
     expect(paid.totalRub).toBe(second.totalRub - spend);
 
-    const confirmed2 = await (async () => {
-      for (let poll = 0; poll < 20; poll++) {
-        await new Promise((r) => setTimeout(r, 700));
-        const mine = await as<{ id: string; status: string; totalRub: number }[]>(
-          jwt,
-          '/bookings/my',
-        );
-        const done = mine.find((b) => b.id === second.id);
-        if (done?.status === 'CONFIRMED') return done;
-        if (done?.status === 'FAILED') {
-          // оплата не прошла — бонусы вернулись: проверим и это
-          return done;
-        }
-      }
-      throw new Error('вердикт второй брони не пришёл');
-    })();
+    const verdict2 = await verdictOf(second.id);
 
     const final = await as<{ balance: number }>(jwt, '/bonuses/my');
-    if (confirmed2.status === 'CONFIRMED') {
+    if (verdict2 === 'CONFIRMED') {
       // кэшбэк с фактически оплаченной суммы
       expect(final.balance).toBe(
         cashback - spend + Math.floor((second.totalRub - spend) * 0.05),
       );
     } else {
-      // FAILED вернул списанное на счёт
+      // FAILED или финализированная отменой вернули списанное на счёт
       expect(final.balance).toBe(cashback);
     }
   }, 120_000);
