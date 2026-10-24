@@ -23,6 +23,7 @@ type Metrics struct {
 	sent     *prometheus.CounterVec // kind — тип письма
 	failed   prometheus.Counter
 	errors   prometheus.Counter
+	replayed prometheus.Counter
 }
 
 // New оборачивает inner и регистрирует собственный реестр (не глобальный
@@ -48,11 +49,15 @@ func New(inner domain.Metrics) *Metrics {
 			Name: "cine_notification_errors_total",
 			Help: "Own service errors while handling an event",
 		}),
+		replayed: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "cine_notification_replayed_total",
+			Help: "Redeliveries silenced by the idempotent notification id",
+		}),
 	}
 	reg.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		m.received, m.sent, m.failed, m.errors,
+		m.received, m.sent, m.failed, m.errors, m.replayed,
 	)
 	return m
 }
@@ -80,6 +85,11 @@ func (m *Metrics) Failed() {
 func (m *Metrics) Errors() {
 	m.inner.Errors()
 	m.errors.Inc()
+}
+
+func (m *Metrics) Replayed() {
+	m.inner.Replayed()
+	m.replayed.Inc()
 }
 
 // Snapshot прозрачно проходит в обёрнутый адаптер — /stats не отличить.

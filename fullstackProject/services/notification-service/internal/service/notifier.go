@@ -37,6 +37,22 @@ func (s *Notifier) HandleOutcome(ctx context.Context, o domain.Outcome) error {
 		return err // адаптер очереди уведёт сообщение в parking
 	}
 
+	// дедуп ределивери ДО отправки: messageId публикации (у событий
+	// Курьера — uuid outbox-записи) уже обработан — письмо не отправляем
+	// и не записываем; Save ниже страхует гонку тем же ключом
+	if o.MessageID != "" {
+		seen, err := s.repo.Exists(ctx, n.ID)
+		if err != nil {
+			s.metrics.Errors()
+			return fmt.Errorf("проверка дубля %s: %w", n.ID, err)
+		}
+		if seen {
+			s.metrics.Replayed()
+			logging.Infof(ctx, "✉ %s [%s]: дубль ределивери (id %s) погашен", n.BookingID, n.Kind, n.ID)
+			return nil
+		}
+	}
+
 	if err := s.sender.Send(ctx, n); err != nil {
 		n.Status = domain.StatusFailed
 		n.Error = err.Error()
@@ -46,9 +62,17 @@ func (s *Notifier) HandleOutcome(ctx context.Context, o domain.Outcome) error {
 		s.metrics.Sent(n.Kind)
 	}
 
-	if err := s.repo.Save(ctx, n); err != nil {
+	created, err := s.repo.Save(ctx, n)
+	if err != nil {
 		s.metrics.Errors()
 		return fmt.Errorf("сохранение уведомления %s: %w", n.BookingID, err)
+	}
+	if !created {
+		// ределивери: письмо с этим ID уже записано (messageId публикации
+		// — uuid outbox-записи у событий Курьера); вторая строка не нужна
+		s.metrics.Replayed()
+		logging.Infof(ctx, "✉ %s [%s]: дубль ределивери (id %s) погашен", n.BookingID, n.Kind, n.ID)
+		return nil
 	}
 
 	if n.Status == domain.StatusSent {

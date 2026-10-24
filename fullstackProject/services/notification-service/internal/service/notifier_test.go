@@ -30,13 +30,14 @@ func (s *spySender) Send(_ context.Context, n domain.Notification) error {
 
 // fakeMetrics считает вызовы порта метрик.
 type fakeMetrics struct {
-	received, sent, failed, errs int
-	kinds                        []domain.Kind
+	received, sent, failed, errs, replayed int
+	kinds                                  []domain.Kind
 }
 
 func (m *fakeMetrics) Received() { m.received++ }
 func (m *fakeMetrics) Failed()   { m.failed++ }
 func (m *fakeMetrics) Errors()   { m.errs++ }
+func (m *fakeMetrics) Replayed() { m.replayed++ }
 func (m *fakeMetrics) Sent(k domain.Kind) {
 	m.sent++
 	m.kinds = append(m.kinds, k)
@@ -133,15 +134,67 @@ func TestListClampsLimit(t *testing.T) {
 	}
 }
 
+// Ределивери с идемпотентным ID (messageId публикации — uuid outbox-записи
+// у событий Курьера): письмо НЕ отправляется повторно, НЕ записывается,
+// счётчик Replayed растёт, консьюмер получает nil и ACKает сообщение.
+func TestHandleOutcomeDuplicateSilenced(t *testing.T) {
+	sender := &spySender{}
+	repo := &fakeRepo{knownIDs: map[string]bool{
+		"11111111-1111-1111-1111-111111111111": true,
+	}}
+	metrics := &fakeMetrics{}
+	svc := NewNotifier(sender, repo, metrics)
+
+	err := svc.HandleOutcome(context.Background(), domain.Outcome{
+		BookingID: "b-7", Verdict: "CONFIRMED", MessageID: "11111111-1111-1111-1111-111111111111",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.sent) != 0 || len(repo.saved) != 0 {
+		t.Fatal("дубль не должен отправляться и записываться")
+	}
+	if metrics.replayed != 1 {
+		t.Fatalf("replayed = %d, want 1", metrics.replayed)
+	}
+}
+
+// Без messageId дедуп не спрашивается вовсе: вердикты воркера и
+// напоминания живут на timestamp-фолбэке ID, каждая доставка уникальна.
+func TestHandleOutcomeWithoutMessageIdSkipsDedup(t *testing.T) {
+	sender := &spySender{}
+	repo := &fakeRepo{knownIDs: map[string]bool{"stale": true}}
+	metrics := &fakeMetrics{}
+	svc := NewNotifier(sender, repo, metrics)
+
+	if err := svc.HandleOutcome(context.Background(), domain.Outcome{BookingID: "b-8", Verdict: "EXPIRED"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.sent) != 1 || len(repo.saved) != 1 {
+		t.Fatalf("sent=%d saved=%d, want 1/1", len(sender.sent), len(repo.saved))
+	}
+	if metrics.replayed != 0 {
+		t.Fatalf("replayed = %d, want 0", metrics.replayed)
+	}
+}
+
 // fakeRepo — стаб порта хранилища.
 type fakeRepo struct {
 	saved     []domain.Notification
 	lastLimit int
+	knownIDs  map[string]bool // что отвечает Exists — для теста дедупа
 }
 
-func (r *fakeRepo) Save(_ context.Context, n domain.Notification) error {
+func (r *fakeRepo) Exists(_ context.Context, id string) (bool, error) {
+	return r.knownIDs[id], nil
+}
+
+func (r *fakeRepo) Save(_ context.Context, n domain.Notification) (bool, error) {
+	if r.knownIDs[n.ID] {
+		return false, nil
+	}
 	r.saved = append(r.saved, n)
-	return nil
+	return true, nil
 }
 
 func (r *fakeRepo) List(_ context.Context, f domain.Filter) ([]domain.Notification, error) {

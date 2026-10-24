@@ -42,6 +42,10 @@ type Outcome struct {
 	Verdict     string // CONFIRMED | FAILED | CANCELLED | REFUND_FAILED | EXPIRED
 	Message     string
 	ProcessedBy string
+	// MessageID — amqp messageId доставки, если публикатор задал его
+	// (Курьер кладёт туда uuid outbox-записи). Идемпотентный ключ:
+	// ределивери не создаёт второе письмо.
+	MessageID string
 }
 
 // Notification — одно клиентское уведомление по брони.
@@ -82,10 +86,16 @@ func NewFromOutcome(o Outcome, now time.Time) (Notification, error) {
 	default:
 		return Notification{}, fmt.Errorf("%w: %q", ErrUnknownVerdict, o.Verdict)
 	}
+	// ID письма: messageId доставки, когда публикатор его задал (Курьер —
+	// uuid outbox-записи) — ределивери упирается в дедуп хранилища;
+	// без него — timestamp-фолбэк: вердикты воркера и напоминания идут
+	// без messageId, уникальность даёт время доставки
+	id := o.MessageID
+	if id == "" {
+		id = now.UTC().Format("20060102T150405.000000000") + "-" + o.BookingID
+	}
 	return Notification{
-		// timestamp гарантирует уникальность в рамках брони: вердикты
-		// одного bookingId приходят с разницей минимум в секунды
-		ID:        now.UTC().Format("20060102T150405.000000000") + "-" + o.BookingID,
+		ID:        id,
 		BookingID: o.BookingID,
 		Kind:      kind,
 		Title:     title,

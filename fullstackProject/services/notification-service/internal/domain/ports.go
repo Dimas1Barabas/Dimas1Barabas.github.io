@@ -20,7 +20,12 @@ type Filter struct {
 
 // Repository — хранение отправленных уведомлений (driven).
 type Repository interface {
-	Save(ctx context.Context, n Notification) error
+	// Exists — записано ли письмо с таким ID (дедуп ределивери до
+	// отправки). Осмыслен только для идемпотентных ID (messageId).
+	Exists(ctx context.Context, id string) (bool, error)
+	// Save записывает письмо; false — запись с таким ID уже была
+	// (ределивери), вторая строка не создаётся.
+	Save(ctx context.Context, n Notification) (created bool, err error)
 	List(ctx context.Context, f Filter) ([]Notification, error)
 }
 
@@ -30,5 +35,6 @@ type Metrics interface {
 	Sent(kind Kind) // письмо ушло
 	Failed()        // шлюз доставки упал
 	Errors()        // собственный сбой сервиса
+	Replayed()      // дубль ределивери погашен по идемпотентному ID
 	Snapshot() map[string]any
 }

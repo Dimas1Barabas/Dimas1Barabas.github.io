@@ -14,7 +14,7 @@ func saveAt(t *testing.T, r *Repository, bookingID, verdict string, at time.Time
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Save(context.Background(), n); err != nil {
+	if _, err := r.Save(context.Background(), n); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -65,5 +65,31 @@ func TestRepositoryEvictsOldest(t *testing.T) {
 	items, _ := r.List(context.Background(), domain.Filter{})
 	if len(items) != 2 || items[1].BookingID != "mid" || items[0].BookingID != "new" {
 		t.Fatalf("буфер вытесняет старое: %v, want [new mid]", items)
+	}
+}
+
+// Дубль по ID (ределивери с messageId) не записывается повторно.
+func TestRepositorySaveDuplicateSilenced(t *testing.T) {
+	r := NewRepository(0)
+	base := time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC)
+
+	n, err := domain.NewFromOutcome(domain.Outcome{
+		BookingID: "b-9", Verdict: "WAITLIST_SEAT", MessageID: "obx-1",
+	}, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created, _ := r.Save(context.Background(), n); !created {
+		t.Fatal("первый Save должен записывать")
+	}
+	if seen, _ := r.Exists(context.Background(), n.ID); !seen {
+		t.Fatal("Exists должен видеть записанное")
+	}
+	if created, _ := r.Save(context.Background(), n); created {
+		t.Fatal("дубль не должен записываться повторно")
+	}
+	items, _ := r.List(context.Background(), domain.Filter{})
+	if len(items) != 1 {
+		t.Fatalf("записей = %d, want 1", len(items))
 	}
 }

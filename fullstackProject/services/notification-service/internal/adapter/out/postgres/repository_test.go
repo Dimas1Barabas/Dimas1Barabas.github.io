@@ -138,7 +138,7 @@ func saveAt(t *testing.T, r *Repository, bookingID, verdict string, at time.Time
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Save(context.Background(), n); err != nil {
+	if _, err := r.Save(context.Background(), n); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -152,7 +152,7 @@ func TestSaveListRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Save(context.Background(), n); err != nil {
+	if _, err := r.Save(context.Background(), n); err != nil {
 		t.Fatal(err)
 	}
 
@@ -241,7 +241,7 @@ func TestSaveFailedStatusKeepsError(t *testing.T) {
 		t.Fatal(err)
 	}
 	n.Status, n.Error = domain.StatusFailed, "SMTP gateway timeout"
-	if err := r.Save(context.Background(), n); err != nil {
+	if _, err := r.Save(context.Background(), n); err != nil {
 		t.Fatal(err)
 	}
 
@@ -251,6 +251,43 @@ func TestSaveFailedStatusKeepsError(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].Status != domain.StatusFailed || items[0].Error != n.Error {
 		t.Fatalf("неудачная доставка: %+v, want status FAILED и текст ошибки", items)
+	}
+}
+
+// Дедуп ределивери: один и тот же messageId (Курьер кладёт в него uuid
+// outbox-записи) даёт одну строку — Save молча поглощает дубль, Exists
+// видит его до отправки.
+func TestSaveDuplicateByMessageId(t *testing.T) {
+	r := withRepo(t)
+	base := time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC)
+
+	n, err := domain.NewFromOutcome(domain.Outcome{
+		BookingID: "b-5", Verdict: "PASSWORD_RESET", MessageID: "44444444-4444-4444-4444-444444444444",
+	}, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if created, err := r.Save(context.Background(), n); err != nil || !created {
+		t.Fatalf("первый Save = %v/%v, want true/nil", created, err)
+	}
+	if seen, err := r.Exists(context.Background(), n.ID); err != nil || !seen {
+		t.Fatalf("Exists после записи = %v/%v, want true/nil", seen, err)
+	}
+	// дубль: та же запись повторно (ределивери) — строка не создаётся
+	if created, err := r.Save(context.Background(), n); err != nil || created {
+		t.Fatalf("повторный Save = %v/%v, want false/nil (дубль погашен)", created, err)
+	}
+
+	items, err := r.List(context.Background(), domain.Filter{BookingID: "b-5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("записей = %d, want 1 (дубль не задвоился)", len(items))
+	}
+	if items[0].ID != "44444444-4444-4444-4444-444444444444" {
+		t.Fatalf("ID = %q, want messageId outbox-записи", items[0].ID)
 	}
 }
 

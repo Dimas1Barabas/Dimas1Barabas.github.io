@@ -13,6 +13,7 @@ import (
 type Repository struct {
 	mu           sync.Mutex
 	items        []domain.Notification
+	seen         map[string]struct{} // ID записанных — дедуп ределивери
 	cap          int
 	defaultLimit int
 }
@@ -22,19 +23,33 @@ func NewRepository(capacity int) *Repository {
 	if capacity <= 0 {
 		capacity = 500
 	}
-	return &Repository{cap: capacity, defaultLimit: 50}
+	return &Repository{seen: map[string]struct{}{}, cap: capacity, defaultLimit: 50}
+}
+
+// Exists — был ли такой ID (дедуп ределивери до отправки).
+func (r *Repository) Exists(_ context.Context, id string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.seen[id]
+	return ok, nil
 }
 
 // Save добавляет уведомление, вытесняя самое старое при переполнении.
-func (r *Repository) Save(_ context.Context, n domain.Notification) error {
+// Дубль по ID (ределивери) не записывается — false.
+func (r *Repository) Save(_ context.Context, n domain.Notification) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if _, dup := r.seen[n.ID]; dup {
+		return false, nil
+	}
 	r.items = append(r.items, n)
 	if len(r.items) > r.cap {
-		r.items = r.items[len(r.items)-r.cap:]
+		delete(r.seen, r.items[0].ID)
+		r.items = r.items[1:]
 	}
-	return nil
+	r.seen[n.ID] = struct{}{}
+	return true, nil
 }
 
 // List отдаёт историю: новые сверху, фильтр по брони и лимит.

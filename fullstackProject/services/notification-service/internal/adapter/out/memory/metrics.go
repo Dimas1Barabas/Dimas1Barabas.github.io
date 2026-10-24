@@ -14,6 +14,7 @@ type Metrics struct {
 	sent     atomic.Int64
 	failed   atomic.Int64
 	errors   atomic.Int64
+	replayed atomic.Int64
 	byKind   sync.Map // domain.Kind → *atomic.Int64
 
 	startedAt time.Time
@@ -26,6 +27,7 @@ func NewMetrics() *Metrics {
 func (m *Metrics) Received() { m.received.Add(1) }
 func (m *Metrics) Failed()   { m.failed.Add(1) }
 func (m *Metrics) Errors()   { m.errors.Add(1) }
+func (m *Metrics) Replayed() { m.replayed.Add(1) }
 
 func (m *Metrics) Sent(kind domain.Kind) {
 	m.sent.Add(1)
@@ -51,6 +53,7 @@ func (m *Metrics) Snapshot() map[string]any {
 		"sent":      m.sent.Load(),
 		"failed":    m.failed.Load(),
 		"errors":    m.errors.Load(),
+		"replayed":  m.replayed.Load(),
 		"byKind":    kinds,
 	}
 }

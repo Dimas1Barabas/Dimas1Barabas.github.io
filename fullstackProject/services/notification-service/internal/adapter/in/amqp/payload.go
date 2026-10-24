@@ -22,6 +22,9 @@ func toOutcome(d amqp091.Delivery) (domain.Outcome, error) {
 		BookingID:   p.BookingID,
 		Message:     p.Message,
 		ProcessedBy: p.ProcessedBy,
+		// messageId публикации: Курьер кладёт uuid outbox-записи — по нему
+		// хранилище гасит дубль ределивери; пусто у вердиктов воркера
+		MessageID: d.MessageId,
 	}
 	switch d.RoutingKey {
 	case keyProcessed, keyRefunded:

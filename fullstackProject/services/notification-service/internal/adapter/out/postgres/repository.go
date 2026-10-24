@@ -29,7 +29,8 @@ const defaultLimit = 50
 
 const insertSQL = `INSERT INTO notifications
 	(id, booking_id, kind, title, body, channel, status, error, created_at)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	ON CONFLICT (id) DO NOTHING`
 
 // id доопределяет порядок при равных created_at: фабрика домена кодирует
 // в него UTC-timestamp, лексикографически согласованный со временем.
@@ -84,16 +85,34 @@ func NewRepository(ctx context.Context, dsn string) (*Repository, error) {
 	return r, nil
 }
 
-// Save — один INSERT. Ошибка считается транзиентной: use-case вернёт её
-// консьюмеру, и брокер ретраит сохранение (как и любой другой сбой).
-func (r *Repository) Save(ctx context.Context, n domain.Notification) error {
-	_, err := r.db.ExecContext(ctx, insertSQL,
+// Exists — проверка дубля ределивери до отправки (Save страхует гонку).
+func (r *Repository) Exists(ctx context.Context, id string) (bool, error) {
+	var exists bool
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM notifications WHERE id = $1)`, id,
+	).Scan(&exists); err != nil {
+		return false, fmt.Errorf("проверка дубля %s: %w", id, err)
+	}
+	return exists, nil
+}
+
+// Save — INSERT ... ON CONFLICT (id) DO NOTHING: дубль ределивери (ID —
+// messageId публикации, у событий Курьера это uuid outbox-записи) не
+// создаёт вторую строку; created=false говорит use-case'у «уже записано».
+// Ошибка считается транзиентной: use-case вернёт её консьюмеру, и брокер
+// ретраит сохранение (как и любой другой сбой).
+func (r *Repository) Save(ctx context.Context, n domain.Notification) (bool, error) {
+	res, err := r.db.ExecContext(ctx, insertSQL,
 		n.ID, n.BookingID, string(n.Kind), n.Title, n.Body, n.Channel,
 		string(n.Status), n.Error, n.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("insert уведомления %s: %w", n.ID, err)
+		return false, fmt.Errorf("insert уведомления %s: %w", n.ID, err)
 	}
-	return nil
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("insert уведомления %s: строки: %w", n.ID, err)
+	}
+	return affected > 0, nil
 }
 
 // List — новые сверху, фильтр по брони, лимит; Limit <= 0 — дефолт
