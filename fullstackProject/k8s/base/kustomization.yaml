@@ -27,6 +27,7 @@ resources:
   - reminder.yaml
   - pricing.yaml
   - ratelimiter.yaml
+  - outbox-relay.yaml
   - web.yaml
 
 # Секреты через generator: суффикс-хэш в имени → при смене значения

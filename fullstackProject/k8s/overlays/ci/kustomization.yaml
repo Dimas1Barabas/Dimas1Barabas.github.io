@@ -32,6 +32,8 @@ images:
     newTag: kind-ci
   - name: cine-booking-ratelimiter
     newTag: kind-ci
+  - name: cine-booking-outbox-relay
+    newTag: kind-ci
 
 patches:
   # API наружу раннера: NodePort 30100 (extraPortMappings в kind-конфиге

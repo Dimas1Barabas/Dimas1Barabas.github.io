@@ -11,16 +11,16 @@
 #                 миграции, uq-констрейнты, настоящий брокер и кэш.
 #                 Живой прогон делает робот, локально спеки скипаются —
 #                 как у Go-сервисов
-#   go           — matrix по семи Go-сервисам: build + vet + lint + test -race
+#   go           — matrix по восьми Go-сервисам: build + vet + lint + test -race
 #                 с порогом покрытия per-service
 #                 (ticket-worker, notification, recommendation, reminder,
-#                  pricing, ratelimiter, analytics); live-PG адаптеры сервисов —
+#                  pricing, ratelimiter, analytics, outbox-relay); live-PG адаптеры сервисов —
 #                 против одноразовых Postgres (testcontainers, TESTCONTAINERS=1):
 #                 живой прогон делает робот, локально тесты честно скипаются
 #   proto        — buf lint (STANDARD) + buf breaking (дрейф gRPC-контрактов)
 #   infra        — docker compose config + парсинг JSON/YAML в observability/
 #   e2e          — живой стенд целиком (docker compose up --build --wait:
-#                 PG+Redis+Rabbit+api+воркер+пять Go-сервисов) и test:e2e
+#                 PG+Redis+Rabbit+api+воркер+шесть Go-сервисов) и test:e2e
 #                 против него: HTTP → брокер → вердикты воркера → gRPC.
 #                 Локально тот же прогон — `docker compose up` руками
 #   k8s          — тот же стенд под управлением Kubernetes: kind-кластер
@@ -176,7 +176,7 @@ jobs:
         env:
           TESTCONTAINERS: 1
 
-  # Шесть Go-сервисов одной матрицей: каждый элемент — отдельный раннер,
+  # Восемь Go-сервисов одной матрицей: каждый элемент — отдельный раннер,
   # как раньше отдельные джобы, но без копипасты шагов. fail-fast: false —
   # упавший сервис не отменяет проверки остальных.
   # Шаги повторяют локальный ритуал перед коммитом: build + vet + test -race.
@@ -223,6 +223,12 @@ jobs:
           - name: analytics
             dir: analytics-service
             threshold: 39
+          # Курьер (этап транзакционного outbox): покрытие дают домен,
+          # use-case и live-PG стора; адаптеры amqp/gRPC/HTTP без тестов,
+          # как у соседей — оценка ~33%, поднять по факту прогона
+          - name: outbox-relay
+            dir: outbox-relay
+            threshold: 30
     defaults:
       run:
         working-directory: fullstackProject/services/${{ matrix.dir }}
@@ -297,7 +303,8 @@ jobs:
         run: |
           docker compose up --build --wait --wait-timeout 300 -d \
             postgres redis rabbitmq \
-            worker notification recommendation reminder pricing ratelimiter analytics api
+            worker notification recommendation reminder pricing ratelimiter analytics \
+            outbox-relay api
         working-directory: fullstackProject
 
       # страховка на случай, если --wait пропустил (healthcheck-флейк):
@@ -343,7 +350,7 @@ jobs:
       # посмертные логи стенда: на упавшей спеке видно, что делали сервисы
       - name: compose logs (только при падении)
         if: failure()
-        run: docker compose logs --tail 300 api worker notification recommendation reminder pricing ratelimiter
+        run: docker compose logs --tail 300 api worker notification recommendation reminder pricing ratelimiter outbox-relay
         working-directory: fullstackProject
 
   # Kubernetes-уровень (этап 21): тот же стенд, что в compose-e2e, но
@@ -374,6 +381,7 @@ jobs:
           docker build -t cine-booking-reminder:kind-ci ./services/reminder-service
           docker build -t cine-booking-pricing:kind-ci ./services/pricing-service
           docker build -t cine-booking-ratelimiter:kind-ci ./services/ratelimiter-service
+          docker build -t cine-booking-outbox-relay:kind-ci ./services/outbox-relay
         working-directory: fullstackProject
 
       # Инфра-образы стенда (PG/Redis/RabbitMQ) нода не должна тянуть
@@ -404,6 +412,7 @@ jobs:
             cine-booking-worker:kind-ci cine-booking-notification:kind-ci \
             cine-booking-recommendation:kind-ci cine-booking-reminder:kind-ci \
             cine-booking-pricing:kind-ci cine-booking-ratelimiter:kind-ci \
+            cine-booking-outbox-relay:kind-ci \
             postgres:16-alpine redis:7-alpine rabbitmq:3.13-management-alpine \
             --name cine
 
@@ -454,8 +463,8 @@ jobs:
           } >> "$summary"
           for resource in statefulset/postgres deploy/redis deploy/rabbitmq \
                           deploy/ratelimiter deploy/pricing deploy/recommendation \
-                          deploy/reminder deploy/notification deploy/worker \
-                          deploy/api deploy/web; do
+                          deploy/reminder deploy/notification deploy/outbox-relay \
+                          deploy/worker deploy/api deploy/web; do
             echo "⏳ $resource"
             if kubectl -n cine-booking rollout status "$resource" --timeout=180s; then
               echo "| \`$resource\` | ok |" >> "$summary"
@@ -616,7 +625,7 @@ jobs:
           done
           # envoy-cine — Envoy-прокси шлюза (создаётся EG в namespace
           # Gateway); при проблемах входа его лог — первый кандидат
-          for d in api worker notification recommendation reminder pricing ratelimiter web envoy-cine; do
+          for d in api worker notification recommendation reminder pricing ratelimiter outbox-relay web envoy-cine; do
             echo "--- logs deploy/$d ---"
             kubectl -n cine-booking logs deploy/$d --tail=100 || true
           done

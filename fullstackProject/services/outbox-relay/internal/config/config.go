@@ -22,8 +22,8 @@ type Config struct {
 func Load() Config {
 	return Config{
 		AMQPURL:      env("AMQP_URL", "amqp://guest:guest@localhost:5672/"),
-		GRPCAddr:     env("GRPC_ADDR", ":18092"),
-		HTTPAddr:     env("HTTP_ADDR", ":18093"),
+		GRPCAddr:     env("GRPC_ADDR", ":8093"),
+		HTTPAddr:     env("HTTP_ADDR", ":8094"),
 		DatabaseURL:  env("DATABASE_URL", "postgres://cine:cine@localhost:15432/cine"),
 		Batch:        envInt("RELAY_BATCH", 20),
 		PollMs:       envInt("RELAY_POLL_MS", 500),

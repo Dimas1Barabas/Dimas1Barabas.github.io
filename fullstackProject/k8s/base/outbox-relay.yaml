@@ -1,0 +1,61 @@
+# outbox-relay («Курьер») — gRPC Notify/Stats на 8093, служебный HTTP
+# /health и /outbox на 8094. Доставка транзакционного outbox в RabbitMQ:
+# батчи из ОБЩЕЙ базы API (таблицу outbox_messages создают миграции api;
+# стартовавший раньше Курьер ждёт её тиками — это штатный путь).
+apiVersion: v1
+kind: Service
+metadata:
+  name: outbox-relay
+spec:
+  selector:
+    app: outbox-relay
+  ports:
+    - name: grpc
+      port: 8093
+      targetPort: 8093
+    - name: http
+      port: 8094
+      targetPort: 8094
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outbox-relay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: outbox-relay
+  template:
+    metadata:
+      labels:
+        app: outbox-relay
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: postgres:16-alpine
+          command: ['sh', '-c', 'until pg_isready -h postgres -p 5432 -U cine -q; do echo ждём postgres; sleep 2; done']
+      containers:
+        - name: outbox-relay
+          image: cine-booking-outbox-relay
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: outbox-relay-env
+          ports:
+            - containerPort: 8093
+            - containerPort: 8094
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8094
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

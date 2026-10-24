@@ -55,6 +55,11 @@ scrape_configs:
     static_configs:
       - targets: ['analytics:8092']
 
+  # Курьер: доставки outbox-событий (ok/error) и сигналы Notify
+  - job_name: outbox-relay
+    static_configs:
+      - targets: ['outbox-relay:8094']
+
   # Брокер: очереди, публикации/доставки, соединения
   # (встроенный плагин rabbitmq_prometheus)
   - job_name: rabbitmq
