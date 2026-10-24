@@ -25,7 +25,7 @@ export class OutboxMessage {
 
   /** JSON-тело события — то, что раньше уходило в publish напрямую */
   @Column({ type: 'jsonb' })
-  payload: Record<string, unknown>;
+  payload: object;
 
   /** amqp-заголовки на момент записи: traceparent — трейс исходной операции */
   @Column({ type: 'jsonb', default: {} })
