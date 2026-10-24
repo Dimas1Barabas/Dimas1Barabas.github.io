@@ -13,6 +13,7 @@ import { BonusTransaction } from './bonus/bonus-transaction.entity';
 import { WaitlistEntry } from './waitlist/waitlist.entity';
 import { RefreshToken } from './tokens/refresh-token.entity';
 import { User } from './users/user.entity';
+import { OutboxMessage } from './outbox/outbox-message.entity';
 
 // quiet: dotenv@17 по умолчанию печатает подсказку в stdout при каждом старте
 loadEnv({ quiet: true });
@@ -46,6 +47,7 @@ export const dataSourceOptions: DataSourceOptions = {
     Promo,
     BonusTransaction,
     WaitlistEntry,
+    OutboxMessage,
   ],
   migrations: [
     isRunningFromTs ? 'src/migrations/*.ts' : 'dist/migrations/*.js',

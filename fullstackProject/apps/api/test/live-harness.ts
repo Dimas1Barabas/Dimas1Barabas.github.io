@@ -197,8 +197,8 @@ export async function buildLiveApp(): Promise<LiveAppContext> {
 
 /** Все доменные таблицы схемы (migrations не трогаем) */
 const TRUNCATE_SQL = `TRUNCATE TABLE
-  bookings, seat_occupancy, bonus_transactions, waitlist_entries, promos,
-  reviews, refresh_tokens, password_resets, sessions, movies, users
+  outbox_messages, bookings, seat_occupancy, bonus_transactions, waitlist_entries,
+  promos, reviews, refresh_tokens, password_resets, sessions, movies, users
   RESTART IDENTITY CASCADE`;
 
 /** Очереди из rabbitmq.config: рабочие с retry/parking + wait-очередь резерва */
