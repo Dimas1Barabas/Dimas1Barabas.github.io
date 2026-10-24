@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+// Outbox Relay («Курьер») — gRPC-контракт сервиса доставки outbox-событий.
+// API (NestJS) пишет события в outbox_messages В бизнес-транзакции; Курьер
+// (Go) публикует их в exchange cinema. Общий контракт: proto-loader на
+// стороне Node читает этот файл в рантайме, Go-сторона — сгенерированный
+// код (scripts/protogen.sh -> internal/pb).
+package cine.outbox.v1;
+
+option go_package = "outbox-relay/internal/pb;cinepb";
+
+// Служба доставки: события не теряются — сбой публикации переносит попытку
+// на later (backoff), дропов нет. Notify — лишь ускоритель латентности:
+// потеря RPC безвредна, тикер всё равно заберёт записи по расписанию.
+service OutboxRelay {
+  // Разбудить тикер: API закоммитил записи в outbox (после COMMIT).
+  rpc Notify (NotifyRequest) returns (NotifyResponse);
+  // Витрина состояния релея для HTTP-зеркала и мониторинга.
+  rpc Stats (StatsRequest) returns (StatsResponse);
+}
+
+message NotifyRequest {}
+
+message NotifyResponse {
+  bool accepted = 1; // сигнал принят (не значит «опубликовано»)
+}
+
+message StatsRequest {}
+
+message StatsResponse {
+  int64 pending = 1;           // ждут публикации (published_at IS NULL)
+  int64 oldest_pending_ms = 2; // возраст старейшей pending, мс (0 — если пусто)
+  int64 published_total = 3;   // опубликовано за жизнь процесса
+  int64 failed_attempts = 4;   // неудачных попыток публикации (счётчик)
+}
