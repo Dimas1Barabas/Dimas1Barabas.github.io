@@ -23,6 +23,7 @@
  *    переживают файлы и умирают вместе с jest (Ryuk-жнецом подчищается).
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { Test } from '@nestjs/testing';
 import { WsAdapter } from '@nestjs/platform-ws';
 import cookieParser from 'cookie-parser';
@@ -99,6 +100,8 @@ export interface LiveAppContext {
   app: INestApplication;
   /** живой DataSource приложения — прямые SELECT для проверок строк */
   db: DataSource;
+  /** остановить мини-релей outbox (вызывать в afterAll рядом с app.close) */
+  stopOutboxRelay: () => void;
   /** Authorization: владелец брони, чужак и администратор (живые JWT) */
   bearer: string;
   bearerB: string;
@@ -156,6 +159,52 @@ export async function buildLiveApp(): Promise<LiveAppContext> {
   const db = app.get(DataSource);
   await resetLiveState(db, await liveInfra());
 
+  // мини-релей транзакционного outbox: в бою записи из outbox_messages
+  // доставляет Курьер (services/outbox-relay), которого в testcontainers-
+  // стенде нет — его роль играет этот цикл. Семантика та же: SKIP LOCKED
+  // батч → publish (messageId = id записи) → published_at; тик 100мс,
+  // чтобы live-спеки не ждали прод-интервал. Публикация — через
+  // AmqpConnection приложения, коннект живёт вместе с app.
+  const rabbit = app.get(AmqpConnection);
+  let relayBusy = false;
+  const relayTick = async () => {
+    if (relayBusy) return;
+    relayBusy = true;
+    try {
+      for (;;) {
+        const rows: {
+          id: string;
+          routing_key: string;
+          payload: object;
+          headers: Record<string, string> | null;
+        }[] = await db.query(
+          `SELECT id, routing_key, payload, headers FROM outbox_messages
+           WHERE published_at IS NULL AND next_attempt_at <= now()
+           ORDER BY created_at, id LIMIT 10 FOR UPDATE SKIP LOCKED`,
+        );
+        if (!rows.length) return;
+        const now = new Date();
+        for (const r of rows) {
+          await rabbit.publish('cinema', r.routing_key, r.payload, {
+            messageId: r.id,
+            headers: r.headers ?? {},
+          });
+          await db.query(
+            `UPDATE outbox_messages SET published_at = $1
+             WHERE id = $2 AND published_at IS NULL`,
+            [now, r.id],
+          );
+        }
+      }
+    } finally {
+      relayBusy = false;
+    }
+  };
+  const relayTimer = setInterval(() => {
+    void relayTick();
+  }, 100);
+  const stopOutboxRelay = () => clearInterval(relayTimer);
+
   const moviesService = app.get(MoviesService);
   const usersService = app.get(UsersService);
   await moviesService.onModuleInit(); // свежий каталог для этого файла
@@ -192,7 +241,7 @@ export async function buildLiveApp(): Promise<LiveAppContext> {
     }
   };
 
-  return { app, db, bearer, bearerB, bearerAdmin, catalog, waitBookingStatus };
+  return { app, db, stopOutboxRelay, bearer, bearerB, bearerAdmin, catalog, waitBookingStatus };
 }
 
 /** Все доменные таблицы схемы (migrations не трогаем) */

@@ -20,6 +20,7 @@ describeLive('CineBooking API: кэш каталога в живом Redis (test
 
   afterAll(async () => {
     redis?.disconnect();
+    h?.stopOutboxRelay();
     await h?.app.close();
   });
 

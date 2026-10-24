@@ -19,6 +19,7 @@ describe('CineBooking API: жизненный цикл брони (фейков�
   let bookingsService: BookingsService;
   let bookingsRepo: FakeBookingRepo;
   let rabbitPublish: jest.Mock;
+  let outboxRows: { routingKey: string; payload: object }[];
   /** Authorization: владелец брони, чужак и администратор */
   let bearer: string;
   let bearerB: string;
@@ -32,6 +33,7 @@ describe('CineBooking API: жизненный цикл брони (фейков�
     bookingsService = h.bookingsService;
     bookingsRepo = h.bookingsRepo;
     rabbitPublish = h.rabbitPublish;
+    outboxRows = h.outboxRows;
     bearer = h.bearer;
     bearerB = h.bearerB;
     bearerAdmin = h.bearerAdmin;
@@ -72,22 +74,19 @@ describe('CineBooking API: жизненный цикл брони (фейков�
       // дедлайн оплаты — через стандартное окно
       expect(res.body.expiresAt).toBeTruthy();
 
-      // таймер резерва: событие уходит «тикать» в wait-очередь
-      expect(rabbitPublish).toHaveBeenCalledWith(
-        'cinema',
-        'booking.payment.wait',
-        expect.objectContaining({
+      // таймер резерва: событие пишется в outbox (доставит Курьер),
+      // не напрямую в брокер
+      expect(outboxRows.at(-1)).toMatchObject({
+        routingKey: 'booking.payment.wait',
+        payload: expect.objectContaining({
           bookingId: res.body.id,
           totalRub: movie.priceRub * 2,
         }),
-        expect.objectContaining({ headers: expect.any(Object) }),
+      });
+      expect(outboxRows).not.toContainEqual(
+        expect.objectContaining({ routingKey: 'booking.created' }),
       );
-      expect(rabbitPublish).not.toHaveBeenCalledWith(
-        'cinema',
-        'booking.created',
-        expect.anything(),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
+      expect(rabbitPublish).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -302,28 +301,30 @@ describe('CineBooking API: жизненный цикл брони (фейков�
       return { created: res.body, sessionId: session.id };
     }
 
-    it('PENDING_PAYMENT → PENDING и публикует booking.created для воркера', async () => {
+    it('PENDING_PAYMENT → PENDING и пишет booking.created в outbox для воркера', async () => {
       const { created, sessionId } = await unpaidBooking(1, ['3-3']);
 
       rabbitPublish.mockClear();
+      const outboxBefore = outboxRows.length;
       const res = await request(app.getHttpServer())
         .post(`/api/bookings/${created.id}/pay`)
         .set('Authorization', bearer);
 
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('PENDING');
-      expect(rabbitPublish).toHaveBeenCalledTimes(1);
-      expect(rabbitPublish).toHaveBeenCalledWith(
-        'cinema',
-        'booking.created',
+      expect(outboxRows.slice(outboxBefore)).toEqual([
         expect.objectContaining({
-          bookingId: created.id,
-          sessionId,
-          seats: ['3-3'],
-          totalRub: created.totalRub,
+          routingKey: 'booking.created',
+          payload: expect.objectContaining({
+            bookingId: created.id,
+            sessionId,
+            seats: ['3-3'],
+            totalRub: created.totalRub,
+          }),
         }),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
+      ]);
+      // прямого publish больше нет — доставит Курьер
+      expect(rabbitPublish).not.toHaveBeenCalled();
     });
 
     it('повторная оплата → 409 с текущим статусом', async () => {

@@ -10,6 +10,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { BonusTransaction } from '../bonus/bonus-transaction.entity';
+import { OutboxMessage } from '../outbox/outbox-message.entity';
 import { Movie } from '../movies/movie.entity';
 import { Promo } from '../promos/promo.entity';
 import { PricingClient } from '../pricing/pricing.client';
@@ -105,6 +106,8 @@ export interface BookingsHarness {
   /** gRPC-клиент Тарификатора: по умолчанию отвечает базовой ценой */
   pricing: { quote: jest.Mock };
   rabbit: { publish: jest.Mock };
+  /** что enqueueOutbox записал в outbox внутри транзакций (create/pay) */
+  outboxInsert: jest.Mock;
   /** SSE-шина: спаем, что после мутаций ушли события */
   stream: { emit: jest.Mock };
   /** шина живой карты мест: сигнал на каждое изменение занятости */
@@ -181,6 +184,9 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
     })),
   };
   const rabbit: BookingsHarness['rabbit'] = { publish: jest.fn() };
+  // outbox-записи бизнес-событий (booking.payment.wait, booking.created):
+  // enqueueOutbox идёт через em.getRepository(OutboxMessage).insert
+  const outboxInsert = jest.fn(async () => undefined);
   const stream: BookingsHarness['stream'] = { emit: jest.fn() };
   const seatStream: BookingsHarness['seatStream'] = { emit: jest.fn() };
   const emInsert = jest.fn(async () => undefined);
@@ -222,6 +228,8 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
       criteria: { bookingId: string },
     ) => Promise<unknown>;
     query: jest.Mock;
+    /** outbox-записи бизнес-событий (enqueueOutbox в транзакции) */
+    getRepository: (entity: unknown) => { insert: jest.Mock };
     createQueryBuilder: (entity: unknown) => unknown;
   } = {
     findOneByOrFail: (entity, where) =>
@@ -238,6 +246,15 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
     delete: (_entity: unknown, criteria: { bookingId: string }) =>
       occupancyRepo.delete(criteria),
     query: emQuery,
+    // outbox-события create/pay: репозиторий записи из транзакции
+    getRepository: (entity: unknown) => {
+      if (entity !== OutboxMessage) {
+        throw new Error(
+          `Неожиданный getRepository в тесте: ${String(entity)}`,
+        );
+      }
+      return { insert: outboxInsert };
+    },
     // INSERT INTO bonus_transactions … ON CONFLICT DO NOTHING:
     // orIgnore-цепочка пишет строку в фейковый ledger
     createQueryBuilder: () => ({
@@ -302,6 +319,7 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
     reminders,
     pricing,
     rabbit,
+    outboxInsert,
     stream,
     seatStream,
     emInsert,

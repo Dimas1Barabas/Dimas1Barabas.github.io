@@ -20,6 +20,7 @@ describeLive('CineBooking API: бронь против живого Postgres (te
   }, 240_000);
 
   afterAll(async () => {
+    h.stopOutboxRelay();
     await h.app.close();
   });
 

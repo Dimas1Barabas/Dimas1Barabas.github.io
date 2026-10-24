@@ -12,13 +12,14 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
   let bookingsRepo: BookingsHarness['bookingsRepo'];
   let promosRepo: BookingsHarness['promosRepo'];
   let rabbit: BookingsHarness['rabbit'];
+  let outboxInsert: BookingsHarness['outboxInsert'];
   let stream: BookingsHarness['stream'];
   let emUpdate: BookingsHarness['emUpdate'];
   let emQuery: BookingsHarness['emQuery'];
   let bonusRows: BookingsHarness['bonusRows'];
 
   beforeEach(async () => {
-    ({ service, bookingsRepo, promosRepo, rabbit, stream, emUpdate, emQuery, bonusRows } = await buildBookingsHarness());
+    ({ service, bookingsRepo, promosRepo, rabbit, outboxInsert, stream, emUpdate, emQuery, bonusRows } = await buildBookingsHarness());
   });
 
   describe('pay', () => {
@@ -43,10 +44,10 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
     it('публикует booking.created — воркер начинает проводить платёж', async () => {
       await service.pay('booking-1', authUser);
 
-      expect(rabbit.publish).toHaveBeenCalledWith(
-        'cinema',
-        'booking.created',
+      expect(outboxInsert).toHaveBeenCalledWith(
         expect.objectContaining({
+          routingKey: 'booking.created',
+          payload: expect.objectContaining({
           bookingId: 'booking-1',
           movieTitle: 'Рекурсия',
           sessionId: 'session-1',
@@ -54,7 +55,7 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
           seats: ['5-7', '5-8', '5-9'],
           totalRub: 1200,
         }),
-        expect.objectContaining({ headers: expect.any(Object) }),
+        }),
       );
       expect(stream.emit).toHaveBeenCalledTimes(1);
     });
@@ -67,7 +68,7 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
       await expect(promise).rejects.toBeInstanceOf(ConflictException);
       const err = (await promise.catch((e: unknown) => e)) as ConflictException;
       expect(err.getResponse()).toMatchObject({ status: 'PENDING_PAYMENT' });
-      expect(rabbit.publish).not.toHaveBeenCalled();
+      expect(outboxInsert).not.toHaveBeenCalled();
     });
 
     it('403: чужую бронь оплатить нельзя', async () => {
@@ -79,7 +80,7 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
 
       await expect(promise).rejects.toBeInstanceOf(ForbiddenException);
       expect(emUpdate).not.toHaveBeenCalled();
-      expect(rabbit.publish).not.toHaveBeenCalled();
+      expect(outboxInsert).not.toHaveBeenCalled();
     });
   });
 
@@ -122,11 +123,11 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
 
       await service.pay('booking-1', authUser, 'CINE10');
 
-      expect(rabbit.publish).toHaveBeenCalledWith(
-        'cinema',
-        'booking.created',
-        expect.objectContaining({ totalRub: 1080 }),
-        expect.objectContaining({ headers: expect.any(Object) }),
+      expect(outboxInsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          routingKey: 'booking.created',
+          payload: expect.objectContaining({ totalRub: 1080 }),
+        }),
       );
     });
 
@@ -149,7 +150,7 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
       expect(err.getResponse()).toMatchObject({ code: 'promoExhausted' });
       // скидка не писалась и событие воркеру не ушло — транзакция откатилась
       expect(emUpdate).toHaveBeenCalledTimes(1);
-      expect(rabbit.publish).not.toHaveBeenCalled();
+      expect(outboxInsert).not.toHaveBeenCalled();
     });
 
     it('неизвестный код → 404 promoNotFound', async () => {
@@ -217,12 +218,12 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
           { id: 'booking-1' },
           { totalRub: 800, bonusSpent: 400 },
         );
-        expect(rabbit.publish).toHaveBeenCalledWith(
-          'cinema',
-          'booking.created',
-          expect.objectContaining({ totalRub: 800 }),
-          expect.objectContaining({ headers: expect.any(Object) }),
-        );
+        expect(outboxInsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          routingKey: 'booking.created',
+          payload: expect.objectContaining({ totalRub: 800 }),
+        }),
+      );
       });
 
       it('промокод и бонусы вместе: скидка первой, лимит — от остатка', async () => {
@@ -271,7 +272,7 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
         // только переключение статуса — скидки/списания не писались
         expect(emUpdate).toHaveBeenCalledTimes(1);
         expect(bonusRows).toHaveLength(1); // только сид
-        expect(rabbit.publish).not.toHaveBeenCalled();
+        expect(outboxInsert).not.toHaveBeenCalled();
       });
 
       it('409 bonusInsufficient: баланса меньше запрошенного', async () => {
@@ -305,7 +306,7 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
         const err =
           (await promise.catch((e: unknown) => e)) as ConflictException;
         expect(err.getResponse()).toMatchObject({ code: 'bonusInsufficient' });
-        expect(rabbit.publish).not.toHaveBeenCalled();
+        expect(outboxInsert).not.toHaveBeenCalled();
       });
 
       it('409 bonusUnavailable: гостевая бронь без владельца', async () => {

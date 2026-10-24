@@ -11,6 +11,7 @@ import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { Booking } from '../src/bookings/booking.entity';
+import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { Movie } from '../src/movies/movie.entity';
 import { MoviesController } from '../src/movies/movies.controller';
 import { MoviesService } from '../src/movies/movies.service';
@@ -123,6 +124,13 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
     // эмуляция EntityManager из DataSource.transaction
     const em = {
       create: (_entity: unknown, x: Partial<Review>) => x,
+      // enqueueOutbox: outbox-записи бизнес-событий (пока не ассертятся)
+      getRepository: (entity: unknown) => {
+        if (entity !== OutboxMessage) {
+          throw new Error(`unexpected entity: ${String(entity)}`);
+        }
+        return { insert: async () => undefined };
+      },
       /** INSERT отзыва: дубль (userId, movieId) → 23505, как uq-констрейнт */
       save: (x: Partial<Review>): Promise<Review> => {
         if (

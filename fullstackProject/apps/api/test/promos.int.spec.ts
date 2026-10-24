@@ -12,6 +12,7 @@ import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { Booking } from '../src/bookings/booking.entity';
+import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsController } from '../src/bookings/bookings.controller';
@@ -139,6 +140,8 @@ describe('Промокоды: HTTP-интеграция (фейковые зав
   let bookingsRepo: FakeBookingRepo;
   /** опубликованные в RabbitMQ события */
   let published: { routingKey: string; payload: Record<string, unknown> }[];
+  /** outbox-записи create/pay (booking.payment.wait, booking.created) */
+  let outbox: { routingKey: string; payload: Record<string, unknown> }[];
 
   /** Authorization: владелец брони, «чужак» и администратор */
   let bearer: string;
@@ -194,6 +197,7 @@ describe('Промокоды: HTTP-интеграция (фейковые зав
     promosRepo = new FakePromoRepo();
     bookingsRepo = new FakeBookingRepo();
     published = [];
+    outbox = [];
 
     const moviesRepo = {
       findOneByOrFail: jest.fn(async (_where: { id: string }) => ({
@@ -223,6 +227,17 @@ describe('Промокоды: HTTP-интеграция (фейковые зав
       },
       create: (_entity: unknown, x: Partial<Booking>) => x,
       save: (_entity: unknown, x: Booking) => x,
+      // enqueueOutbox: событие create/pay пишется в outbox
+      getRepository: (entity: unknown) => {
+        if (entity !== OutboxMessage) {
+          throw new Error(`unexpected entity: ${String(entity)}`);
+        }
+        return {
+          insert: async (row: { routingKey: string; payload: Record<string, unknown> }) => {
+            outbox.push(row);
+          },
+        };
+      },
       insert: jest.fn(),
       update: (
         entity: unknown,
@@ -485,8 +500,8 @@ describe('Промокоды: HTTP-интеграция (фейковые зав
         promoCode: 'PAY10',
         discountRub: 100,
       });
-      // воркер получает уже скидочную сумму
-      expect(published).toEqual([
+      // воркер получает уже скидочную сумму (из outbox — доставит Курьер)
+      expect(outbox).toEqual([
         expect.objectContaining({
           routingKey: 'booking.created',
           payload: expect.objectContaining({ totalRub: 900 }),

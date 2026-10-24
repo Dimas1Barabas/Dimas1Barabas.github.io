@@ -18,10 +18,11 @@ describe('BookingsService: создание брони и цена сеанса 
   let waitlistRepo: BookingsHarness['waitlistRepo'];
   let pricing: BookingsHarness['pricing'];
   let rabbit: BookingsHarness['rabbit'];
+  let outboxInsert: BookingsHarness['outboxInsert'];
   let emInsert: BookingsHarness['emInsert'];
 
   beforeEach(async () => {
-    ({ service, moviesRepo, sessionsRepo, occupancyRepo, waitlistRepo, pricing, rabbit, emInsert } = await buildBookingsHarness());
+    ({ service, moviesRepo, sessionsRepo, occupancyRepo, waitlistRepo, pricing, rabbit, outboxInsert, emInsert } = await buildBookingsHarness());
   });
 
   describe('create', () => {
@@ -106,7 +107,7 @@ describe('BookingsService: создание брони и цена сеанса 
       );
     });
 
-    it('публикует booking.payment.wait — запускает таймер резерва', async () => {
+    it('пишет booking.payment.wait в outbox — таймер резерва переживёт краш API', async () => {
       const result = await service.create(
         {
           sessionId: 'session-1',
@@ -116,18 +117,17 @@ describe('BookingsService: создание брони и цена сеанса 
         authUser,
       );
 
-      expect(rabbit.publish).toHaveBeenCalledTimes(1);
-      const [exchange, routingKey, event] = rabbit.publish.mock.calls[0];
-      expect(exchange).toBe('cinema');
-      expect(routingKey).toBe('booking.payment.wait');
-      expect(event).toMatchObject({
+      expect(outboxInsert).toHaveBeenCalledTimes(1);
+      const row = outboxInsert.mock.calls[0][0];
+      expect(row.routingKey).toBe('booking.payment.wait');
+      expect(row.payload).toMatchObject({
         bookingId: result.id,
         totalRub: 1200,
         expiresAt: result.expiresAt,
       });
     });
 
-    it('wait-событие едет с traceparent активного спана (шов OTel)', async () => {
+    it('traceparent активного спана сохраняется в outbox на момент записи', async () => {
       // настоящий провайдер: без него глобальный propagator — no-op
       new NodeTracerProvider().register();
       const span = trace.getTracer('spec').startSpan('http-request-root');
@@ -140,14 +140,15 @@ describe('BookingsService: создание брони и цена сеанса 
       });
       span.end();
 
-      const options = rabbit.publish.mock.calls[0][3] as {
-        headers: Record<string, string>;
-      };
-      expect(options.headers.traceparent).toMatch(
-        /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/,
-      );
+      // заголовки пишет enqueueOutbox в бизнес-транзакции — Курьер
+      // опубликует их позже, а трейс останется трейсом этого запроса
+      const headers = outboxInsert.mock.calls[0][0].headers as Record<
+        string,
+        string
+      >;
+      expect(headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
       // trace id совпадает со «спаном HTTP-запроса» — трасса непрерывна
-      expect(options.headers.traceparent.split('-')[1]).toBe(
+      expect(headers.traceparent.split('-')[1]).toBe(
         span.spanContext().traceId,
       );
     });
@@ -174,7 +175,7 @@ describe('BookingsService: создание брони и цена сеанса 
       });
       expect(result.totalRub).toBe(960); // 480 × 2
       // спрос Тарификатора: wait-событие несёт сеанс и число мест
-      const event = rabbit.publish.mock.calls[0][2];
+      const event = outboxInsert.mock.calls[0][0].payload;
       expect(event).toMatchObject({ sessionId: 'session-1', seatsCount: 2 });
     });
 
@@ -242,8 +243,8 @@ describe('BookingsService: создание брони и цена сеанса 
           where: expect.objectContaining({ sessionId: 'session-1' }),
         }),
       );
-      // событие в очередь не ушло
-      expect(rabbit.publish).not.toHaveBeenCalled();
+      // событие в outbox не записано — транзакция откатилась целиком
+      expect(outboxInsert).not.toHaveBeenCalled();
     });
   });
 

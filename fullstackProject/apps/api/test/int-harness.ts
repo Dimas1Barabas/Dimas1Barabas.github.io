@@ -37,6 +37,7 @@ import { REDIS_CLIENT } from '../src/redis/redis.tokens';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Booking } from '../src/bookings/booking.entity';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
+import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { Promo } from '../src/promos/promo.entity';
 import { PricingClient } from '../src/pricing/pricing.client';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
@@ -296,6 +297,8 @@ export interface IntAppContext {
   promosRepo: { findOneBy: jest.Mock };
   redisStore: Map<string, string>;
   rabbitPublish: jest.Mock;
+  /** outbox-записи бизнес-событий (booking.payment.wait, booking.created) */
+  outboxRows: { routingKey: string; payload: object }[];
   bookingsService: BookingsService;
   /** Authorization: владелец брони, чужак и администратор */
   bearer: string;
@@ -321,6 +324,8 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
   const promosRepo = { findOneBy: jest.fn(async () => null) };
   const redisStore = new Map<string, string>();
   const rabbitPublish = jest.fn();
+  // outbox-записи create/pay: enqueueOutbox пишет через em-транзакцию
+  const outboxRows: { routingKey: string; payload: object }[] = [];
 
   // эмуляция EntityManager из DataSource.transaction
   // bonusRows — фейковый ledger: кэшбэк вердиктов и развороты при отмене
@@ -381,6 +386,17 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
       }
       return [[], 0];
     }),
+    // enqueueOutbox: запись события в транзакции create/pay
+    getRepository: (entity: unknown) => {
+      if (entity !== OutboxMessage) {
+        throw new Error(`unexpected entity: ${String(entity)}`);
+      }
+      return {
+        insert: async (row: { routingKey: string; payload: object }) => {
+          outboxRows.push(row);
+        },
+      };
+    },
     // INSERT INTO bonus_transactions … ON CONFLICT (booking_id, reason)
     createQueryBuilder: () => ({
       insert: () => ({
@@ -488,6 +504,7 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
     promosRepo,
     redisStore,
     rabbitPublish,
+    outboxRows,
     bookingsService: moduleRef.get(BookingsService),
     bearer: `Bearer ${await sign('user-a', 'Анна Тест', 'user')}`,
     bearerB: `Bearer ${await sign('user-b', 'Борис Чужой', 'user')}`,

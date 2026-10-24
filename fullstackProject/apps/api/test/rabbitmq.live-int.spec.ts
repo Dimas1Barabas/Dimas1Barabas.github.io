@@ -26,6 +26,7 @@ describeLive('CineBooking API: события через живой RabbitMQ (te
 
   afterAll(async () => {
     await conn?.close();
+    h?.stopOutboxRelay();
     await h?.app.close();
   });
 
@@ -53,11 +54,18 @@ describeLive('CineBooking API: события через живой RabbitMQ (te
     });
   }
 
-  /** get с narrow: пустая очередь — ошибка теста, а не NPE */
+  /** get с narrow: пустая очередь — ошибка теста, а не NPE. События из
+   *  outbox доставляет мини-релей харнесса асинхронно — опрашиваем до 5с */
   async function getOne(queue: string): Promise<amqp.Message> {
-    const msg = await ch.get(queue);
-    if (!msg) throw new Error(`очередь ${queue} пуста — событие не опубликовано`);
-    return msg;
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      const msg = await ch.get(queue);
+      if (msg) return msg;
+      if (Date.now() > deadline) {
+        throw new Error(`очередь ${queue} пуста — событие не опубликовано за 5с`);
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
   }
 
   it('wait-событие резерва реально лежит в wait-очереди брокера', async () => {

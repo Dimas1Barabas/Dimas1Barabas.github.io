@@ -19,6 +19,7 @@ import {
   BonusTransaction,
 } from '../src/bonus/bonus-transaction.entity';
 import { Booking } from '../src/bookings/booking.entity';
+import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsController } from '../src/bookings/bookings.controller';
@@ -133,6 +134,8 @@ describe('Бонусы: HTTP-интеграция (фейковые зависи
   let bookingsRepo: FakeBookingRepo;
   /** опубликованные в RabbitMQ события */
   let published: { routingKey: string; payload: Record<string, unknown> }[];
+  /** outbox-записи create/pay (booking.payment.wait, booking.created) */
+  let outbox: { routingKey: string; payload: Record<string, unknown> }[];
   let bookingsService: BookingsService;
 
   /** Authorization: владелец брони и «чужак» */
@@ -193,6 +196,7 @@ describe('Бонусы: HTTP-интеграция (фейковые зависи
     ledgerRepo = new FakeLedgerRepo();
     bookingsRepo = new FakeBookingRepo();
     published = [];
+    outbox = [];
 
     const moviesRepo = {
       findOneByOrFail: jest.fn(async (_where: { id: string }) => ({
@@ -226,6 +230,17 @@ describe('Бонусы: HTTP-интеграция (фейковые зависи
       },
       create: (_entity: unknown, x: Partial<Booking>) => x,
       save: (_entity: unknown, x: Booking) => x,
+      // enqueueOutbox: событие create/pay пишется в outbox
+      getRepository: (entity: unknown) => {
+        if (entity !== OutboxMessage) {
+          throw new Error(`unexpected entity: ${String(entity)}`);
+        }
+        return {
+          insert: async (row: { routingKey: string; payload: Record<string, unknown> }) => {
+            outbox.push(row);
+          },
+        };
+      },
       insert: jest.fn(),
       update: (
         entity: unknown,
@@ -456,7 +471,7 @@ describe('Бонусы: HTTP-интеграция (фейковые зависи
         totalRub: 700,
         bonusSpent: 300,
       });
-      expect(published.at(-1)).toMatchObject({
+      expect(outbox.at(-1)).toMatchObject({
         routingKey: 'booking.created',
         payload: expect.objectContaining({ totalRub: 700 }),
       });

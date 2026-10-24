@@ -4,6 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { DataSource } from 'typeorm';
 import { Booking } from '../src/bookings/booking.entity';
+import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingsService } from '../src/bookings/bookings.service';
@@ -113,6 +114,13 @@ describe('Reminders (integration)', () => {
             ? Promise.resolve(futureSession)
             : Promise.resolve(movieFixture),
       save: (_entity: unknown, x: Booking) => bookingsRepo.save(x),
+      // enqueueOutbox: outbox-записи бизнес-событий (пока не ассертятся)
+      getRepository: (entity: unknown) => {
+        if (entity !== OutboxMessage) {
+          throw new Error(`unexpected entity: ${String(entity)}`);
+        }
+        return { insert: async () => undefined };
+      },
       query: jest.fn(async () => [[], 0]),
       createQueryBuilder: () => ({
         insert: () => ({

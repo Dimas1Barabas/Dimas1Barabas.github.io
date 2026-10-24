@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { Booking } from '../src/bookings/booking.entity';
+import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingsService } from '../src/bookings/bookings.service';
@@ -251,6 +252,13 @@ describe('WS живая карта мест: HTTP+socket-интеграция (�
         throw new Error('unexpected entity');
       },
       create: (_entity: unknown, x: Partial<Booking>) => x,
+      // enqueueOutbox: outbox-записи бизнес-событий (пока не ассертятся)
+      getRepository: (entity: unknown) => {
+        if (entity !== OutboxMessage) {
+          throw new Error(`unexpected entity: ${String(entity)}`);
+        }
+        return { insert: async () => undefined };
+      },
       save: (_entity: unknown, x: Booking) => bookingsRepo.save(x),
       insert: (
         entity: unknown,

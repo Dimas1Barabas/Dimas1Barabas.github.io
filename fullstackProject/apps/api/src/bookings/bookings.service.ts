@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { tracePublishOptions } from '../tracing/rabbit-trace';
+import { enqueueOutbox } from '../outbox/outbox';
 import {
   BONUS_BALANCE_SQL,
   BONUS_BOOKING_ROWS_SQL,
@@ -341,11 +342,19 @@ export class BookingsService {
           throw err;
         }
 
-        return {
-          booking: await em.save(Booking, toSave),
-          movie: found,
-          session: foundSession,
-        };
+        const saved = await em.save(Booking, toSave);
+
+        // таймер резерва — в outbox той же транзакцией: краш между COMMIT
+        // и publish больше не теряет TTL-очередь (доставит Курьер)
+        await enqueueOutbox(em, 'booking.payment.wait', {
+          bookingId: saved.id,
+          sessionId: saved.sessionId,
+          seatsCount: saved.seats.length,
+          totalRub: saved.totalRub,
+          expiresAt: saved.expiresAt!.toISOString(),
+        });
+
+        return { booking: saved, movie: found, session: foundSession };
       });
       booking = result.booking;
       movie = result.movie;
@@ -377,7 +386,6 @@ export class BookingsService {
     // транзакция закоммитилась — места заняты: сигнал живой карте
     // (внутри замыкания транзакции нельзя: гейтвей раздал бы докоммитное)
     this.seatStream.emit({ sessionId: booking.sessionId });
-    this.rabbit.publish('cinema', 'booking.payment.wait', waitEvent, tracePublishOptions());
     this.logger.log(
       `Бронь ${booking.id} (${movie.title}, ${session.hall} ${session.startsAt.toISOString()}, места ${booking.seats.join(', ')}, ${quote.priceRub} ₽/место ${quote.dynamic ? '(тарификатор)' : '(базовая — тарификатор недоступен)'}) ждёт оплаты до ${waitEvent.expiresAt}`,
     );
@@ -503,6 +511,22 @@ export class BookingsService {
           );
           spent = useBonuses;
         }
+        // воркеру — событие с уже финальной суммой; в outbox той же
+        // транзакцией: оплата и событие о ней либо оба прошли, либо
+        // оба нет (доставит Курьер)
+        const paid: Booking = {
+          ...booking,
+          status: 'PENDING',
+          totalRub: booking.totalRub - (applied?.discountRub ?? 0) - spent,
+          promoCode: applied?.code ?? booking.promoCode,
+          discountRub: applied?.discountRub ?? booking.discountRub,
+          bonusSpent: spent > 0 ? spent : booking.bonusSpent,
+        };
+        await enqueueOutbox(
+          em,
+          'booking.created',
+          this.createdEventOf(paid, movie, session),
+        );
         return { applied, spent };
       });
       applied = result.applied;
@@ -526,12 +550,6 @@ export class BookingsService {
     }
     if (spent > 0) booking.bonusSpent = spent;
     booking.totalRub -= (applied?.discountRub ?? 0) + spent;
-    this.rabbit.publish(
-      'cinema',
-      'booking.created',
-      this.createdEventOf(booking, movie, session),
-      tracePublishOptions(),
-    );
     this.logger.log(
       `Оплата брони ${booking.id} (${booking.totalRub} ₽${applied ? `, промокод ${applied.code} −${applied.discountRub} ₽` : ''}${spent ? `, бонусы −${spent}` : ''}) → в очередь`,
     );
