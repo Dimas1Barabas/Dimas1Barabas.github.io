@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { OutboxModule } from '../outbox/outbox.module';
 import { rabbitMqModule } from '../rabbit/rabbitmq.config';
 import { RatelimiterModule } from '../ratelimiter/ratelimiter.module';
 import { TokensModule } from '../tokens/tokens.module';
@@ -21,6 +22,8 @@ import { PasswordReset } from './password-reset.entity';
     rabbitMqModule,
     // RatelimiterModule — гвард лимитов на login() (брутфорс по email)
     RatelimiterModule,
+    // OutboxModule — будильник Курьера после коммита «письма» сброса
+    OutboxModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

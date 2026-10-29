@@ -9,6 +9,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { DataSource, IsNull, LessThan, Repository } from 'typeorm';
 import { enqueueOutbox } from '../outbox/outbox';
+import { OutboxRelayClient } from '../outbox/outbox-relay.client';
 import { SessionPair, TokensService } from '../tokens/tokens.service';
 import { toUserDto, UserDto } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
@@ -41,6 +42,8 @@ export class AuthService {
     @InjectRepository(PasswordReset)
     private readonly resets: Repository<PasswordReset>,
     private readonly dataSource: DataSource,
+    // будильник Курьера: «письмо» закоммичено — доставка без poll-тика
+    private readonly outboxRelay: OutboxRelayClient,
   ) {}
 
   /** вход: сверяем bcrypt-хэш, выдаём пару (refresh уедет в httpOnly-cookie) */
@@ -107,6 +110,8 @@ export class AuthService {
         message: `${resetLinkBase()}?token=${token}`,
       });
     });
+    // «письмо» закоммичено — будим Курьера
+    this.outboxRelay.poke();
   }
 
   /**

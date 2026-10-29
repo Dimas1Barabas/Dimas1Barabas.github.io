@@ -22,6 +22,7 @@ import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { OutboxMessage } from '../src/outbox/outbox-message.entity';
+import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { RefreshToken } from '../src/tokens/refresh-token.entity';
 import { TokensService } from '../src/tokens/tokens.service';
 import { PasswordReset } from '../src/auth/password-reset.entity';
@@ -237,6 +238,7 @@ describe('POST /api/auth/* (integration)', () => {
         { provide: getRepositoryToken(User), useValue: repo },
         { provide: getRepositoryToken(RefreshToken), useValue: tokenRepo },
         { provide: getRepositoryToken(PasswordReset), useValue: resetRepo },
+        { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
         {
           // forgotPassword: строка reset и «письмо» — одной транзакцией;
           // письмо пишется в outbox (доставит Курьер)

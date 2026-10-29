@@ -71,6 +71,9 @@ services:
       # Привратник: gRPC-адрес лимитов (недоступность — fail-open,
       # запрос проходит без проверки)
       GRPC_RATELIMITER_URL: ratelimiter:8090
+      # Курьер: будильник «закоммитил outbox-записи» после COMMIT
+      # (недоступность безвредна — доставит poll-тик)
+      GRPC_OUTBOX_URL: outbox-relay:8093
       # Аналитик: HTTP-адрес витрины «Поведение» (недоступность —
       # available:false на /analytics/insights, инжест не страдает)
       ANALYTICS_URL: http://analytics:8092

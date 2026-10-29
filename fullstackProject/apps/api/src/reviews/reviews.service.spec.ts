@@ -9,6 +9,7 @@ import { DataSource } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { Booking } from '../bookings/booking.entity';
 import { OutboxMessage } from '../outbox/outbox-message.entity';
+import { OutboxRelayClient } from '../outbox/outbox-relay.client';
 import { Movie } from '../movies/movie.entity';
 import { MOVIES_KEY, movieKey } from '../movies/movies.service';
 import { RedisService } from '../redis/redis.service';
@@ -124,6 +125,7 @@ describe('ReviewsService (unit)', () => {
         { provide: getRepositoryToken(Review), useValue: reviewsRepo },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
+        { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
       ],
     }).compile();
 

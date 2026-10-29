@@ -138,6 +138,7 @@ describe('AuthService', () => {
       tokens as unknown as TokensService,
       resets as never,
       { transaction: (cb: (e: typeof em) => unknown) => cb(em) } as never,
+      { poke: jest.fn() } as never,
     );
   });
 

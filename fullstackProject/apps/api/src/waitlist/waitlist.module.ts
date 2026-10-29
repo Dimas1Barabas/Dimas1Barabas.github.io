@@ -5,6 +5,7 @@ import { SeatOccupancy } from '../bookings/seat-occupancy.entity';
 import { Movie } from '../movies/movie.entity';
 import { Session } from '../movies/session.entity';
 import { User } from '../users/user.entity';
+import { OutboxModule } from '../outbox/outbox.module';
 import { rabbitMqModule } from '../rabbit/rabbitmq.config';
 import { WaitlistEntry } from './waitlist.entity';
 import { WaitlistConsumer } from './waitlist.consumer';
@@ -20,6 +21,8 @@ import { WaitlistService } from './waitlist.service';
     BookingsModule,
     TypeOrmModule.forFeature([WaitlistEntry, Session, SeatOccupancy, Movie, User]),
     rabbitMqModule,
+    // OutboxModule — будильник Курьера после коммита письма «место есть»
+    OutboxModule,
   ],
   controllers: [WaitlistController],
   providers: [WaitlistService, WaitlistConsumer],

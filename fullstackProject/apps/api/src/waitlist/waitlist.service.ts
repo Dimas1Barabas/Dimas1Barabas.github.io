@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { enqueueOutbox } from '../outbox/outbox';
+import { OutboxRelayClient } from '../outbox/outbox-relay.client';
 import { BookingStream } from '../bookings/booking-stream';
 import { HALL_CAPACITY } from '../bookings/hall';
 import { SeatOccupancy } from '../bookings/seat-occupancy.entity';
@@ -50,6 +51,8 @@ export class WaitlistService {
     private readonly users: Repository<User>,
     private readonly dataSource: DataSource,
     private readonly stream: BookingStream,
+    // будильник Курьера: письмо «место есть» закоммичено — без тика
+    private readonly outboxRelay: OutboxRelayClient,
   ) {}
 
   /**
@@ -219,6 +222,9 @@ export class WaitlistService {
       );
       return;
     }
+
+    // письмо закоммичено — будим Курьера
+    this.outboxRelay.poke();
 
     // in-app: тот же SSE-эндпоинт, после коммита — клиент матчит
     // payload.userId по себе

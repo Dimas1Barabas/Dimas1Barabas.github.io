@@ -38,6 +38,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Booking } from '../src/bookings/booking.entity';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { OutboxMessage } from '../src/outbox/outbox-message.entity';
+import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { Promo } from '../src/promos/promo.entity';
 import { PricingClient } from '../src/pricing/pricing.client';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
@@ -458,6 +459,8 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
       { provide: getRepositoryToken(User), useValue: { findOneByOrFail: jest.fn() } },
       { provide: RemindersClient, useValue: remindersFake() },
       { provide: PricingClient, useValue: pricingFake() },
+      // будильник Курьера — мок: poke() в int-тестах неинтересен
+      { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
       { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
       { provide: AmqpConnection, useValue: { publish: rabbitPublish, connected: true } },
       {

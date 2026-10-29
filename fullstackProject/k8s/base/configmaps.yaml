@@ -30,6 +30,9 @@ data:
   GRPC_REMINDER_URL: reminder:8086
   GRPC_PRICING_URL: pricing:8088
   GRPC_RATELIMITER_URL: ratelimiter:8090
+  # Курьер: будильник после COMMIT outbox-записей (потеря RPC безвредна —
+  # тикер заберёт записи по расписанию)
+  GRPC_OUTBOX_URL: outbox-relay:8093
   # база одноразовой ссылки сброса пароля; overlay подменяет на
   # адрес, видимый браузером снаружи кластера
   RESET_LINK_BASE: http://localhost:18080/#/reset-password

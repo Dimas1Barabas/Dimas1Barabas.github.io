@@ -17,6 +17,7 @@ import { RemindersClient } from '../reminders/reminders.client';
 import { User } from '../users/user.entity';
 import { WaitlistEntry } from '../waitlist/waitlist.entity';
 import { Session } from '../movies/session.entity';
+import { OutboxRelayClient } from '../outbox/outbox-relay.client';
 import { Booking } from './booking.entity';
 import { BookingStream } from './booking-stream';
 import { BookingsService } from './bookings.service';
@@ -106,6 +107,8 @@ export interface BookingsHarness {
   pricing: { quote: jest.Mock };
   /** что enqueueOutbox записал в outbox внутри транзакций */
   outboxInsert: jest.Mock;
+  /** будильник Курьера: poke() после каждого коммита с outbox-записью */
+  outboxPoke: jest.Mock;
   /** SSE-шина: спаем, что после мутаций ушли события */
   stream: { emit: jest.Mock };
   /** шина живой карты мест: сигнал на каждое изменение занятости */
@@ -184,6 +187,8 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
   // outbox-записи бизнес-событий (booking.payment.wait, booking.created):
   // enqueueOutbox идёт через em.getRepository(OutboxMessage).insert
   const outboxInsert = jest.fn(async () => undefined);
+  // будильник Курьера (fire-and-forget): мок — молча съедает poke
+  const outboxPoke = jest.fn();
   const stream: BookingsHarness['stream'] = { emit: jest.fn() };
   const seatStream: BookingsHarness['seatStream'] = { emit: jest.fn() };
   const emInsert = jest.fn(async () => undefined);
@@ -298,6 +303,7 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
       { provide: getRepositoryToken(User), useValue: usersRepo },
       { provide: RemindersClient, useValue: reminders },
       { provide: PricingClient, useValue: pricing },
+      { provide: OutboxRelayClient, useValue: { poke: outboxPoke } },
       { provide: BookingStream, useValue: stream },
       { provide: SeatStream, useValue: seatStream },
     ],
@@ -315,6 +321,7 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
     reminders,
     pricing,
     outboxInsert,
+    outboxPoke,
     stream,
     seatStream,
     emInsert,

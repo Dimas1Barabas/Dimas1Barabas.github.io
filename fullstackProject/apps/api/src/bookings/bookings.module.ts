@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BonusTransaction } from '../bonus/bonus-transaction.entity';
 import { Movie } from '../movies/movie.entity';
+import { OutboxModule } from '../outbox/outbox.module';
 import { Promo } from '../promos/promo.entity';
 import { Session } from '../movies/session.entity';
 import { PricingClient } from '../pricing/pricing.client';
@@ -41,6 +42,8 @@ import { SeatStream } from './seat-stream';
     ]),
     // RatelimiterModule — гвард лимитов на create() (клиент gRPC общий)
     RatelimiterModule,
+    // OutboxModule — будильник Курьера после коммита outbox-записей
+    OutboxModule,
     rabbitMqModule,
   ],
   controllers: [BookingsController, SeatsController, SessionPriceController],

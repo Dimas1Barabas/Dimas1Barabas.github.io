@@ -5,6 +5,7 @@ import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { DataSource } from 'typeorm';
 import { Booking } from '../src/bookings/booking.entity';
 import { OutboxMessage } from '../src/outbox/outbox-message.entity';
+import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingsService } from '../src/bookings/bookings.service';
@@ -158,6 +159,7 @@ describe('Reminders (integration)', () => {
         SeatStream,
         RemindersConsumer,
         { provide: RemindersClient, useValue: reminders },
+      { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
         // Тарификатор: базовая цена без факторов (ценовые кейсы — в pricing.int)
         { provide: PricingClient, useValue: { quote: jest.fn(async (input: { basePriceRub: number }) => ({ priceRub: input.basePriceRub, basePriceRub: input.basePriceRub, factors: [], occupied: 0, capacity: 80 })) } },
         { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },

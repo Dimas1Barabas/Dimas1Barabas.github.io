@@ -13,6 +13,7 @@ import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { Booking } from '../src/bookings/booking.entity';
 import { OutboxMessage } from '../src/outbox/outbox-message.entity';
+import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsController } from '../src/bookings/bookings.controller';
@@ -273,6 +274,7 @@ describe('Промокоды: HTTP-интеграция (фейковые зав
         // Тарификатор: базовая цена без факторов (ценовые кейсы — в pricing.int)
         { provide: PricingClient, useValue: { quote: jest.fn(async (input: { basePriceRub: number }) => ({ priceRub: input.basePriceRub, basePriceRub: input.basePriceRub, factors: [], occupied: 0, capacity: 80 })) } },
         { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
+        { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Session), useValue: sessionsRepo },

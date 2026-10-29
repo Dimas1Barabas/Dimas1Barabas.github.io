@@ -14,6 +14,7 @@ import { BookingStream } from '../src/bookings/booking-stream';
 import { HALL_CAPACITY } from '../src/bookings/hall';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { OutboxMessage } from '../src/outbox/outbox-message.entity';
+import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { Movie, MovieDto } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { User } from '../src/users/user.entity';
@@ -245,6 +246,7 @@ describe('Лист ожидания: HTTP-интеграция (фейковые
           },
         },
         { provide: BookingStream, useValue: { emitWaitlist } },
+        { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
         { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },
         JwtStrategy,
         { provide: APP_GUARD, useClass: JwtAuthGuard },

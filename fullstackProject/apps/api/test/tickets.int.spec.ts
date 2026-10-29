@@ -25,6 +25,7 @@ import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Promo } from '../src/promos/promo.entity';
 import { PricingClient } from '../src/pricing/pricing.client';
+import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
 import { User } from '../src/users/user.entity';
@@ -153,6 +154,7 @@ describe('QR-билеты: HTTP-интеграция (фейковые зави�
         // Тарификатор: базовая цена без факторов (ценовые кейсы — в pricing.int)
         { provide: PricingClient, useValue: { quote: jest.fn(async (input: { basePriceRub: number }) => ({ priceRub: input.basePriceRub, basePriceRub: input.basePriceRub, factors: [], occupied: 0, capacity: 80 })) } },
         { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
+        { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
         { provide: AmqpConnection, useValue: { connected: true, publish: jest.fn() } },
         { provide: DataSource, useValue: { query: jest.fn(async () => [[], 0]) } },
         { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },

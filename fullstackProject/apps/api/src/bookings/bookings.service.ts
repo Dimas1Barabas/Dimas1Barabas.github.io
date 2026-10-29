@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { enqueueOutbox } from '../outbox/outbox';
+import { OutboxRelayClient } from '../outbox/outbox-relay.client';
 import {
   BONUS_BALANCE_SQL,
   BONUS_BOOKING_ROWS_SQL,
@@ -157,6 +158,8 @@ export class BookingsService {
     private readonly seatStream: SeatStream,
     private readonly reminders: RemindersClient,
     private readonly pricing: PricingClient,
+    // будильник Курьера: записи закоммичены — доставка без poll-типа
+    private readonly outboxRelay: OutboxRelayClient,
   ) {}
 
   /**
@@ -372,6 +375,9 @@ export class BookingsService {
       throw err;
     }
 
+    // коммит с outbox-записью прошёл — будим Курьера, не дожидаясь тика
+    this.outboxRelay.poke();
+
     const waitEvent: BookingPaymentWaitEvent = {
       bookingId: booking.id,
       sessionId: booking.sessionId,
@@ -546,6 +552,8 @@ export class BookingsService {
     }
     if (spent > 0) booking.bonusSpent = spent;
     booking.totalRub -= (applied?.discountRub ?? 0) + spent;
+    // событие оплаты закоммичено в outbox — будим Курьера
+    this.outboxRelay.poke();
     this.logger.log(
       `Оплата брони ${booking.id} (${booking.totalRub} ₽${applied ? `, промокод ${applied.code} −${applied.discountRub} ₽` : ''}${spent ? `, бонусы −${spent}` : ''}) → в очередь`,
     );
@@ -731,7 +739,8 @@ export class BookingsService {
     });
     if (!cancelled) return null;
 
-    // коммит прошёл — гейтвей живой карты перечитает пост-состояние
+    // отмена закоммичена — будим Курьера, затем гейтвей живой карты
+    this.outboxRelay.poke();
     this.seatStream.emit({ sessionId: booking.sessionId });
     this.logger.log(`Отмена неоплаченной брони ${booking.id} (${movie.title})`);
     booking.status = 'CANCELLED';
@@ -795,6 +804,8 @@ export class BookingsService {
       });
     }
 
+    // сага закоммичена — будим Курьера
+    this.outboxRelay.poke();
     this.logger.log(
       `Отмена брони ${booking.id} (${movie.title}, возврат ${booking.totalRub} ₽) → в очередь`,
     );
@@ -918,6 +929,8 @@ export class BookingsService {
     });
     if (!applied) return;
 
+    // вердикт и его события закоммичены — будим Курьера
+    this.outboxRelay.poke();
     if (event.status === 'FAILED') {
       // коммит прошёл — гейтвей живой карты перечитает пост-состояние
       this.seatStream.emit({ sessionId: applied.sessionId });
@@ -974,7 +987,8 @@ export class BookingsService {
       );
       return;
     }
-    // коммит прошёл — гейтвей живой карты перечитает пост-состояние
+    // истечение и событие закоммичены — будим Курьера, затем гейтвей
+    this.outboxRelay.poke();
     this.seatStream.emit({ sessionId: applied.sessionId });
     this.logger.log(`Бронь ${event.bookingId} → EXPIRED (${event.processedBy})`);
     const { movie, session } = await this.contextOf(applied);
@@ -1013,6 +1027,8 @@ export class BookingsService {
     });
     if (!updated) return;
 
+    // вердикт возврата и его события закоммичены — будим Курьера
+    this.outboxRelay.poke();
     if (updated.status === 'CANCELLED') {
       // коммит прошёл — гейтвей живой карты перечитает пост-состояние;
       // билеты вернулись — напоминание гасим. REFUND_FAILED-откат сюда

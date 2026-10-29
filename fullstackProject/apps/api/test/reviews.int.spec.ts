@@ -11,6 +11,7 @@ import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { Booking } from '../src/bookings/booking.entity';
 import { OutboxMessage } from '../src/outbox/outbox-message.entity';
+import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { Movie } from '../src/movies/movie.entity';
 import { MoviesController } from '../src/movies/movies.controller';
 import { MoviesService } from '../src/movies/movies.service';
@@ -212,6 +213,7 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
         ReviewsService,
         RedisService,
         { provide: REDIS_CLIENT, useValue: redisFake(redisStore) },
+        { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         { provide: getRepositoryToken(Review), useValue: fakeReviewRepo },

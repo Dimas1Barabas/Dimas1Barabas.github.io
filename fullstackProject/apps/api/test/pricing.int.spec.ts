@@ -5,6 +5,7 @@ import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { DataSource } from 'typeorm';
 import { Booking } from '../src/bookings/booking.entity';
 import { OutboxMessage } from '../src/outbox/outbox-message.entity';
+import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingsService } from '../src/bookings/bookings.service';
@@ -127,6 +128,7 @@ describe('Pricing (integration)', () => {
         { provide: PricingClient, useValue: pricing },
         { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
         { provide: RemindersClient, useValue: { schedule: jest.fn(), cancel: jest.fn() } },
+        { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         { provide: getRepositoryToken(Movie), useValue: { findOneByOrFail: jest.fn(async () => movieFixture) } },
         { provide: getRepositoryToken(Session), useValue: { findOneByOrFail: jest.fn(async () => futureSession) } },

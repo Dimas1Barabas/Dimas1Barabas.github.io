@@ -9,6 +9,7 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { Booking } from '../bookings/booking.entity';
 import { enqueueOutbox } from '../outbox/outbox';
+import { OutboxRelayClient } from '../outbox/outbox-relay.client';
 import { Movie } from '../movies/movie.entity';
 import { MOVIES_KEY, movieKey } from '../movies/movies.service';
 import {
@@ -41,6 +42,8 @@ export class ReviewsService {
     @InjectRepository(Booking)
     private readonly bookings: Repository<Booking>,
     private readonly redis: RedisService,
+    // будильник Курьера: сигнал отзыва закоммичен — доставка без тика
+    private readonly outboxRelay: OutboxRelayClient,
   ) {}
 
   /** отзывы фильма, свежие сверху; автор нужен для имени в DTO */
@@ -120,6 +123,8 @@ export class ReviewsService {
     });
 
     await this.invalidate(movieId);
+    // отзыв и сигнал КиноСоветнику закоммичены — будим Курьера
+    this.outboxRelay.poke();
 
     this.logger.log(
       `Отзыв ${review.id} на фильм ${movieId} от ${user.email}: ${dto.rating}/5`,
