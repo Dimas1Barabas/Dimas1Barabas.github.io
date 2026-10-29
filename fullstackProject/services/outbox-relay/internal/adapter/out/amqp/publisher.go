@@ -82,12 +82,15 @@ func (p *Publisher) Run(ctx context.Context) error {
 // по нему. Трейс: родитель PRODUCER-спана — traceparent исходной операции
 // из заголовков записи; консьюмерам уезжает свежий traceparent доставки.
 func (p *Publisher) Publish(ctx context.Context, m domain.Message) error {
-	ctx, span := tracing.StartProducer(tracing.ExtractParent(m.Headers), m.RoutingKey)
+	// трейс-контекст и контекст отмены — разные роли: родитель спана —
+	// traceparent исходной операции из заголовков записи, а прерывание
+	// сети при остановке — по входному ctx тикера
+	publishCtx, span := tracing.StartProducer(tracing.ExtractParent(m.Headers), m.RoutingKey)
 	defer span.End()
 
 	// свежая таблица доставки; сохранённые заголовки дозаполняют её,
 	// не затирая traceparent доставки
-	headers := tracing.InjectHeaders(ctx)
+	headers := tracing.InjectHeaders(publishCtx)
 	for k, v := range m.Headers {
 		if _, exists := headers[k]; !exists {
 			headers[k] = v
