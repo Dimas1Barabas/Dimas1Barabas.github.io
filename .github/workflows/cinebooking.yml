@@ -262,7 +262,27 @@ jobs:
       # прогоны и так должны быть свежими
       # -v: в CI логируем подробно — видны причины скипов live-тестов
       # (t.Skipf молчит без verbose) и ход testcontainers-прогона
-      - run: go test -race -count=1 -v -coverprofile=cover.out ./...
+      # вывод дублируем в файл: при падении упавшие тесты уходят
+      # error-аннотацией (публично видна) — логи шага анонимному API
+      # не отдаются (тот же приём, что у e2e/k8s-e2e)
+      - name: go test -race -count=1 -v
+        run: |
+          set -o pipefail
+          status=0
+          go test -race -count=1 -v -coverprofile=cover.out ./... 2>&1 | tee /tmp/gotest.log || status=$?
+          if [ "$status" -ne 0 ]; then
+            msg="$(
+              echo 'УПАВШИЕ ТЕСТЫ:'
+              grep -E '^(--- FAIL|FAIL|panic:|WARNING: DATA RACE)' /tmp/gotest.log | sort -u | head -15 || true
+              echo '--- ДЕТАЛИ ПАДЕНИЙ ---'
+              grep -B2 -A 12 -E '^(--- FAIL|panic:|WARNING: DATA RACE)' /tmp/gotest.log | head -80 || true
+              echo '--- ХВОСТ ЛОГА ---'
+              tail -15 /tmp/gotest.log
+            )"
+            encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' | head -c 4000)
+            echo "::error::title=go test (${{ matrix.name }})::$encoded"
+            exit "$status"
+          fi
 
       # порог в matrix.threshold: ниже — красный шаг, расти можно
       - name: coverage threshold
