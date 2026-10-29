@@ -5,7 +5,6 @@ import {
   Req,
   ValidationPipe,
 } from '@nestjs/common';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { APP_GUARD } from '@nestjs/core';
@@ -14,7 +13,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
 import cookieParser from 'cookie-parser';
 import { randomUUID } from 'node:crypto';
-import { FindOperator } from 'typeorm';
+import { DataSource, FindOperator } from 'typeorm';
 import { AuthController } from '../src/auth/auth.controller';
 import { AuthUser } from '../src/auth/auth-user';
 import { AuthService } from '../src/auth/auth.service';
@@ -22,6 +21,7 @@ import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
+import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { RefreshToken } from '../src/tokens/refresh-token.entity';
 import { TokensService } from '../src/tokens/tokens.service';
 import { PasswordReset } from '../src/auth/password-reset.entity';
@@ -189,7 +189,8 @@ describe('POST /api/auth/* (integration)', () => {
   let repo: FakeUserRepo;
   let tokenRepo: FakeTokenRepo;
   let resetRepo: FakeResetRepo;
-  let rabbit: { publish: jest.Mock };
+  /** «письма» user.password.reset из outbox-записей транзакции forgot */
+  let outboxLetters: { routingKey: string; payload: { email: string; message: string } }[];
   let jwt: JwtService;
 
   /** из Set-Cookie в Cookie-заголовок для следующего запроса */
@@ -198,19 +199,18 @@ describe('POST /api/auth/* (integration)', () => {
       .map((c) => c.split(';')[0])
       .join('; ');
 
-  /** «письма», ушедшие указанному адресату (тихо фильтруем моки прошлых тестов) */
-  const publishedFor = (
-    email: string,
-  ): { email: string; message: string }[] =>
-    rabbit.publish.mock.calls
-      .map(([, , payload]: [string, string, { email: string; message: string }]) => payload)
+  /** «письма», записанные указанному адресату (фильтруем записи прошлых тестов) */
+  const publishedFor = (email: string): { email: string; message: string }[] =>
+    outboxLetters
+      .filter((l) => l.routingKey === 'user.password.reset')
+      .map((l) => l.payload)
       .filter((p) => p.email === email);
 
   beforeAll(async () => {
     repo = new FakeUserRepo();
     tokenRepo = new FakeTokenRepo();
     resetRepo = new FakeResetRepo();
-    rabbit = { publish: jest.fn() };
+    outboxLetters = [];
 
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -237,7 +237,36 @@ describe('POST /api/auth/* (integration)', () => {
         { provide: getRepositoryToken(User), useValue: repo },
         { provide: getRepositoryToken(RefreshToken), useValue: tokenRepo },
         { provide: getRepositoryToken(PasswordReset), useValue: resetRepo },
-        { provide: AmqpConnection, useValue: rabbit },
+        {
+          // forgotPassword: строка reset и «письмо» — одной транзакцией;
+          // письмо пишется в outbox (доставит Курьер)
+          provide: DataSource,
+          useValue: {
+            transaction: (cb: (e: unknown) => unknown) =>
+              cb({
+                create: (_e: unknown, p: Partial<PasswordReset>) =>
+                  resetRepo.create(p),
+                // TypeORM допускает save(entity) и save(Target, entity)
+                save: (entityOrRow: unknown, maybeRow?: unknown) =>
+                  resetRepo.save(
+                    (maybeRow ?? entityOrRow) as PasswordReset,
+                  ),
+                getRepository: (entity: unknown) => {
+                  if (entity !== OutboxMessage) {
+                    throw new Error(`unexpected entity: ${String(entity)}`);
+                  }
+                  return {
+                    insert: async (row: {
+                      routingKey: string;
+                      payload: { email: string; message: string };
+                    }) => {
+                      outboxLetters.push(row);
+                    },
+                  };
+                },
+              }),
+          },
+        },
       ],
     }).compile();
 
@@ -469,7 +498,7 @@ describe('POST /api/auth/* (integration)', () => {
   });
 
   describe('POST /api/auth/forgot-password', () => {
-    it('200 для существующего email: «письмо» со ссылкой опубликовано в обмен', async () => {
+    it('200 для существующего email: «письмо» со ссылкой записано в outbox', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/auth/forgot-password')
         .send({ email: 'alice@example.com' });

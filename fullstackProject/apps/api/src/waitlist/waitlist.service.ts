@@ -1,9 +1,8 @@
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
-import { tracePublishOptions } from '../tracing/rabbit-trace';
+import { enqueueOutbox } from '../outbox/outbox';
 import { BookingStream } from '../bookings/booking-stream';
 import { HALL_CAPACITY } from '../bookings/hall';
 import { SeatOccupancy } from '../bookings/seat-occupancy.entity';
@@ -49,7 +48,7 @@ export class WaitlistService {
     private readonly movies: Repository<Movie>,
     @InjectRepository(User)
     private readonly users: Repository<User>,
-    private readonly rabbit: AmqpConnection,
+    private readonly dataSource: DataSource,
     private readonly stream: BookingStream,
   ) {}
 
@@ -167,10 +166,12 @@ export class WaitlistService {
   /**
    * Callback события waitlist.seat.released: места вернулись в продажу —
    * сообщаем голове очереди. Честная гонка: место НЕ резервируется,
-   * уведомление — только «успей проверить». Условный UPDATE в NOTIFIED
-   * закрывает гонку двух событий по одной голове (affected = 0 → пропуск).
-   * Ределивери после краша уведомит следующего — безопасно: уведомление
-   * не резерв, лишний претендент в честной гонке хуже не делает.
+   * уведомление — только «успей проверить». Условный UPDATE в NOTIFIED и
+   * письмо — одной транзакцией (краш между ними не теряет письмо — доставит
+   * Курьер); UPDATE закрывает гонку двух событий по одной голове
+   * (affected = 0 → пропуск). Ределивери после краша уведомит следующего —
+   * безопасно: уведомление не резерв, лишний претендент в честной гонке
+   * хуже не делает.
    */
   async handleSeatReleased(event: WaitlistSeatReleasedEvent): Promise<void> {
     const rows = await this.entries.find({ where: { sessionId: event.sessionId } });
@@ -182,39 +183,45 @@ export class WaitlistService {
       return;
     }
 
+    const session = await this.sessions.findOneByOrFail({ id: event.sessionId });
+    const movie = await this.movies.findOneByOrFail({ id: session.movieId });
+    const user = await this.users.findOneByOrFail({ id: head.userId });
+
     const notifiedAt = new Date();
-    const switched = await this.entries.update(
-      { id: head.id, status: 'WAITING' },
-      { status: 'NOTIFIED', notifiedAt },
-    );
-    if (!switched.affected) {
+    const switched = await this.dataSource.transaction(async (em) => {
+      const res = await em.update(
+        WaitlistEntry,
+        { id: head.id, status: 'WAITING' },
+        { status: 'NOTIFIED', notifiedAt },
+      );
+      if (!res.affected) return false;
+      // письмо через notification-service — 5-й поток, по образцу
+      // user.password.reset; в outbox той же транзакции
+      const letter: UserWaitlistSeatEvent = {
+        email: user.email,
+        userId: user.id,
+        sessionId: session.id,
+        movieId: movie.id,
+        movieTitle: movie.title,
+        hall: session.hall,
+        sessionAt: session.startsAt.toISOString(),
+        message:
+          `Место освободилось на сеансе «${movie.title}» ` +
+          `(${session.hall}, ${session.startsAt.toLocaleString('ru-RU')}) — ` +
+          `успей забронировать: ${webLinkBase()}?movie=${movie.id}`,
+      };
+      await enqueueOutbox(em, 'user.waitlist.seat', letter);
+      return true;
+    });
+    if (!switched) {
       this.logger.warn(
         `Голова очереди ${head.id} уже не WAITING — уведомление пропущено`,
       );
       return;
     }
 
-    const session = await this.sessions.findOneByOrFail({ id: event.sessionId });
-    const movie = await this.movies.findOneByOrFail({ id: session.movieId });
-    const user = await this.users.findOneByOrFail({ id: head.userId });
-
-    // письмо через notification-service — 5-й поток, по образцу user.password.reset
-    const letter: UserWaitlistSeatEvent = {
-      email: user.email,
-      userId: user.id,
-      sessionId: session.id,
-      movieId: movie.id,
-      movieTitle: movie.title,
-      hall: session.hall,
-      sessionAt: session.startsAt.toISOString(),
-      message:
-        `Место освободилось на сеансе «${movie.title}» ` +
-        `(${session.hall}, ${session.startsAt.toLocaleString('ru-RU')}) — ` +
-        `успей забронировать: ${webLinkBase()}?movie=${movie.id}`,
-    };
-    this.rabbit.publish('cinema', 'user.waitlist.seat', letter, tracePublishOptions());
-
-    // in-app: тот же SSE-эндпоинт, клиент матчит payload.userId по себе
+    // in-app: тот же SSE-эндпоинт, после коммита — клиент матчит
+    // payload.userId по себе
     const payload: WaitlistStreamPayload = {
       userId: user.id,
       sessionId: session.id,

@@ -5,6 +5,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { FindOperator } from 'typeorm';
+import { OutboxMessage } from '../outbox/outbox-message.entity';
 import { TokensService } from '../tokens/tokens.service';
 import { User, toUserDto } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
@@ -77,7 +78,8 @@ describe('AuthService', () => {
     revokeAllForUser: jest.Mock;
   };
   let resets: FakeResetRepo;
-  let rabbit: { publish: jest.Mock };
+  /** outbox-записи бизнес-событий (user.password.reset) */
+  let outbox: { routingKey: string; payload: Record<string, unknown> }[];
   let setPassword: jest.Mock;
 
   beforeAll(async () => {
@@ -113,12 +115,29 @@ describe('AuthService', () => {
       revokeAllForUser: jest.fn(),
     };
     resets = new FakeResetRepo();
-    rabbit = { publish: jest.fn() };
+    outbox = [];
+    // «транзакция» забытого пароля: строка reset + письмо в outbox — вместе
+    const em = {
+      create: (_e: unknown, p: Partial<PasswordReset>) => resets.create(p),
+      // TypeORM допускает save(entity) и save(Target, entity)
+      save: (entityOrRow: unknown, maybeRow?: unknown) =>
+        resets.save((maybeRow ?? entityOrRow) as PasswordReset),
+      getRepository: (entity: unknown) => {
+        if (entity !== OutboxMessage) {
+          throw new Error(`unexpected entity: ${String(entity)}`);
+        }
+        return {
+          insert: async (row: { routingKey: string; payload: Record<string, unknown> }) => {
+            outbox.push(row);
+          },
+        };
+      },
+    };
     service = new AuthService(
       fakeUsers as unknown as UsersService,
       tokens as unknown as TokensService,
       resets as never,
-      rabbit as never,
+      { transaction: (cb: (e: typeof em) => unknown) => cb(em) } as never,
     );
   });
 
@@ -185,20 +204,13 @@ describe('AuthService', () => {
   });
 
   describe('forgotPassword', () => {
-    it('существующий email: «письмо» со ссылкой в обмен, в БД — хэш токена', async () => {
+    it('существующий email: «письмо» со ссылкой в outbox, в БД — хэш токена', async () => {
       await service.forgotPassword(user.email);
 
-      expect(rabbit.publish).toHaveBeenCalledWith(
-        'cinema',
-        'user.password.reset',
-        expect.objectContaining({ email: user.email }),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
-      const [, , payload] = rabbit.publish.mock.calls[0] as [
-        string,
-        string,
-        { email: string; message: string },
-      ];
+      expect(outbox).toHaveLength(1);
+      expect(outbox[0].routingKey).toBe('user.password.reset');
+      expect(outbox[0].payload).toMatchObject({ email: user.email });
+      const payload = outbox[0].payload as { email: string; message: string };
       expect(payload.message).toMatch(/\?token=/);
 
       const token = payload.message.split('token=')[1];
@@ -206,25 +218,22 @@ describe('AuthService', () => {
       expect(resets.rows[0].tokenHash).not.toBe(token); // только sha256
     });
 
-    it('неизвестный email: тишина — ни публикации, ни строки', async () => {
+    it('неизвестный email: тишина — ни outbox-записи, ни строки', async () => {
       await expect(
         service.forgotPassword('ghost@example.com'),
       ).resolves.toBeUndefined();
 
-      expect(rabbit.publish).not.toHaveBeenCalled();
+      expect(outbox).toHaveLength(0);
       expect(resets.rows).toHaveLength(0);
     });
   });
 
   describe('resetPassword', () => {
-    /** токен из «письма» последнего forgot */
+    /** токен из «письма» последнего forgot (outbox-запись) */
     async function tokenFromEmail(): Promise<string> {
+      outbox.length = 0;
       await service.forgotPassword(user.email);
-      const [, , payload] = rabbit.publish.mock.calls.at(-1) as [
-        string,
-        string,
-        { message: string },
-      ];
+      const payload = outbox.at(-1)?.payload as { message: string };
       return payload.message.split('token=')[1];
     }
 

@@ -1,4 +1,3 @@
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import {
   BadRequestException,
   Injectable,
@@ -7,9 +6,9 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'node:crypto';
-import { tracePublishOptions } from '../tracing/rabbit-trace';
 import * as bcrypt from 'bcryptjs';
-import { IsNull, LessThan, Repository } from 'typeorm';
+import { DataSource, IsNull, LessThan, Repository } from 'typeorm';
+import { enqueueOutbox } from '../outbox/outbox';
 import { SessionPair, TokensService } from '../tokens/tokens.service';
 import { toUserDto, UserDto } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
@@ -41,7 +40,7 @@ export class AuthService {
     private readonly tokens: TokensService,
     @InjectRepository(PasswordReset)
     private readonly resets: Repository<PasswordReset>,
-    private readonly rabbit: AmqpConnection,
+    private readonly dataSource: DataSource,
   ) {}
 
   /** вход: сверяем bcrypt-хэш, выдаём пару (refresh уедет в httpOnly-cookie) */
@@ -79,9 +78,9 @@ export class AuthService {
 
   /**
    * Запрос сброса пароля. Ответ НЕ зависит от существования email —
-   * эндпоинт не оракул; «письмо» со ссылкой публикуется событием
-   * user.password.reset, его печатает notification-service (в стенде —
-   * в лог и историю /notifications).
+   * эндпоинт не оракул; «письмо» со ссылкой пишется в outbox событием
+   * user.password.reset (доставит Курьер), его печатает
+   * notification-service (в стенде — в лог и историю /notifications).
    */
   async forgotPassword(email: string): Promise<void> {
     // ленивая чистка протухших ссылок — без cron
@@ -91,20 +90,23 @@ export class AuthService {
     if (!user) return;
 
     const token = randomBytes(32).toString('base64url');
-    await this.resets.save(
-      this.resets.create({
-        userId: user.id,
-        tokenHash: sha256(token),
-        expiresAt: new Date(Date.now() + RESET_TTL_MS),
-      }),
-    );
-
-    await this.rabbit.publish(
-      'cinema',
-      'user.password.reset',
-      { email: user.email, message: `${resetLinkBase()}?token=${token}` },
-      tracePublishOptions(),
-    );
+    // ссылка и «письмо» о ней — одной транзакцией: краш между записью
+    // ссылки и публикацией больше не теряет письмо (доставит Курьер),
+    // а «письмо без ссылки» не бывает вовсе
+    await this.dataSource.transaction(async (em) => {
+      await em.save(
+        PasswordReset,
+        em.create(PasswordReset, {
+          userId: user.id,
+          tokenHash: sha256(token),
+          expiresAt: new Date(Date.now() + RESET_TTL_MS),
+        }),
+      );
+      await enqueueOutbox(em, 'user.password.reset', {
+        email: user.email,
+        message: `${resetLinkBase()}?token=${token}`,
+      });
+    });
   }
 
   /**

@@ -1,4 +1,3 @@
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import {
   ConflictException,
   ForbiddenException,
@@ -9,6 +8,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
 import { Booking } from '../bookings/booking.entity';
+import { OutboxMessage } from '../outbox/outbox-message.entity';
 import { Movie } from '../movies/movie.entity';
 import { MOVIES_KEY, movieKey } from '../movies/movies.service';
 import { RedisService } from '../redis/redis.service';
@@ -67,8 +67,8 @@ describe('ReviewsService (unit)', () => {
   let reviewsRepo: { find: jest.Mock; findOneByOrFail: jest.Mock };
   let moviesRepo: { findOneByOrFail: jest.Mock };
   let bookingsRepo: { findOneBy: jest.Mock };
-  /** публикация сигналов КиноСоветнику */
-  let rabbit: { publish: jest.Mock };
+  /** outbox-запись сигнала КиноСоветнику (в транзакции отзыва) */
+  let outboxInsert: jest.Mock;
   let redisStore: Map<string, string>;
   /** что делала транзакция с EntityManager */
   let emSave: jest.Mock;
@@ -84,7 +84,7 @@ describe('ReviewsService (unit)', () => {
     moviesRepo = { findOneByOrFail: jest.fn(async () => movieFixture) };
     // eligibility: по умолчанию подтверждённая бронь находится
     bookingsRepo = { findOneBy: jest.fn(async () => ({} as Booking)) };
-    rabbit = { publish: jest.fn() };
+    outboxInsert = jest.fn(async () => undefined);
     redisStore = new Map();
     emSave = jest.fn(async (x: Partial<Review>) => reviewFixture(x));
     emDelete = jest.fn(async () => ({ affected: 1 }));
@@ -97,6 +97,13 @@ describe('ReviewsService (unit)', () => {
       save: emSave,
       delete: emDelete,
       update: emUpdate,
+      // сигнал КиноСоветнику пишется в outbox транзакции отзыва
+      getRepository: (entity: unknown) => {
+        if (entity !== OutboxMessage) {
+          throw new Error(`unexpected entity: ${String(entity)}`);
+        }
+        return { insert: outboxInsert };
+      },
       createQueryBuilder: () => ({
         select: jest.fn().mockReturnThis(),
         addSelect: jest.fn().mockReturnThis(),
@@ -117,7 +124,6 @@ describe('ReviewsService (unit)', () => {
         { provide: getRepositoryToken(Review), useValue: reviewsRepo },
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
-        { provide: AmqpConnection, useValue: rabbit },
       ],
     }).compile();
 
@@ -171,22 +177,22 @@ describe('ReviewsService (unit)', () => {
       });
     });
 
-    it('публикует сигнал КиноСоветнику: жанр + рейтинг, dedup по reviewId', async () => {
+    it('пишет сигнал КиноСоветнику в outbox: жанр + рейтинг, dedup по reviewId', async () => {
       await service.create('movie-1', dto, authUser);
 
-      expect(rabbit.publish).toHaveBeenCalledWith(
-        'cinema',
-        'recommendation.review.created',
-        {
-          userId: 'user-1',
-          movieId: 'movie-1',
-          movieTitle: 'Рекурсия',
-          genre: 'хоррор',
-          rating: 5,
-          reviewId: 'review-1',
-          occurredAt: expect.any(String),
-        },
-        expect.objectContaining({ headers: expect.any(Object) }),
+      expect(outboxInsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          routingKey: 'recommendation.review.created',
+          payload: {
+            userId: 'user-1',
+            movieId: 'movie-1',
+            movieTitle: 'Рекурсия',
+            genre: 'хоррор',
+            rating: 5,
+            reviewId: 'review-1',
+            occurredAt: expect.any(String),
+          },
+        }),
       );
     });
 

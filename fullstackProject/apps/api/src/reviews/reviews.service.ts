@@ -1,4 +1,3 @@
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import {
   ConflictException,
   ForbiddenException,
@@ -7,9 +6,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
-import { tracePublishOptions } from '../tracing/rabbit-trace';
 import { AuthUser } from '../auth/auth-user';
 import { Booking } from '../bookings/booking.entity';
+import { enqueueOutbox } from '../outbox/outbox';
 import { Movie } from '../movies/movie.entity';
 import { MOVIES_KEY, movieKey } from '../movies/movies.service';
 import {
@@ -42,7 +41,6 @@ export class ReviewsService {
     @InjectRepository(Booking)
     private readonly bookings: Repository<Booking>,
     private readonly redis: RedisService,
-    private readonly rabbit: AmqpConnection,
   ) {}
 
   /** отзывы фильма, свежие сверху; автор нужен для имени в DTO */
@@ -103,23 +101,25 @@ export class ReviewsService {
         throw err;
       }
       await this.recomputeRating(em, movieId);
+
+      // КиноСоветник: отзыв — сигнал сильнее брони, рейтинг взвешивает
+      // жанр; reviewId — dedup-ключ редоставлений на стороне сервиса.
+      // Пишем в outbox той же транзакцией: краш после коммита не теряет
+      // сигнал (доставит Курьер)
+      const signal: RecommendationReviewEvent = {
+        userId: user.id,
+        movieId,
+        movieTitle: movie.title,
+        genre: movie.genre,
+        rating: dto.rating,
+        reviewId: saved.id,
+        occurredAt: new Date().toISOString(),
+      };
+      await enqueueOutbox(em, 'recommendation.review.created', signal);
       return saved;
     });
 
     await this.invalidate(movieId);
-
-    // КиноСоветник: отзыв — сигнал сильнее брони, рейтинг взвешивает жанр;
-    // reviewId — dedup-ключ редоставлений на стороне сервиса
-    const signal: RecommendationReviewEvent = {
-      userId: user.id,
-      movieId,
-      movieTitle: movie.title,
-      genre: movie.genre,
-      rating: dto.rating,
-      reviewId: review.id,
-      occurredAt: new Date().toISOString(),
-    };
-    this.rabbit.publish('cinema', 'recommendation.review.created', signal, tracePublishOptions());
 
     this.logger.log(
       `Отзыв ${review.id} на фильм ${movieId} от ${user.email}: ${dto.rating}/5`,

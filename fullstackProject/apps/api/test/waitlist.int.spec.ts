@@ -1,4 +1,3 @@
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { INestApplication, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
@@ -7,12 +6,14 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { APP_GUARD } from '@nestjs/core';
+import { DataSource } from 'typeorm';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { HALL_CAPACITY } from '../src/bookings/hall';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
+import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { Movie, MovieDto } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { User } from '../src/users/user.entity';
@@ -93,10 +94,14 @@ class FakeWaitlistRepo {
   }
 
   async update(
-    criteria: { id: string },
+    criteria: { id?: string; status?: string },
     patch: Partial<WaitlistEntry>,
   ): Promise<{ affected: number }> {
-    const idx = this.rows.findIndex((r) => r.id === criteria.id);
+    const idx = this.rows.findIndex(
+      (r) =>
+        (criteria.id === undefined || r.id === criteria.id) &&
+        (criteria.status === undefined || r.status === criteria.status),
+    );
     if (idx === -1) return { affected: 0 };
     this.rows[idx] = { ...this.rows[idx], ...patch, updatedAt: new Date() };
     return { affected: 1 };
@@ -210,10 +215,33 @@ describe('Лист ожидания: HTTP-интеграция (фейковые
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(User), useValue: usersRepo },
         {
-          provide: AmqpConnection,
+          // handleSeatReleased: переключение головы и письмо user.waitlist.seat
+          // — одной транзакцией; письмо пишется в outbox (доставит Курьер)
+          provide: DataSource,
           useValue: {
-            publish: (_ex: string, routingKey: string, payload: unknown) =>
-              published.push({ routingKey, payload: payload as Record<string, unknown> }),
+            transaction: (cb: (e: unknown) => unknown) =>
+              cb({
+                update: (entity: unknown, criteria: unknown, patch: unknown) =>
+                  entity === WaitlistEntry
+                    ? entriesRepo.update(
+                        criteria as { id?: string; status?: string },
+                        patch as Partial<WaitlistEntry>,
+                      )
+                    : Promise.reject(new Error('unexpected entity')),
+                getRepository: (entity: unknown) => {
+                  if (entity !== OutboxMessage) {
+                    throw new Error(`unexpected entity: ${String(entity)}`);
+                  }
+                  return {
+                    insert: async (row: {
+                      routingKey: string;
+                      payload: Record<string, unknown>;
+                    }) => {
+                      published.push(row);
+                    },
+                  };
+                },
+              }),
           },
         },
         { provide: BookingStream, useValue: { emitWaitlist } },

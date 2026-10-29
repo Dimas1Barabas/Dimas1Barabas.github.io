@@ -1,4 +1,3 @@
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { INestApplication, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
@@ -86,8 +85,8 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
   let bookingsRepo: FakeBookingRepo;
   let reviews: Review[] = [];
   let redisStore: Map<string, string>;
-  /** публикация сигналов КиноСоветнику */
-  let rabbit: { publish: jest.Mock };
+  /** outbox-записи бизнес-событий (сигнал КиноСоветнику) */
+  let outboxRows: { routingKey: string; payload: object }[];
   /** фильм, на который пишем отзывы */
   let movieId: string;
 
@@ -103,7 +102,7 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
     bookingsRepo = new FakeBookingRepo();
     reviews = [];
     redisStore = new Map();
-    rabbit = { publish: jest.fn() };
+    outboxRows = [];
 
     movieId = randomUUID();
     moviesRepo.rows.push({
@@ -124,12 +123,16 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
     // эмуляция EntityManager из DataSource.transaction
     const em = {
       create: (_entity: unknown, x: Partial<Review>) => x,
-      // enqueueOutbox: outbox-записи бизнес-событий (пока не ассертятся)
+      // enqueueOutbox: сигнал КиноСоветнику пишется в транзакции отзыва
       getRepository: (entity: unknown) => {
         if (entity !== OutboxMessage) {
           throw new Error(`unexpected entity: ${String(entity)}`);
         }
-        return { insert: async () => undefined };
+        return {
+          insert: async (row: { routingKey: string; payload: object }) => {
+            outboxRows.push(row);
+          },
+        };
       },
       /** INSERT отзыва: дубль (userId, movieId) → 23505, как uq-констрейнт */
       save: (x: Partial<Review>): Promise<Review> => {
@@ -212,7 +215,6 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         { provide: getRepositoryToken(Review), useValue: fakeReviewRepo },
-        { provide: AmqpConnection, useValue: rabbit },
         {
           provide: DataSource,
           useValue: {
@@ -336,21 +338,21 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
       const movie = await movieFromCatalog();
       expect(movie).toMatchObject({ ratingAvg: 4, ratingCount: 1 });
 
-      // КиноСоветник получил сигнал: жанр и рейтинг отзыва, dedup по reviewId
-      expect(rabbit.publish).toHaveBeenCalledWith(
-        'cinema',
-        'recommendation.review.created',
-        {
-          userId: 'user-a',
-          movieId,
-          movieTitle: 'Рекурсия',
-          genre: 'хоррор',
-          rating: 4,
-          reviewId: res.body.id,
-          occurredAt: expect.any(String),
-        },
-        expect.objectContaining({ headers: expect.any(Object) }),
+      // КиноСоветник получит сигнал из outbox: жанр и рейтинг отзыва,
+      // dedup по reviewId (доставит Курьер)
+      const rows = outboxRows.filter(
+        (r) => r.routingKey === 'recommendation.review.created',
       );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].payload).toMatchObject({
+        userId: 'user-a',
+        movieId,
+        movieTitle: 'Рекурсия',
+        genre: 'хоррор',
+        rating: 4,
+        reviewId: res.body.id,
+        occurredAt: expect.any(String),
+      });
     });
 
     it('дубль отзыва — 409 reviewExists', async () => {
