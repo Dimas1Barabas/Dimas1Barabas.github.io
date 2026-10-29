@@ -13,13 +13,13 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
   let sessionsRepo: BookingsHarness['sessionsRepo'];
   let occupancyRepo: BookingsHarness['occupancyRepo'];
   let reminders: BookingsHarness['reminders'];
-  let rabbit: BookingsHarness['rabbit'];
+  let outboxInsert: BookingsHarness['outboxInsert'];
   let stream: BookingsHarness['stream'];
   let emUpdate: BookingsHarness['emUpdate'];
   let bonusRows: BookingsHarness['bonusRows'];
 
   beforeEach(async () => {
-    ({ service, bookingsRepo, sessionsRepo, occupancyRepo, reminders, rabbit, stream, bonusRows, emUpdate } = await buildBookingsHarness());
+    ({ service, bookingsRepo, sessionsRepo, occupancyRepo, reminders, outboxInsert, stream, bonusRows, emUpdate } = await buildBookingsHarness());
   });
 
   describe('handleProcessed', () => {
@@ -44,7 +44,7 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
       expect(occupancyRepo.delete).not.toHaveBeenCalled();
     });
 
-    it('FAILED — освобождает места брони', async () => {
+    it('FAILED — освобождает места брони и пишет событие листу ожидания', async () => {
       bookingsRepo.findOneByOrFail.mockResolvedValue(bookingFixture());
 
       await service.handleProcessed({
@@ -58,9 +58,16 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
       expect(occupancyRepo.delete).toHaveBeenCalledWith({
         bookingId: 'booking-1',
       });
+      const row = outboxInsert.mock.calls[0][0];
+      expect(row.routingKey).toBe('waitlist.seat.released');
+      expect(row.payload).toMatchObject({
+        sessionId: 'session-1',
+        bookingId: 'booking-1',
+        reason: 'FAILED',
+      });
     });
 
-    it('CONFIRMED публикует сигнал КиноСоветнику (dedup по bookingId)', async () => {
+    it('CONFIRMED пишет сигнал КиноСоветнику в outbox (dedup по bookingId)', async () => {
       bookingsRepo.findOneByOrFail.mockResolvedValue(bookingFixture());
 
       await service.handleProcessed({
@@ -71,19 +78,18 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
         processedAt: '2026-09-03T12:00:05Z',
       });
 
-      expect(rabbit.publish).toHaveBeenCalledWith(
-        'cinema',
-        'recommendation.booking.confirmed',
-        {
-          userId: 'user-1',
-          movieId: 'movie-1',
-          movieTitle: 'Рекурсия',
-          genre: 'хоррор',
-          bookingId: 'booking-1',
-          occurredAt: expect.any(String),
-        },
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
+      const row = outboxInsert.mock.calls.find(
+        (c) => c[0].routingKey === 'recommendation.booking.confirmed',
+      )?.[0];
+      expect(row).toBeDefined();
+      expect(row.payload).toMatchObject({
+        userId: 'user-1',
+        movieId: 'movie-1',
+        movieTitle: 'Рекурсия',
+        genre: 'хоррор',
+        bookingId: 'booking-1',
+        occurredAt: expect.any(String),
+      });
     });
 
     it('гостевая CONFIRMED-бронь сигнал рекомендациям не публикует', async () => {
@@ -100,12 +106,8 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
         processedAt: '2026-09-03T12:00:05Z',
       });
 
-      expect(rabbit.publish).not.toHaveBeenCalledWith(
-        'cinema',
-        'recommendation.booking.confirmed',
-        expect.anything(),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
+      const keys = outboxInsert.mock.calls.map((c) => c[0].routingKey);
+      expect(keys).not.toContain('recommendation.booking.confirmed');
     });
 
     it('CONFIRMED с будущим сеансом планирует напоминание (email владельца)', async () => {
@@ -191,6 +193,7 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
 
       expect(bookingsRepo.save).not.toHaveBeenCalled();
       expect(occupancyRepo.delete).not.toHaveBeenCalled();
+      expect(outboxInsert).not.toHaveBeenCalled();
       expect(stream.emit).not.toHaveBeenCalled();
     });
 
@@ -299,6 +302,14 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
       expect(occupancyRepo.delete).toHaveBeenCalledWith({
         bookingId: 'booking-1',
       });
+      // событие листу ожидания — той же транзакцией, что и вердикт
+      const row = outboxInsert.mock.calls[0][0];
+      expect(row.routingKey).toBe('waitlist.seat.released');
+      expect(row.payload).toMatchObject({
+        sessionId: 'session-1',
+        bookingId: 'booking-1',
+        reason: 'EXPIRED',
+      });
       expect(stream.emit).toHaveBeenCalledTimes(1);
     });
 
@@ -313,6 +324,7 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
       });
 
       expect(occupancyRepo.delete).not.toHaveBeenCalled();
+      expect(outboxInsert).not.toHaveBeenCalled();
       expect(stream.emit).not.toHaveBeenCalled();
     });
   });
@@ -338,6 +350,14 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
       expect(saved.message).toBe('Возврат 1200 ₽ зачислен');
       expect(occupancyRepo.delete).toHaveBeenCalledWith({
         bookingId: 'booking-1',
+      });
+      // места снова в продаже — событие листу ожидания из той же транзакции
+      const row = outboxInsert.mock.calls[0][0];
+      expect(row.routingKey).toBe('waitlist.seat.released');
+      expect(row.payload).toMatchObject({
+        sessionId: 'session-1',
+        bookingId: 'booking-1',
+        reason: 'REFUNDED',
       });
     });
 
@@ -385,6 +405,7 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
       const saved = bookingsRepo.save.mock.calls[0][0] as Booking;
       expect(saved.status).toBe('CONFIRMED');
       expect(occupancyRepo.delete).not.toHaveBeenCalled();
+      expect(outboxInsert).not.toHaveBeenCalled();
     });
 
     it('пропускает событие по бронь не в CANCELLING (ределивери)', async () => {
@@ -400,6 +421,7 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
 
       expect(bookingsRepo.save).not.toHaveBeenCalled();
       expect(occupancyRepo.delete).not.toHaveBeenCalled();
+      expect(outboxInsert).not.toHaveBeenCalled();
     });
 
     describe('разворот бонусов', () => {

@@ -17,12 +17,11 @@ describe('BookingsService: создание брони и цена сеанса 
   let occupancyRepo: BookingsHarness['occupancyRepo'];
   let waitlistRepo: BookingsHarness['waitlistRepo'];
   let pricing: BookingsHarness['pricing'];
-  let rabbit: BookingsHarness['rabbit'];
   let outboxInsert: BookingsHarness['outboxInsert'];
   let emInsert: BookingsHarness['emInsert'];
 
   beforeEach(async () => {
-    ({ service, moviesRepo, sessionsRepo, occupancyRepo, waitlistRepo, pricing, rabbit, outboxInsert, emInsert } = await buildBookingsHarness());
+    ({ service, moviesRepo, sessionsRepo, occupancyRepo, waitlistRepo, pricing, outboxInsert, emInsert } = await buildBookingsHarness());
   });
 
   describe('create', () => {

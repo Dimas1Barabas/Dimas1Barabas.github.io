@@ -1,7 +1,8 @@
 /**
- * Сага отмены: cancel переводит CONFIRMED → CANCELLING и публикует
- * booking.cancelled для Go-воркера; вердикт booking.refunded гасит места
- * (CANCELLED) или откатывает статус (REFUND_FAILED), ределивери — идемпотентен.
+ * Сага отмены: cancel переводит CONFIRMED → CANCELLING и пишет
+ * booking.cancelled в outbox (доставит Курьер); вердикт booking.refunded
+ * гасит места (CANCELLED) или откатывает статус (REFUND_FAILED),
+ * ределивери — идемпотентен.
  * Вырезано из большого http.int.spec.ts; бутстрап и фейки — в ./int-harness.
  */
 import type { INestApplication } from '@nestjs/common';
@@ -12,7 +13,8 @@ import { buildHttpIntApp, requestCatalog, type MovieDtoJson } from './int-harnes
 describe('CineBooking API: сага отмены (фейковые зависимости)', () => {
   let app: INestApplication;
   let bookingsService: BookingsService;
-  let rabbitPublish: jest.Mock;
+  /** outbox-записи бизнес-событий (booking.cancelled, waitlist.seat.released) */
+  let outboxRows: { routingKey: string; payload: object }[];
   /** Authorization: владелец брони */
   let bearer: string;
 
@@ -22,7 +24,7 @@ describe('CineBooking API: сага отмены (фейковые зависи�
     const h = await buildHttpIntApp();
     app = h.app;
     bookingsService = h.bookingsService;
-    rabbitPublish = h.rabbitPublish;
+    outboxRows = h.outboxRows;
     bearer = h.bearer;
     catalog = () => requestCatalog(app);
   });
@@ -58,28 +60,25 @@ describe('CineBooking API: сага отмены (фейковые зависи�
       return created;
     }
 
-    it('cancel: CONFIRMED → CANCELLING, публикация booking.cancelled с сеансом', async () => {
+    it('cancel: CONFIRMED → CANCELLING, booking.cancelled в outbox с сеансом', async () => {
       const movies = await catalog();
       const session = movies[3].sessions[0];
       const created = await confirmedBooking(session.id, ['3-5', '3-6'], 'Отмена');
 
-      rabbitPublish.mockClear();
+      outboxRows.length = 0;
       const res = await request(app.getHttpServer())
         .post(`/api/bookings/${created.id}/cancel`).set('Authorization', bearer);
 
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('CANCELLING');
-      expect(rabbitPublish).toHaveBeenCalledWith(
-        'cinema',
-        'booking.cancelled',
-        expect.objectContaining({
-          bookingId: created.id,
-          sessionId: session.id,
-          seats: ['3-5', '3-6'],
-          totalRub: created.totalRub,
-        }),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
+      const rows = outboxRows.filter((r) => r.routingKey === 'booking.cancelled');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].payload).toMatchObject({
+        bookingId: created.id,
+        sessionId: session.id,
+        seats: ['3-5', '3-6'],
+        totalRub: created.totalRub,
+      });
 
       // до вердикта возврата места держатся занятыми
       const map = await request(app.getHttpServer())

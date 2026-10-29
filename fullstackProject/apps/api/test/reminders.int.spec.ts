@@ -114,6 +114,13 @@ describe('Reminders (integration)', () => {
             ? Promise.resolve(futureSession)
             : Promise.resolve(movieFixture),
       save: (_entity: unknown, x: Booking) => bookingsRepo.save(x),
+      // возврат CANCELLED гасит занятость в общей транзакции с вердиктом
+      delete: (entity: unknown, _criteria: { bookingId: string }) => {
+        if (entity !== SeatOccupancy) {
+          throw new Error(`unexpected entity: ${String(entity)}`);
+        }
+        return Promise.resolve();
+      },
       // enqueueOutbox: outbox-записи бизнес-событий (пока не ассертятся)
       getRepository: (entity: unknown) => {
         if (entity !== OutboxMessage) {

@@ -250,6 +250,11 @@ describe('Бонусы: HTTP-интеграция (фейковые зависи
         if (entity === Booking) return bookingsRepo.update(criteria, patch);
         throw new Error('unexpected entity');
       },
+      // FAILED-вердикт гасит занятость в общей транзакции со статусом
+      delete: (entity: unknown, criteria: { bookingId: string }) => {
+        if (entity === SeatOccupancy) return occupancyRepo.delete(criteria);
+        throw new Error('unexpected entity');
+      },
       // баланс — SUM от строк; разворот при отмене — строки брони
       query: (sql: string, params: string[]) => {
         if (sql.includes('FROM bonus_transactions WHERE user_id')) {

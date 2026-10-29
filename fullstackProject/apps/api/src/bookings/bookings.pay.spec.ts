@@ -11,7 +11,6 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
   let service: BookingsHarness['service'];
   let bookingsRepo: BookingsHarness['bookingsRepo'];
   let promosRepo: BookingsHarness['promosRepo'];
-  let rabbit: BookingsHarness['rabbit'];
   let outboxInsert: BookingsHarness['outboxInsert'];
   let stream: BookingsHarness['stream'];
   let emUpdate: BookingsHarness['emUpdate'];
@@ -19,7 +18,7 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
   let bonusRows: BookingsHarness['bonusRows'];
 
   beforeEach(async () => {
-    ({ service, bookingsRepo, promosRepo, rabbit, outboxInsert, stream, emUpdate, emQuery, bonusRows } = await buildBookingsHarness());
+    ({ service, bookingsRepo, promosRepo, outboxInsert, stream, emUpdate, emQuery, bonusRows } = await buildBookingsHarness());
   });
 
   describe('pay', () => {

@@ -11,10 +11,11 @@ describe('BookingsService: сага отмены (unit)', () => {
   let service: BookingsHarness['service'];
   let bookingsRepo: BookingsHarness['bookingsRepo'];
   let occupancyRepo: BookingsHarness['occupancyRepo'];
-  let rabbit: BookingsHarness['rabbit'];
+  let outboxInsert: BookingsHarness['outboxInsert'];
+  let emUpdate: BookingsHarness['emUpdate'];
 
   beforeEach(async () => {
-    ({ service, bookingsRepo, occupancyRepo, rabbit } = await buildBookingsHarness());
+    ({ service, bookingsRepo, occupancyRepo, outboxInsert, emUpdate } = await buildBookingsHarness());
   });
 
   describe('cancel', () => {
@@ -24,8 +25,12 @@ describe('BookingsService: сага отмены (unit)', () => {
     beforeEach(() => {
       db = { ...bookingFixture(), status: 'CONFIRMED' };
       bookingsRepo.findOneByOrFail.mockResolvedValue(db);
-      bookingsRepo.update.mockImplementation(
-        async (criteria: { status?: BookingStatus }, patch: Partial<Booking>) => {
+      emUpdate.mockImplementation(
+        async (
+          _entity: unknown,
+          criteria: { status?: BookingStatus },
+          patch: Partial<Booking>,
+        ) => {
           if (criteria.status && db.status !== criteria.status) {
             return { affected: 0 };
           }
@@ -39,28 +44,27 @@ describe('BookingsService: сага отмены (unit)', () => {
       const result = await service.cancel('booking-1', authUser);
 
       expect(result.status).toBe('CANCELLING');
-      expect(bookingsRepo.update).toHaveBeenCalledWith(
+      expect(emUpdate).toHaveBeenCalledWith(
+        Booking,
         { id: 'booking-1', status: 'CONFIRMED' },
         { status: 'CANCELLING' },
       );
     });
 
-    it('публикует booking.cancelled с суммой возврата и сеансом', async () => {
+    it('пишет booking.cancelled в outbox — с суммой возврата и сеансом', async () => {
       await service.cancel('booking-1', authUser);
 
-      expect(rabbit.publish).toHaveBeenCalledWith(
-        'cinema',
-        'booking.cancelled',
-        expect.objectContaining({
-          bookingId: 'booking-1',
-          movieTitle: 'Рекурсия',
-          sessionId: 'session-1',
-          hall: 'IMAX',
-          seats: ['5-7', '5-8', '5-9'],
-          totalRub: 1200,
-        }),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
+      expect(outboxInsert).toHaveBeenCalledTimes(1);
+      const row = outboxInsert.mock.calls[0][0];
+      expect(row.routingKey).toBe('booking.cancelled');
+      expect(row.payload).toMatchObject({
+        bookingId: 'booking-1',
+        movieTitle: 'Рекурсия',
+        sessionId: 'session-1',
+        hall: 'IMAX',
+        seats: ['5-7', '5-8', '5-9'],
+        totalRub: 1200,
+      });
     });
 
     it('403: чужую бронь отменить нельзя', async () => {
@@ -72,8 +76,8 @@ describe('BookingsService: сага отмены (unit)', () => {
 
       await expect(promise).rejects.toBeInstanceOf(ForbiddenException);
       // сага не запускается — события и UPDATE не было
-      expect(rabbit.publish).not.toHaveBeenCalled();
-      expect(bookingsRepo.update).not.toHaveBeenCalled();
+      expect(outboxInsert).not.toHaveBeenCalled();
+      expect(emUpdate).not.toHaveBeenCalled();
     });
 
     it('409 с текущим статусом, если статус не отменяемый', async () => {
@@ -86,7 +90,7 @@ describe('BookingsService: сага отмены (unit)', () => {
       expect(err.getStatus()).toBe(409);
       expect(err.getResponse()).toMatchObject({ status: 'PENDING' });
       // сага не запущена — события нет
-      expect(rabbit.publish).not.toHaveBeenCalled();
+      expect(outboxInsert).not.toHaveBeenCalled();
     });
 
     it('неоплаченную (PENDING_PAYMENT) закрывает сразу, без воркера', async () => {
@@ -95,23 +99,22 @@ describe('BookingsService: сага отмены (unit)', () => {
       const result = await service.cancel('booking-1', authUser);
 
       expect(result.status).toBe('CANCELLED');
-      expect(bookingsRepo.update).toHaveBeenCalledWith(
+      expect(emUpdate).toHaveBeenCalledWith(
+        Booking,
         { id: 'booking-1', status: 'PENDING_PAYMENT' },
         expect.objectContaining({ status: 'CANCELLED' }),
       );
       // возвращать нечего — события booking.cancelled нет; но места
       // освободились — лист ожидания должен об этом узнать
-      expect(rabbit.publish).toHaveBeenCalledTimes(1);
-      expect(rabbit.publish).toHaveBeenCalledWith(
-        'cinema',
-        'waitlist.seat.released',
-        expect.objectContaining({
-          sessionId: 'session-1',
-          bookingId: 'booking-1',
-          reason: 'CANCELLED_UNPAID',
-        }),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
+      expect(outboxInsert).toHaveBeenCalledTimes(1);
+      const row = outboxInsert.mock.calls[0][0];
+      expect(row.routingKey).toBe('waitlist.seat.released');
+      expect(row.payload).toMatchObject({
+        sessionId: 'session-1',
+        bookingId: 'booking-1',
+        seats: ['5-7', '5-8', '5-9'],
+        reason: 'CANCELLED_UNPAID',
+      });
     });
 
     it('отмена неоплаченной освобождает места сразу', async () => {

@@ -4,7 +4,6 @@
  * gRPC-клиенты, шины) — тот же сетап, что был общим beforeEach
  * одного большого файла. Каждый доменный спек деструктурирует нужное.
  */
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -105,8 +104,7 @@ export interface BookingsHarness {
   reminders: { schedule: jest.Mock; cancel: jest.Mock };
   /** gRPC-клиент Тарификатора: по умолчанию отвечает базовой ценой */
   pricing: { quote: jest.Mock };
-  rabbit: { publish: jest.Mock };
-  /** что enqueueOutbox записал в outbox внутри транзакций (create/pay) */
+  /** что enqueueOutbox записал в outbox внутри транзакций */
   outboxInsert: jest.Mock;
   /** SSE-шина: спаем, что после мутаций ушли события */
   stream: { emit: jest.Mock };
@@ -183,7 +181,6 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
       capacity: 80,
     })),
   };
-  const rabbit: BookingsHarness['rabbit'] = { publish: jest.fn() };
   // outbox-записи бизнес-событий (booking.payment.wait, booking.created):
   // enqueueOutbox идёт через em.getRepository(OutboxMessage).insert
   const outboxInsert = jest.fn(async () => undefined);
@@ -301,7 +298,6 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
       { provide: getRepositoryToken(User), useValue: usersRepo },
       { provide: RemindersClient, useValue: reminders },
       { provide: PricingClient, useValue: pricing },
-      { provide: AmqpConnection, useValue: rabbit },
       { provide: BookingStream, useValue: stream },
       { provide: SeatStream, useValue: seatStream },
     ],
@@ -318,7 +314,6 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
     usersRepo,
     reminders,
     pricing,
-    rabbit,
     outboxInsert,
     stream,
     seatStream,

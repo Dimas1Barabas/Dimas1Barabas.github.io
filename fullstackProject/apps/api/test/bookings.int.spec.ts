@@ -450,6 +450,7 @@ describe('CineBooking API: жизненный цикл брони (фейков�
       ).body;
 
       rabbitPublish.mockClear();
+      const outboxBefore = outboxRows.length;
       const res = await request(app.getHttpServer())
         .post(`/api/bookings/${created.id}/cancel`)
         .set('Authorization', bearer);
@@ -457,14 +458,16 @@ describe('CineBooking API: жизненный цикл брони (фейков�
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('CANCELLED');
       // возвращать нечего — события booking.cancelled нет; места свободны —
-      // лист ожидания узнаёт об этом событием
-      expect(rabbitPublish).toHaveBeenCalledTimes(1);
-      expect(rabbitPublish).toHaveBeenCalledWith(
-        'cinema',
-        'waitlist.seat.released',
-        expect.objectContaining({ reason: 'CANCELLED_UNPAID', seats: ['4-9'] }),
-        expect.objectContaining({ headers: expect.any(Object) }),
-      );
+      // лист ожидания узнаёт об этом из outbox (доставит Курьер)
+      const rows = outboxRows
+        .slice(outboxBefore)
+        .filter((r) => r.routingKey === 'waitlist.seat.released');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].payload).toMatchObject({
+        reason: 'CANCELLED_UNPAID',
+        seats: ['4-9'],
+      });
+      expect(rabbitPublish).not.toHaveBeenCalled();
 
       const map = await request(app.getHttpServer())
         .get(`/api/sessions/${session.id}/seats`);

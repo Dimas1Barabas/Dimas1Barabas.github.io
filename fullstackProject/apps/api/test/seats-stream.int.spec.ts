@@ -267,7 +267,20 @@ describe('WS живая карта мест: HTTP+socket-интеграция (�
         if (entity === SeatOccupancy) return occupancyRepo.insert(rows);
         throw new Error('unexpected entity');
       },
-      update: jest.fn(),
+      // отмена неоплаченной: условный UPDATE статуса — как реальный em
+      update: (
+        entity: unknown,
+        criteria: { id?: string; status?: string },
+        patch: Partial<Booking>,
+      ) => {
+        if (entity === Booking) return bookingsRepo.update(criteria, patch);
+        throw new Error('unexpected entity');
+      },
+      // отмена неоплаченной гасит занятость в общей транзакции со статусом
+      delete: (entity: unknown, criteria: { bookingId: string }) => {
+        if (entity === SeatOccupancy) return occupancyRepo.delete(criteria);
+        throw new Error('unexpected entity');
+      },
       query: jest.fn(async () => [[], 0]),
     };
 

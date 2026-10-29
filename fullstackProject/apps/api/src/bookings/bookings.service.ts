@@ -1,4 +1,3 @@
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import {
   ConflictException,
   ForbiddenException,
@@ -9,7 +8,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { AuthUser } from '../auth/auth-user';
-import { tracePublishOptions } from '../tracing/rabbit-trace';
 import { enqueueOutbox } from '../outbox/outbox';
 import {
   BONUS_BALANCE_SQL,
@@ -155,7 +153,6 @@ export class BookingsService {
     // email адресата «письма»-напоминания — тот же приём
     @InjectRepository(User)
     private readonly users: Repository<User>,
-    private readonly rabbit: AmqpConnection,
     private readonly stream: BookingStream,
     private readonly seatStream: SeatStream,
     private readonly reminders: RemindersClient,
@@ -163,15 +160,18 @@ export class BookingsService {
   ) {}
 
   /**
-   * Места снова в продаже — событие листу ожидания. Контекст фильма
-   * не прикладываем: консьюмер сам перечитает сеанс из БД.
-   * Ределивери (краш до ack) может уведомить следующего в очереди —
-   * это безопасно: уведомление не резерв, гонка остаётся честной.
+   * Места снова в продаже — событие листу ожидания в outbox текущей
+   * транзакции: вердикт, гашение занятости и уведомление коммитятся
+   * одной записью (доставит Курьер). Контекст фильма не прикладываем:
+   * консьюмер сам перечитает сеанс из БД. Ределивери (краш до ack) может
+   * уведомить следующего в очереди — это безопасно: уведомление не
+   * резерв, гонка остаётся честной.
    */
-  private publishSeatsReleased(
+  private async enqueueSeatsReleased(
+    em: EntityManager,
     booking: Booking,
     reason: WaitlistReleaseReason,
-  ): void {
+  ): Promise<void> {
     const event: WaitlistSeatReleasedEvent = {
       sessionId: booking.sessionId,
       bookingId: booking.id,
@@ -179,11 +179,7 @@ export class BookingsService {
       reason,
       releasedAt: new Date().toISOString(),
     };
-    this.rabbit.publish('cinema', 'waitlist.seat.released', event, tracePublishOptions());
-    // живая карта мест: все четыре освобождения закрываются здесь одним
-    // сигналом (вызывается уже после occupancy.delete — гейтвей перечитает
-    // пост-состояние)
-    this.seatStream.emit({ sessionId: booking.sessionId });
+    await enqueueOutbox(em, 'waitlist.seat.released', event);
   }
 
   /** толкает изменение брони подключённым SSE-клиентам */
@@ -712,6 +708,9 @@ export class BookingsService {
    * Неоплаченная бронь: возвращать нечего — закрываем сразу и без воркера,
    * места освобождаются тут же. Условный UPDATE из PENDING_PAYMENT решает
    * гонку с оплатой и таймаутом резерва (проигравший получает 409/пропуск).
+   * Отмена, гашение занятости и событие листу ожидания — одной
+   * транзакцией: краш в этом окне не оставляет места «освобождёнными
+   * молча» и не теряет уведомление.
    */
   private async cancelUnpaid(
     booking: Booking,
@@ -719,14 +718,21 @@ export class BookingsService {
     session: Session,
   ): Promise<BookingDto | null> {
     const message = 'Бронь отменена до оплаты — места снова в продаже';
-    const switched = await this.bookings.update(
-      { id: booking.id, status: 'PENDING_PAYMENT' },
-      { status: 'CANCELLED', message },
-    );
-    if (!switched.affected) return null;
+    const cancelled = await this.dataSource.transaction(async (em) => {
+      const switched = await em.update(
+        Booking,
+        { id: booking.id, status: 'PENDING_PAYMENT' },
+        { status: 'CANCELLED', message },
+      );
+      if (!switched.affected) return false;
+      await em.delete(SeatOccupancy, { bookingId: booking.id });
+      await this.enqueueSeatsReleased(em, booking, 'CANCELLED_UNPAID');
+      return true;
+    });
+    if (!cancelled) return null;
 
-    await this.occupancy.delete({ bookingId: booking.id });
-    this.publishSeatsReleased(booking, 'CANCELLED_UNPAID');
+    // коммит прошёл — гейтвей живой карты перечитает пост-состояние
+    this.seatStream.emit({ sessionId: booking.sessionId });
     this.logger.log(`Отмена неоплаченной брони ${booking.id} (${movie.title})`);
     booking.status = 'CANCELLED';
     booking.message = message;
@@ -755,11 +761,32 @@ export class BookingsService {
     const unpaid = await this.cancelUnpaid(booking, movie, session);
     if (unpaid) return unpaid;
 
-    const switched = await this.bookings.update(
-      { id, status: 'CONFIRMED' },
-      { status: 'CANCELLING' },
-    );
-    if (!switched.affected) {
+    // запуск саги и событие возврата — одной транзакцией: бронь не уйдёт
+    // в CANCELLING без запроса воркеру (доставит Курьер), воркер не получит
+    // refund по брони, которая не переключилась
+    const sagaStarted = await this.dataSource.transaction(async (em) => {
+      const switched = await em.update(
+        Booking,
+        { id, status: 'CONFIRMED' },
+        { status: 'CANCELLING' },
+      );
+      if (!switched.affected) return false;
+      const event: BookingCancelledEvent = {
+        bookingId: booking.id,
+        movieId: booking.movieId,
+        movieTitle: movie.title,
+        sessionId: session.id,
+        sessionAt: session.startsAt.toISOString(),
+        hall: session.hall,
+        customerName: booking.customerName,
+        seats: booking.seats,
+        totalRub: booking.totalRub,
+        cancelledAt: new Date().toISOString(),
+      };
+      await enqueueOutbox(em, 'booking.cancelled', event);
+      return true;
+    });
+    if (!sagaStarted) {
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
@@ -768,19 +795,6 @@ export class BookingsService {
       });
     }
 
-    const event: BookingCancelledEvent = {
-      bookingId: booking.id,
-      movieId: booking.movieId,
-      movieTitle: movie.title,
-      sessionId: session.id,
-      sessionAt: session.startsAt.toISOString(),
-      hall: session.hall,
-      customerName: booking.customerName,
-      seats: booking.seats,
-      totalRub: booking.totalRub,
-      cancelledAt: new Date().toISOString(),
-    };
-    this.rabbit.publish('cinema', 'booking.cancelled', event, tracePublishOptions());
     this.logger.log(
       `Отмена брони ${booking.id} (${movie.title}, возврат ${booking.totalRub} ₽) → в очередь`,
     );
@@ -848,6 +862,14 @@ export class BookingsService {
       applyProcessed(booking, event);
       await em.save(Booking, booking);
 
+      if (event.status === 'FAILED') {
+        // оплата не прошла — места возвращаются в продажу; гашение
+        // занятости и событие листу ожидания — той же транзакцией,
+        // что и вердикт
+        await em.delete(SeatOccupancy, { bookingId: booking.id });
+        await this.enqueueSeatsReleased(em, booking, 'FAILED');
+      }
+
       // гостевые брони без владельца бонусов не зарабатывают;
       // orIgnore — uq(booking_id, reason) гасит дубль при ределивери
       if (!booking.userId) return booking;
@@ -873,14 +895,32 @@ export class BookingsService {
           amount: booking.bonusSpent,
         });
       }
+
+      if (event.status === 'CONFIRMED') {
+        // КиноСоветник: «сходил на фильм» — базовый сигнал профиля
+        // зрителя; контракт и dedup-ключ (bookingId) — в
+        // recommendation-events. Фильм грузим здесь же: событию нужны
+        // title/genre в момент записи outbox
+        const movie = await em.findOneByOrFail(Movie, {
+          id: booking.movieId,
+        });
+        const signal: RecommendationBookingEvent = {
+          userId: booking.userId,
+          movieId: booking.movieId,
+          movieTitle: movie.title,
+          genre: movie.genre,
+          bookingId: booking.id,
+          occurredAt: new Date().toISOString(),
+        };
+        await enqueueOutbox(em, 'recommendation.booking.confirmed', signal);
+      }
       return booking;
     });
     if (!applied) return;
 
     if (event.status === 'FAILED') {
-      // оплата не прошла — места возвращаются в продажу
-      await this.occupancy.delete({ bookingId: applied.id });
-      this.publishSeatsReleased(applied, 'FAILED');
+      // коммит прошёл — гейтвей живой карты перечитает пост-состояние
+      this.seatStream.emit({ sessionId: applied.sessionId });
     }
     this.logger.log(
       `Бронь ${event.bookingId} → ${event.status} (${event.processedBy})`,
@@ -888,18 +928,6 @@ export class BookingsService {
     const { movie, session } = await this.contextOf(applied);
 
     if (event.status === 'CONFIRMED' && applied.userId) {
-      // КиноСоветник: «сходил на фильм» — базовый сигнал профиля зрителя;
-      // контракт и dedup-ключ (bookingId) — в recommendation-events
-      const signal: RecommendationBookingEvent = {
-        userId: applied.userId,
-        movieId: applied.movieId,
-        movieTitle: movie.title,
-        genre: movie.genre,
-        bookingId: applied.id,
-        occurredAt: new Date().toISOString(),
-      };
-      this.rabbit.publish('cinema', 'recommendation.booking.confirmed', signal, tracePublishOptions());
-
       // напоминание «скоро сеанс» — fire-and-forget: недоступность
       // reminder-сервиса не должна портить вердиктный цикл
       void this.scheduleReminder(applied.userId, applied, movie, session);
@@ -915,10 +943,10 @@ export class BookingsService {
    * (идемпотентность гонки pay/cancel-vs-timeout).
    */
   async handleExpired(event: BookingExpiredEvent): Promise<void> {
-    // статус и возврат мест — одной транзакцией: двумя отдельными
-    // записями внешний наблюдатель ловил EXPIRED с ещё занятым местом
-    // (флейк live-int), а падение в этом окне оставляло бы места
-    // занятыми навсегда
+    // статус, возврат мест и событие листу ожидания — одной транзакцией:
+    // двумя отдельными записями внешний наблюдатель ловил EXPIRED с ещё
+    // занятым местом (флейк live-int), а падение в этом окне оставляло бы
+    // места занятыми навсегда (или «освобождёнными молча»)
     const applied = await this.dataSource.transaction(async (em) => {
       const updated = await em.update(
         Booking,
@@ -930,10 +958,15 @@ export class BookingsService {
           processedAt: new Date(event.expiredAt),
         },
       );
-      if (!updated.affected) return false;
-      // резерв истёк — места снова в продаже
+      if (!updated.affected) return null;
+      // резерв истёк — места снова в продаже; бронь читаем из той же
+      // транзакции: состав мест и сеанс неизменны с момента резерва
       await em.delete(SeatOccupancy, { bookingId: event.bookingId });
-      return true;
+      const booking = await em.findOneByOrFail(Booking, {
+        id: event.bookingId,
+      });
+      await this.enqueueSeatsReleased(em, booking, 'EXPIRED');
+      return booking;
     });
     if (!applied) {
       this.logger.warn(
@@ -941,11 +974,11 @@ export class BookingsService {
       );
       return;
     }
+    // коммит прошёл — гейтвей живой карты перечитает пост-состояние
+    this.seatStream.emit({ sessionId: applied.sessionId });
     this.logger.log(`Бронь ${event.bookingId} → EXPIRED (${event.processedBy})`);
-    const booking = await this.bookings.findOneByOrFail({ id: event.bookingId });
-    this.publishSeatsReleased(booking, 'EXPIRED');
-    const { movie, session } = await this.contextOf(booking);
-    await this.push(booking, movie, session);
+    const { movie, session } = await this.contextOf(applied);
+    await this.push(applied, movie, session);
   }
 
   /** Callback события booking.refunded от Go-воркера */
@@ -970,16 +1003,21 @@ export class BookingsService {
       if (updated.status === 'CANCELLED' && updated.userId) {
         await this.reverseBookingBonuses(em, updated.userId, updated.id);
       }
+      if (updated.status === 'CANCELLED') {
+        // возврат прошёл — места снова в продаже: гашение занятости и
+        // событие листу ожидания — той же транзакцией, что и вердикт
+        await em.delete(SeatOccupancy, { bookingId: updated.id });
+        await this.enqueueSeatsReleased(em, updated, 'REFUNDED');
+      }
       return updated;
     });
     if (!updated) return;
 
     if (updated.status === 'CANCELLED') {
-      // возврат прошёл — места снова в продаже
-      await this.occupancy.delete({ bookingId: updated.id });
-      this.publishSeatsReleased(updated, 'REFUNDED');
+      // коммит прошёл — гейтвей живой карты перечитает пост-состояние;
       // билеты вернулись — напоминание гасим. REFUND_FAILED-откат сюда
       // не попадает (бронь остаётся CONFIRMED) — письмо продолжает ждать
+      this.seatStream.emit({ sessionId: updated.sessionId });
       void this.cancelReminder(updated.id);
     }
     this.logger.log(
