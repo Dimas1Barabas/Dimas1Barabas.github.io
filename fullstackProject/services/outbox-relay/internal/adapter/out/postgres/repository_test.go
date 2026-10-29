@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"os"
 	"strings"
@@ -227,8 +228,19 @@ func TestDeliverBatchPublishesAndMarks(t *testing.T) {
 	if len(got) != 2 || got[0].ID != uuidA || got[1].ID != uuidB {
 		t.Fatalf("порядок/состав батча: %+v", got)
 	}
-	if got[0].RoutingKey != "booking.created" || string(got[0].Payload) != `{"bookingId":"`+uuidA+`"}` {
-		t.Fatalf("поля записи: %+v", got[0])
+	// payload хранится jsonb: Postgres печатает каноническую форму
+	// (пробел после «:», порядок ключей) — байты вставки НЕ сохраняются.
+	// Курьер публикует тело как есть, консьюмеры парсят JSON — продуктово
+	// безопасно; тест сверяет смысл, а не побайтовое равенство
+	if got[0].RoutingKey != "booking.created" {
+		t.Fatalf("routing key записи: %+v", got[0])
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(got[0].Payload, &payload); err != nil {
+		t.Fatalf("payload записи %s — не JSON: %v (%s)", uuidA, err, got[0].Payload)
+	}
+	if payload["bookingId"] != uuidA {
+		t.Fatalf("payload записи: %+v (bookingId хочу %s)", payload, uuidA)
 	}
 	if got[0].Headers["traceparent"] == "" {
 		t.Fatalf("traceparent не вычитан: %+v", got[0].Headers)
