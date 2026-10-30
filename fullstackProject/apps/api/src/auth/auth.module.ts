@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OutboxModule } from '../outbox/outbox.module';
-import { rabbitMqModule } from '../rabbit/rabbitmq.config';
 import { RatelimiterModule } from '../ratelimiter/ratelimiter.module';
 import { TokensModule } from '../tokens/tokens.module';
 import { UsersModule } from '../users/users.module';
@@ -17,12 +16,11 @@ import { PasswordReset } from './password-reset.entity';
     PassportModule,
     // JwtModule живёт в TokensModule (подпись пары + JwtService для стратегии)
     TokensModule,
-    // rabbitMqModule — чтобы инжектить AmqpConnection («письмо» сброса пароля)
     TypeOrmModule.forFeature([PasswordReset]),
-    rabbitMqModule,
     // RatelimiterModule — гвард лимитов на login() (брутфорс по email)
     RatelimiterModule,
     // OutboxModule — будильник Курьера после коммита «письма» сброса
+    // (само «письмо» user.password.reset Курьер и доставит)
     OutboxModule,
   ],
   controllers: [AuthController],
