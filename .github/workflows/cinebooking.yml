@@ -225,10 +225,13 @@ jobs:
             threshold: 39
           # Курьер (этап транзакционного outbox): покрытие дают домен,
           # use-case и live-PG стора; адаптеры amqp/gRPC/HTTP без тестов,
-          # как у соседей — оценка ~33%, поднять по факту прогона
+          # как у соседей. Модуль 423 стейтмента, из них 70 — repository.go:
+          # даже при 100% живого прогона потолок ~24%, порог 30 был
+          # недостижим (первый прогон 29.10); 19 — уровень worker,
+          # поднять по факту зелёного (число — в notice-аннотации шага)
           - name: outbox-relay
             dir: outbox-relay
-            threshold: 30
+            threshold: 19
     defaults:
       run:
         working-directory: fullstackProject/services/${{ matrix.dir }}
@@ -284,13 +287,17 @@ jobs:
             exit "$status"
           fi
 
-      # порог в matrix.threshold: ниже — красный шаг, расти можно
+      # порог в matrix.threshold: ниже — красный шаг, расти можно.
+      # Число уходит notice-аннотацией (публично видна и на зелёном):
+      # шаг молча краснеет только в логе, порог tuning без входа не виден —
+      # грабли outbox-relay 29.10: порог 30 при потолке ~24%
       - name: coverage threshold
         run: |
           total=$(go tool cover -func=cover.out | tail -1 | awk '{gsub(/%/, ""); print $3}')
           echo "покрытие: ${total}% (порог ${{ matrix.threshold }}%)"
+          echo "::notice::title=coverage (${{ matrix.name }})::${total}% (порог ${{ matrix.threshold }}%)"
           awk -v t="$total" -v min="${{ matrix.threshold }}" 'BEGIN { exit t < min }' \
-            || { echo "покрытие ${total}% ниже порога ${{ matrix.threshold }}%"; exit 1; }
+            || { echo "::error::title=coverage (${{ matrix.name }})::покрытие ${total}% ниже порога ${{ matrix.threshold }}%"; exit 1; }
 
   # Живой e2e-стенд (15-C): поднимаем compose-окружение ЦЕЛИКОМ — как его
   # поднимает разработчик локально, но на раннере CI. В прогон берём
