@@ -169,7 +169,7 @@ cd apps/web && npm run lint && npm test
 # с подсказкой)
 cd apps/web && npm run test:ui
 
-# API: юнит (301 тест) — логика брони, места/конфликт, pay/expire/cancel,
+# API: юнит (315 тестов) — логика брони, места/конфликт, pay/expire/cancel,
 # SSE, кэш, расписание сеансов, health, пользователи/посев админа,
 # JWT-логин, retry/parking, отзывы (право/дубль/агрегаты/удаление),
 # промокоды (скидка-математика, превью, атомарное списание в оплате,
@@ -190,10 +190,12 @@ cd apps/web && npm run test:ui
 # швы трейсинга OTel: гейт SDK по env и URL OTLP, traceparent
 # в публикациях (wiring create), консьюмер-спаны-дети публикатора
 # с ERROR-статусом и пробросом в retry, флаги refresh-cookie (Secure
-# за env COOKIE_SECURE, одинаковые у set и clear)
+# за env COOKIE_SECURE, одинаковые у set и clear), outbox (запись тем же
+# em, traceparent на момент записи; события брони/отзывов/сброса —
+# в outbox-строках, а не прямых публикациях)
 cd apps/api && npm test
 
-# API: интеграционные (185) — полный HTTP-стек Nest (роутинг, ValidationPipe,
+# API: интеграционные (193) — полный HTTP-стек Nest (роутинг, ValidationPipe,
 # контроллеры → сервисы → фейковые Postgres/RabbitMQ/Redis на Map),
 # включая 409-конфликт мест, изоляцию мест между сеансами, контракт /pay,
 # экспирацию резерва, сагу отмены, SSE-стрим по живому HTTP,
@@ -216,7 +218,9 @@ cd apps/api && npm test
 # нормализуется, fail-open при сбое, маршрут без декоратора не спрашивает),
 # security-заголовки Helmet живым HTTP (nosniff/XFO/HSTS/CORP/COOP на всех
 # ответах, CSP с ослаблением только в style-src, Swagger-ассеты self),
-# спецификацию Swagger (маршруты, схемы DTO, bearer-security)
+# спецификацию Swagger (маршруты, схемы DTO, bearer-security), outbox:
+# события create/вердиктов/отмены/сброса/waitlist — в строках outbox
+# одной транзакции с бизнес-данными, poke Курьеру после коммита
 cd apps/api && npm run test:integration
 
 # API: live-int (15) — то же приложение целиком против одноразовых
@@ -316,6 +320,14 @@ cd services/pricing-service && go test ./...
 # (CTE takeSQL с last_taken, скип без стенда), gRPC через bufconn
 # (InvalidArgument), HTTP-витрина /buckets на httptest
 cd services/ratelimiter-service && go test ./...
+
+# Курьер: use-case на фейках портов (дренаж хвоста батчами, вердикт
+# deliver → в стор, отказ сторы не валит тик, слияние сигналов Notify,
+# нормализация батча), домен (NextDelay 500мс×2ⁿ с кэпом, статус записи),
+# postgres против живого PG (publish+пометка одной транзакцией, бэкофф
+# неудачи и вторая попытка, SKIP LOCKED не дублирует заблокированное,
+# Stats pending/oldest, fail-fast без БД) — скип без стенда
+cd services/outbox-relay && go test ./...
 ```
 
 База стенда для e2e переопределяется через `E2E_BASE_URL` (по умолчанию
@@ -480,6 +492,57 @@ API (`api.booking.*`), и у Go-воркера (`worker.booking.*`) — есть
   у `@RabbitSubscribe` (`apps/api/src/rabbit/retry.ts`), воркер —
   `retryOrFail` (`services/ticket-worker/main.go`). Топологию (`*.retry`,
   `*.parking` + бинды) объявляют обе стороны одинаковыми параметрами.
+
+### Транзакционный outbox: события не теряются между БД и брокером
+
+Retry-очереди из раздела выше страхуют потребителя; дыра остаётся на
+стороне издателя — dual-write. API коммитит бронь в Postgres и тут же
+публикует событие в RabbitMQ: краш между двумя операциями теряет
+событие навсегда (бронь есть — воркер о ней не узнает). Дыру закрывает
+транзакционный outbox — все бизнес-события API едут в брокер через него:
+
+```
+  бизнес-транзакция API                        после COMMIT
+  ┌─ INSERT брони: места, суммы ┐
+  │  INSERT outbox_messages     │──► COMMIT ──► poke() Курьеру (gRPC Notify,
+  └─────────────────────────────┘               дедлайн 1 с, fail-open)
+                                                       │ будит тик
+  RabbitMQ ◄── publish + пометка published ◄── Курьер: батч (дефолт 20),
+       │                    одна транзакция     SELECT … FOR UPDATE SKIP
+       └─ amqp messageId = id записи outbox:     LOCKED, тик 500 мс
+          ределивери-дубль гасят консьюмеры
+```
+
+- Запись — `enqueueOutbox(em, routingKey, payload)` тем же EntityManager,
+  что и бизнес-данные (`apps/api/src/outbox/outbox.ts`): либо коммитятся
+  обе записи, либо ни одна. traceparent захватывается в момент записи —
+  отложенная публикация остаётся в трейсе исходной операции.
+- Курьер (`services/outbox-relay`, Go, гексагональный, как соседние
+  сервисы) — единственный издатель: вынимает батч старейшими вперёд,
+  публикует в обмен `cinema` с сохранёнными headers, помечает
+  published — выборка, публикация и пометки в одной транзакции с
+  блокировкой строк: параллельные тики и реплики релея не дублируют
+  чужое. Сбой публикации — не дроп: attempts+1, бэкофф 500 мс × 2ⁿ
+  (кэп 60 с), запись ждёт в pending.
+- Доставка at-least-once: краш между publish и пометкой даст дубль —
+  консьюмеры гасят его дедупом по amqp messageId = id записи outbox
+  (notification-сервис ещё и Exists + ON CONFLICT).
+- Notify-будильник — ускоритель латентности, не гарантия: API после
+  COMMIT зовёт gRPC `OutboxRelay.Notify` (10 сайтов вызовов), потеря
+  RPC безвредна — poll-тик 500 мс заберёт записи сам. Адрес —
+  `GRPC_OUTBOX_URL` (compose/k8s — `outbox-relay:8093`, dev-дефолт
+  `localhost:18093`), дедлайн `GRPC_OUTBOX_TIMEOUT_MS` (1 c).
+- Через outbox идут все события API: `booking.created` / `.payment.wait` /
+  `.processed` / `.expired` / `.cancelled`, сигналы КиноСоветнику от
+  броней и отзывов, `waitlist.seat.released`, `user.waitlist.seat`,
+  `user.password.reset`. Осознанные исключения: `analytics.event` (БД
+  в контуре нет — прямая публикация), SSE-кадры (строго после коммита,
+  in-process) и напоминания (fire-and-forget gRPC к reminder-сервису —
+  не событие, а команда на планирование).
+- Витрина Курьера `GET /outbox` (`:18094` на стенде): pending-хвост и
+  старейшая запись, счётчики published/failed за процесс; Prometheus-
+  метрики. Без живого PG сервис падает на старте (fail fast): молчаливый
+  no-op скрыл бы потерю доставки.
 
 ### Авторизация (JWT + роли) и аккаунт
 
@@ -1343,6 +1406,15 @@ dev-дефолт `localhost:18088`) с дедлайном `GRPC_PRICING_TIMEOUT_
 броней в минуту) и `RATE_LOGIN_PER_MIN` (дефолт 5). Пороги e2e-проверок
 лимитов — `E2E_RATE_BOOKINGS_PER_MIN` / `E2E_RATE_LOGIN_PER_MIN`
 (дефолты 30/5, как на стенде).
+
+Outbox: API будит Курьера по `GRPC_OUTBOX_URL` (compose/k8s —
+`outbox-relay:8093`, dev-дефолт `localhost:18093`) с дедлайном
+`GRPC_OUTBOX_TIMEOUT_MS` (1 c — будильник ускоритель, а не гарантия:
+потеря RPC безвредна, записи заберёт poll-тик). Настройки самого
+Курьера: `RELAY_BATCH` (20 записей), `RELAY_POLL_MS` (500) и
+`RELAY_BACKOFF_CAP_MS` (60 000), `GRPC_ADDR` (:8093) и `HTTP_ADDR`
+(:8094 — витрина `/outbox` и `/health`); живёт в общей базе API
+(`DATABASE_URL`), таблицу `outbox_messages` создают миграции API.
 
 ## Заметки
 
