@@ -20,6 +20,10 @@
       {
         "include": "ratelimiter/proto/*.proto",
         "outDir": "dist"
+      },
+      {
+        "include": "outbox/proto/*.proto",
+        "outDir": "dist"
       }
     ]
   }
