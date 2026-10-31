@@ -1,0 +1,46 @@
+# Chaos-оверлей стенда (этап 24): toxiproxy между клиентами и инфраструктурой.
+#
+# Применяется поверх базового compose:
+#   docker compose -f docker-compose.yml -f docker-compose.chaos.yml up
+#
+# Зачем четыре прокси, а не один на Postgres и один на RabbitMQ: хаос-сценарии
+# валят канал ТОЧЕЧНО у одного клиента. «Блэкаут брокера у Курьера» должен
+# оставить API работоспособным — значит, у API и outbox-relay собственные
+# прокси (amqp-api / amqp-relay), и toxic вешается только на один из них.
+# То же с Postgres: pg-api и pg-relay разделяют сбой «база отвалилась
+# у Курьера» от «база тормозит у всех».
+#
+# Прокси регистрируются конфигом при старте toxiproxy (chaos/toxiproxy.json):
+# к моменту подъёма api порты уже слушаются, гонки «подключение раньше
+# прокси» нет. Токсики (latency/down/timeout) сценарии вносят в рантайме
+# через HTTP API toxiproxy — см. test/chaos-harness.ts.
+name: cine-booking
+
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    environment:
+      TOXIPROXY_CONFIG: /config/toxiproxy.json
+    volumes:
+      - ./chaos/toxiproxy.json:/config/toxiproxy.json:ro
+    ports:
+      - '18475:8475' # HTTP API управления прокси и токсиками
+
+  # API ходит в PG и Rabbit через собственные прокси — их можно ломать,
+  # не задевая Курьера, и наоборот
+  api:
+    environment:
+      DATABASE_URL: postgres://cine:cine@toxiproxy:15433/cine
+      RABBITMQ_URL: amqp://guest:guest@toxiproxy:15673/
+    depends_on:
+      toxiproxy:
+        condition: service_started
+
+  # Курьер: отдельные прокси к общей базе API и брокеру
+  outbox-relay:
+    environment:
+      DATABASE_URL: postgres://cine:cine@toxiproxy:15434/cine
+      AMQP_URL: amqp://guest:guest@toxiproxy:15674/
+    depends_on:
+      toxiproxy:
+        condition: service_started

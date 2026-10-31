@@ -708,6 +708,13 @@ jobs:
       - name: docker compose config
         run: docker compose --file fullstackProject/docker-compose.yml config --quiet
 
+      # chaos-оверлей (этап 24): toxiproxy между клиентами и инфраструктурой.
+      # Мерж базового compose с оверлеем тоже обязан давать валидный конфиг —
+      # env api/relay перекрывается на прокси-адреса, depends_on дополняется
+      # toxiproxy; контейнеры не запускаются
+      - name: docker compose config (chaos overlay)
+        run: docker compose --file fullstackProject/docker-compose.yml --file fullstackProject/docker-compose.chaos.yml config --quiet
+
       # nginx-конфиг веба (security-заголовки, прокси, WS-апгрейд):
       # синтаксис проверяем в том же образе, что и стенд; контейнер
       # сразу выходит после -t — стенд не поднимается. proxy_pass идёт

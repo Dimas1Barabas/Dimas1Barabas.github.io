@@ -1,0 +1,26 @@
+[
+  {
+    "name": "pg-api",
+    "listen": "[::]:15433",
+    "upstream": "postgres:5432",
+    "enabled": true
+  },
+  {
+    "name": "pg-relay",
+    "listen": "[::]:15434",
+    "upstream": "postgres:5432",
+    "enabled": true
+  },
+  {
+    "name": "amqp-api",
+    "listen": "[::]:15673",
+    "upstream": "rabbitmq:5672",
+    "enabled": true
+  },
+  {
+    "name": "amqp-relay",
+    "listen": "[::]:15674",
+    "upstream": "rabbitmq:5672",
+    "enabled": true
+  }
+]
