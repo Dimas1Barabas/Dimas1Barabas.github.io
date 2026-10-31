@@ -390,7 +390,7 @@ jobs:
   # базового compose): прокси pg-api/pg-relay/amqp-api/amqp-relay дают
   # точечные сбои — блэкаут брокера ТОЛЬКО у Курьера, API не задет.
   # Сценарии test/chaos (*.chaos.spec.ts) вносят токсики в рантайме через
-  # HTTP API toxiproxy (host-порт 18475) и доказывают: латентность до PG
+  # HTTP API toxiproxy (host-порт 18474) и доказывают: латентность до PG
   # не рвёт цикл брони, блэкаут брокера/базы у Курьера не теряет события
   # outbox — хвост разъезжается после восстановления. Воркеру оверлей
   # даёт SUCCESS_RATE=1: вердикты детерминированы, случайность платежа
@@ -412,16 +412,36 @@ jobs:
         working-directory: fullstackProject/apps/api
 
       # оверлей перекрывает env api/outbox-relay на адреса прокси;
-      # --wait — до healthcheck api (миграции + брокер), как в compose-e2e
+      # --wait — до healthcheck api (миграции + брокер), как в compose-e2e.
+      # Упавший стенд — публичной аннотацией с compose ps и хвостами
+      # логов: первый прогон сгорел вслепую (конфиг toxiproxy не загрузился),
+      # логи шага анонимно не читаются
       - name: docker compose up --wait (chaos overlay)
         run: |
+          set -o pipefail
+          status=0
           docker compose \
             --file docker-compose.yml \
             --file docker-compose.chaos.yml \
             up --build --wait --wait-timeout 300 -d \
             postgres redis rabbitmq toxiproxy \
             worker notification recommendation reminder pricing ratelimiter analytics \
-            outbox-relay api
+            outbox-relay api || status=$?
+          if [ "$status" -ne 0 ]; then
+            msg="$(
+              echo 'COMPOSE PS:'
+              docker compose --file docker-compose.yml --file docker-compose.chaos.yml ps -a || true
+              echo '--- LOGS toxiproxy ---'
+              docker compose --file docker-compose.yml --file docker-compose.chaos.yml logs --tail 40 toxiproxy || true
+              echo '--- LOGS api ---'
+              docker compose --file docker-compose.yml --file docker-compose.chaos.yml logs --tail 60 api || true
+              echo '--- LOGS outbox-relay ---'
+              docker compose --file docker-compose.yml --file docker-compose.chaos.yml logs --tail 40 outbox-relay || true
+            )"
+            encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' | head -c 4000)
+            echo "::error::title=chaos compose up::$encoded"
+            exit "$status"
+          fi
         working-directory: fullstackProject
 
       # страховка на пропущенный healthcheck-флейк — проба с логами api

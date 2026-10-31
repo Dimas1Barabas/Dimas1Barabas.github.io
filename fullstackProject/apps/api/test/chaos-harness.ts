@@ -9,8 +9,8 @@
  */
 import { BASE } from './e2e-context';
 
-/** HTTP API toxiproxy (host-порт chaos-оверлея) */
-export const TOXI = process.env.TOXIPROXY_URL ?? 'http://localhost:18475';
+/** HTTP API toxiproxy (host-порт chaos-оверлея; контейнер слушает 8474) */
+export const TOXI = process.env.TOXIPROXY_URL ?? 'http://localhost:18474';
 /** витрина Курьера /outbox (host-порт базового стенда) */
 export const RELAY = process.env.CHAOS_RELAY_URL ?? 'http://localhost:18094';
 /** история писем notification-service (host-порт базового стенда) */

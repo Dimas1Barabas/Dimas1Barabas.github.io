@@ -19,12 +19,15 @@ name: cine-booking
 services:
   toxiproxy:
     image: ghcr.io/shopify/toxiproxy:2.12.0
-    environment:
-      TOXIPROXY_CONFIG: /config/toxiproxy.json
+    # образ FROM scratch, ENTRYPOINT /toxiproxy: конфиг передаётся ТОЛЬКО
+    # флагом -config (env TOXIPROXY_CONFIG образ не читает — тихо
+    # игнорируется, прокси не регистрируются). -host обязателен: без него
+    # API слушает localhost и из сети контейнеров недоступен
+    command: ['-host=0.0.0.0', '-config=/config/toxiproxy.json']
     volumes:
       - ./chaos/toxiproxy.json:/config/toxiproxy.json:ro
     ports:
-      - '18475:8475' # HTTP API управления прокси и токсиками
+      - '18474:8474' # HTTP API управления прокси и токсиками (дефолт 8474)
 
   # API ходит в PG и Rabbit через собственные прокси — их можно ломать,
   # не задевая Курьера, и наоборот
