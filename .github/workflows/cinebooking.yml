@@ -23,6 +23,11 @@
 #                 PG+Redis+Rabbit+api+воркер+шесть Go-сервисов) и test:e2e
 #                 против него: HTTP → брокер → вердикты воркера → gRPC.
 #                 Локально тот же прогон — `docker compose up` руками
+#   chaos        — тот же стенд с toxiproxy между клиентами и инфраструктурой
+#                 (docker-compose.chaos.yml): сценарии валят каналы точечно
+#                 (латентность PG, блэкаут брокера/базы у одного Курьера)
+#                 и доказывают инварианты контура: события outbox не
+#                 теряются, хвост разъезжается после восстановления
 #   k8s          — тот же стенд под управлением Kubernetes: kind-кластер
 #                 на раннере, образы собирает джоба и грузит в ноду,
 #                 манифесты — k8s/ (kustomize base + overlay ci),
@@ -378,6 +383,90 @@ jobs:
       - name: compose logs (только при падении)
         if: failure()
         run: docker compose logs --tail 300 api worker notification recommendation reminder pricing ratelimiter outbox-relay
+        working-directory: fullstackProject
+
+  # Хаос-уровень (этап 24): событийный контур стенда, но между клиентами
+  # и инфраструктурой стоит toxiproxy (docker-compose.chaos.yml поверх
+  # базового compose): прокси pg-api/pg-relay/amqp-api/amqp-relay дают
+  # точечные сбои — блэкаут брокера ТОЛЬКО у Курьера, API не задет.
+  # Сценарии test/chaos (*.chaos.spec.ts) вносят токсики в рантайме через
+  # HTTP API toxiproxy (host-порт 18475) и доказывают: латентность до PG
+  # не рвёт цикл брони, блэкаут брокера/базы у Курьера не теряет события
+  # outbox — хвост разъезжается после восстановления. Воркеру оверлей
+  # даёт SUCCESS_RATE=1: вердикты детерминированы, случайность платежа
+  # в предмет этапа не входит.
+  chaos:
+    name: chaos — стенд с toxiproxy + test:chaos
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fullstackProject/apps/api/package-lock.json
+
+      - run: npm ci
+        working-directory: fullstackProject/apps/api
+
+      # оверлей перекрывает env api/outbox-relay на адреса прокси;
+      # --wait — до healthcheck api (миграции + брокер), как в compose-e2e
+      - name: docker compose up --wait (chaos overlay)
+        run: |
+          docker compose \
+            --file docker-compose.yml \
+            --file docker-compose.chaos.yml \
+            up --build --wait --wait-timeout 300 -d \
+            postgres redis rabbitmq toxiproxy \
+            worker notification recommendation reminder pricing ratelimiter analytics \
+            outbox-relay api
+        working-directory: fullstackProject
+
+      # страховка на пропущенный healthcheck-флейк — проба с логами api
+      - name: wait for /api/health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:13000/api/health >/dev/null 2>&1; then
+              echo "api готов (проба $i)"; exit 0
+            fi
+            sleep 5
+          done
+          echo "api не ожил за 300с — логи ниже"
+          docker compose --file docker-compose.yml --file docker-compose.chaos.yml logs --tail 100 api
+          exit 1
+        working-directory: fullstackProject
+
+      # сценарии идут --runInBand: они делят один стенд и один toxiproxy,
+      # параллелить нельзя. Вывод дублируем в файл с error-аннотацией —
+      # тот же приём, что у e2e (какая спека виновата — видно без логов)
+      - name: run chaos
+        run: |
+          set -o pipefail
+          status=0
+          npm run test:chaos 2>&1 | tee /tmp/chaos.log || status=$?
+          if [ "$status" -ne 0 ]; then
+            msg="$(
+              echo 'УПАВШИЕ СПЕКИ:'
+              grep -E '^FAIL ' /tmp/chaos.log | sort -u | head -15 || true
+              echo '--- ДЕТАЛИ ПАДЕНИЙ (jest) ---'
+              grep -B1 -A 30 '●' /tmp/chaos.log | head -70 || true
+              echo '--- ХВОСТ ЛОГА ---'
+              tail -15 /tmp/chaos.log
+            )"
+            encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' | head -c 4000)
+            echo "::error::title=chaos (toxiproxy-стенд)::$encoded"
+            exit "$status"
+          fi
+        working-directory: fullstackProject/apps/api
+
+      # посмертные логи: Курьер и toxiproxy — первые подозреваемые
+      - name: compose logs (только при падении)
+        if: failure()
+        run: |
+          docker compose --file docker-compose.yml --file docker-compose.chaos.yml \
+            logs --tail 300 api worker outbox-relay notification toxiproxy
         working-directory: fullstackProject
 
   # Kubernetes-уровень (этап 21): тот же стенд, что в compose-e2e, но
