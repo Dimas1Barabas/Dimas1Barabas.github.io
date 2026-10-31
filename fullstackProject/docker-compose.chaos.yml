@@ -36,6 +36,15 @@ services:
       toxiproxy:
         condition: service_started
 
+  # Вердикты воркера на хаос-стенде детерминированы: предмет этапа —
+  # сетевые сбои, а не платёжная лотерея (дефолт 0.9). Успешная бронь
+  # гарантированно даёт recommendation.booking.confirmed в outbox —
+  # ассерты сценариев считают события точно
+  worker:
+    environment:
+      SUCCESS_RATE: '1'
+      REFUND_SUCCESS_RATE: '1'
+
   # Курьер: отдельные прокси к общей базе API и брокеру
   outbox-relay:
     environment:

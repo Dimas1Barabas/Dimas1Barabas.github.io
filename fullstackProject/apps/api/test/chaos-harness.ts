@@ -235,11 +235,12 @@ export async function waitDrained(timeoutMs: number): Promise<OutboxStats> {
   }
 }
 
-/** письмо «Бронь подтверждена» адресату email; null — не пришло за таймаут */
-export async function confirmedLetter(
+/** письмо в истории notification по kind; null — не пришло за таймаут */
+async function letterFor(
   userEmail: string,
+  kind: string,
   timeoutMs: number,
-): Promise<{ kind: string } | null> {
+): Promise<{ kind: string; body: string } | null> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const res = await fetch(
@@ -247,11 +248,59 @@ export async function confirmedLetter(
       { signal: AbortSignal.timeout(5000) },
     ).catch(() => null);
     if (res?.ok) {
-      const { items } = (await res.json()) as { items: { kind: string }[] };
-      const letter = items.find((i) => i.kind === 'booking_confirmed');
+      const { items } = (await res.json()) as {
+        items: { kind: string; body: string }[];
+      };
+      const letter = items.find((i) => i.kind === kind);
       if (letter) return letter;
     }
     if (Date.now() >= deadline) return null;
     await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
+
+/**
+ * Письмо сброса пароля — единственный наблюдаемый эффект, который
+ * приходит ИМЕННО через Курьера: api пишет user.password.reset в outbox,
+ * письмо password_reset в истории notification может появиться только
+ * после доставки события в брокер. booking_confirmed для этого не годится:
+ * его публикует воркер напрямую, минуя outbox.
+ */
+export function resetLetter(
+  userEmail: string,
+  timeoutMs: number,
+): Promise<{ kind: string; body: string } | null> {
+  return letterFor(userEmail, 'password_reset', timeoutMs);
+}
+
+/** запрос сброса пароля: событие уходит в outbox в общей транзакции */
+export async function requestPasswordReset(userEmail: string): Promise<void> {
+  const res = await fetch(`${BASE}/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: userEmail }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`forgot-password: HTTP ${res.status}`);
+}
+
+/** ждёт вердикт воркера (уход из PENDING/PENDING_PAYMENT) */
+export async function waitVerdict(
+  bookingId: string,
+  timeoutMs = 90_000,
+): Promise<{ id: string; status: string; processedBy: string | null }> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const list = await capi<
+      { id: string; status: string; processedBy: string | null }[]
+    >('/bookings');
+    const booking = list.find((b) => b.id === bookingId);
+    if (booking && !['PENDING', 'PENDING_PAYMENT'].includes(booking.status)) {
+      return booking;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`бронь ${bookingId} не получила вердикт за ${timeoutMs} мс`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 700));
   }
 }
