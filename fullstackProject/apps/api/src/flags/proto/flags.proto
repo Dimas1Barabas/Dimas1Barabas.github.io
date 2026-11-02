@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+// Flags — gRPC-контракт «Суфлёра»: сервиса тумблеров фич.
+// Общий контракт API (NestJS) и flags-service (Go): proto-loader
+// на стороне Node читает этот файл в рантайме, Go-сторона использует
+// сгенерированный код (scripts/protogen.sh -> internal/pb).
+// Состояние флагов (включён ли, процент раскатки, kill-switch) живёт
+// в самом сервисе; вызывающий присылает ключ флага и сущность.
+package cine.flags.v1;
+
+option go_package = "flags-service/internal/pb;cinepb";
+
+// Сервис фич-тумблеров. Гварды и сервисы API спрашивают, показывать
+// ли фичу этой сущности (Evaluate); админка управляет флагами
+// (UpsertFlag/DeleteFlag, витрина ListFlags). Отказ фича-вердикта —
+// не ошибка RPC: enabled=false + причина, чтобы вызывающий мог
+// держать локальный кэш состояний и гасить недоступность сервиса
+// офлайном последнего снимка (fail-safe: фича скрыта).
+service Flags {
+  // Вердикт флага для сущности. Раскатка детерминирована:
+  // bucket = hash("key|entity_id") % 100, фича видна, если
+  // bucket < percentage — сущность всегда в одной стороне раскатки,
+  // «мигание» флага между запросами исключено.
+  rpc Evaluate (EvaluateRequest) returns (EvaluateResponse);
+  // Все флаги одним снимком: API кэширует состояния и считает
+  // вердикты локально (тот же бакетинг) — kill-switch вступает
+  // в силу за TTL кэша, без похода за каждым вердиктом.
+  rpc ListFlags (ListFlagsRequest) returns (ListFlagsResponse);
+  // Создать или обновить флаг: описание, тумблер, процент, kill-switch.
+  rpc UpsertFlag (UpsertFlagRequest) returns (FlagState);
+  // Удалить флаг (Evaluate ответит not_found).
+  rpc DeleteFlag (DeleteFlagRequest) returns (DeleteFlagResponse);
+}
+
+message EvaluateRequest {
+  string key = 1;       // ключ флага: checkout.new_flow
+  string entity_id = 2; // бакетируемая сущность: user id / email / ip
+}
+
+message EvaluateResponse {
+  bool  enabled    = 1; // показывать ли фичу этой сущности
+  string reason    = 2; // вердикт: on | percentage | flag_off | kill_switch | not_found
+  int32 percentage = 3; // текущий процент раскатки флага
+}
+
+// Снимок флага — состояние и последняя правка.
+message FlagState {
+  string key         = 1;  // ключ флага
+  string description = 2;  // что это за фича, человеком
+  bool   enabled     = 3;  // мастер-тумблер: пауза раскатки без потери процента
+  int32  percentage  = 4;  // доля сущностей, которым фича видна: 0..100
+  bool   killed      = 5;  // kill-switch: мгновенный оф всем, приоритет над enabled/percentage
+  string updated_by  = 6;  // кто менял: админ/система
+  string updated_at  = 7;  // момент правки, RFC3339
+}
+
+message ListFlagsRequest {
+}
+
+message ListFlagsResponse {
+  repeated FlagState flags = 1;
+}
+
+message UpsertFlagRequest {
+  string key         = 1;
+  string description = 2;
+  bool   enabled     = 3;
+  int32  percentage  = 4;
+  bool   killed      = 5;
+  string updated_by  = 6; // кто меняет — уйдёт в аудит правки
+}
+
+message DeleteFlagRequest {
+  string key = 1;
+}
+
+message DeleteFlagResponse {
+  bool deleted = 1; // false — флага и не было
+}

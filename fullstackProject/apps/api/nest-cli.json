@@ -24,6 +24,10 @@
       {
         "include": "outbox/proto/*.proto",
         "outDir": "dist"
+      },
+      {
+        "include": "flags/proto/*.proto",
+        "outDir": "dist"
       }
     ]
   }
