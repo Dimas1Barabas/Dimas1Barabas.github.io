@@ -22,6 +22,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { RedisModule } from './redis/redis.module';
 import { UsersModule } from './users/users.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
+import { FlagsModule } from './flags/flags.module';
 
 @Module({
   imports: [
@@ -55,6 +56,9 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     BonusModule,
     RecommendationsModule,
     RemindersModule,
+    // тумблеры фич: локальный кэш состояний «Суфлёра», @FeatureFlag на
+    // маршрутах и админка /admin/flags (этап флагов)
+    FlagsModule,
 
     // пользователи и авторизация: регистрация сейчас, логин+JWT дальше
     UsersModule,
