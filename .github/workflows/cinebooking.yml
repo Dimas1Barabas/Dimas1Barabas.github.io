@@ -11,10 +11,10 @@
 #                 миграции, uq-констрейнты, настоящий брокер и кэш.
 #                 Живой прогон делает робот, локально спеки скипаются —
 #                 как у Go-сервисов
-#   go           — matrix по восьми Go-сервисам: build + vet + lint + test -race
+#   go           — matrix по девяти Go-сервисам: build + vet + lint + test -race
 #                 с порогом покрытия per-service
 #                 (ticket-worker, notification, recommendation, reminder,
-#                  pricing, ratelimiter, analytics, outbox-relay); live-PG адаптеры сервисов —
+#                  pricing, ratelimiter, flags, analytics, outbox-relay); live-PG адаптеры сервисов —
 #                 против одноразовых Postgres (testcontainers, TESTCONTAINERS=1):
 #                 живой прогон делает робот, локально тесты честно скипаются
 #   proto        — buf lint (STANDARD) + buf breaking (дрейф gRPC-контрактов)
@@ -223,6 +223,12 @@ jobs:
           - name: ratelimiter
             dir: ratelimiter-service
             threshold: 43
+          # Суфлёр (этап флагов фич): локально без PG 26.7 (постгрес-адаптер
+          # скипается); CI с testcontainers раскроет адаптер живым прогоном —
+          # поднять порог по факту зелёного (число — в notice-аннотации шага)
+          - name: flags
+            dir: flags-service
+            threshold: 24
           # 39.4 локально (без live-PG); CI с testcontainers выше —
           # postgres-адаптер раскрывается живым прогоном
           - name: analytics
@@ -335,7 +341,7 @@ jobs:
         run: |
           docker compose up --build --wait --wait-timeout 300 -d \
             postgres redis rabbitmq \
-            worker notification recommendation reminder pricing ratelimiter analytics \
+            worker notification recommendation reminder pricing ratelimiter flags analytics \
             outbox-relay api
         working-directory: fullstackProject
 
@@ -382,7 +388,7 @@ jobs:
       # посмертные логи стенда: на упавшей спеке видно, что делали сервисы
       - name: compose logs (только при падении)
         if: failure()
-        run: docker compose logs --tail 300 api worker notification recommendation reminder pricing ratelimiter outbox-relay
+        run: docker compose logs --tail 300 api worker notification recommendation reminder pricing ratelimiter flags outbox-relay
         working-directory: fullstackProject
 
   # Хаос-уровень (этап 24): событийный контур стенда, но между клиентами
@@ -425,7 +431,7 @@ jobs:
             --file docker-compose.chaos.yml \
             up --build --wait --wait-timeout 300 -d \
             postgres redis rabbitmq toxiproxy \
-            worker notification recommendation reminder pricing ratelimiter analytics \
+            worker notification recommendation reminder pricing ratelimiter flags analytics \
             outbox-relay api || status=$?
           if [ "$status" -ne 0 ]; then
             msg="$(

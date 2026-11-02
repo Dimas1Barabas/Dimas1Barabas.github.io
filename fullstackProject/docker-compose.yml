@@ -71,6 +71,9 @@ services:
       # Привратник: gRPC-адрес лимитов (недоступность — fail-open,
       # запрос проходит без проверки)
       GRPC_RATELIMITER_URL: ratelimiter:8090
+      # Суфлёр: gRPC-адрес флагов фич (недоступность — вердикты по
+      # офлайн-снимку кэша, новых фич не показываем, fail-safe)
+      GRPC_FLAGS_URL: flags:8095
       # Курьер: будильник «закоммитил outbox-записи» после COMMIT
       # (недоступность безвредна — доставит poll-тик)
       GRPC_OUTBOX_URL: outbox-relay:8093
@@ -109,6 +112,8 @@ services:
       pricing:
         condition: service_started
       ratelimiter:
+        condition: service_started
+      flags:
         condition: service_started
       analytics:
         condition: service_started
@@ -244,6 +249,26 @@ services:
     ports:
       - '18090:8090' # gRPC RateLimiter (API ходит внутри сети; хост-порт — для grpcurl)
       - '18091:8091' # /health, /buckets — витрина корзин
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # гексагональный Go-сервис «Суфлёр»: тумблеры фич с процентной
+  # раскаткой (детерминированный бакетинг hash(key|entity) % 100) и
+  # kill-switch; состояние и аудит правок — в собственной БД cine_flags.
+  # Сервис чисто синхронный — брокер не нужен.
+  flags:
+    build: ./services/flags-service
+    environment:
+      GRPC_ADDR: :8095
+      HTTP_ADDR: :8096
+      STORAGE: postgres
+      DATABASE_URL: postgres://cine:cine@postgres:5432/cine_flags
+      # OpenTelemetry: OTLP gRPC-эндпоинт Jaeger; без переменной — no-op
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+    ports:
+      - '18095:8095' # gRPC Flags (API ходит внутри сети; хост-порт — для grpcurl)
+      - '18096:8096' # /health, /flags, /flags/revisions — витрина тумблеров и аудит
     depends_on:
       postgres:
         condition: service_healthy

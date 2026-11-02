@@ -50,6 +50,11 @@ scrape_configs:
     static_configs:
       - targets: ['ratelimiter:8091']
 
+  # Суфлёр: вердикты флагов по причинам, правки, длительности RPC
+  - job_name: flags
+    static_configs:
+      - targets: ['flags:8096']
+
   # Аналитик: события поведения и броней в агрегатах, сбои обработки
   - job_name: analytics
     static_configs:
