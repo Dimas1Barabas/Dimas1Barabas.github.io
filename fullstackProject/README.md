@@ -52,9 +52,10 @@ docker compose up --build
 | pricing (Go, gRPC) | localhost:18088 (gRPC, reflection); http://localhost:18089/prices | «Тарификатор»: история квотов с раскладкой факторов, проекция спроса |
 | ratelimiter (Go, gRPC) | localhost:18090 (gRPC, reflection); http://localhost:18091/buckets | «Привратник»: витрина token-корзин лимитов (бронь, вход) |
 | analytics (Go) | http://localhost:18092/insights | «Аналитик»: витрина «Поведение» — воронка, фильмы, страницы, места, модалка |
+| flags (Go, gRPC) | localhost:18095 (gRPC, reflection); http://localhost:18096/flags | «Суфлёр»: витрина тумблеров фич и аудит правок |
 | Prometheus | http://localhost:19090 | UI скрейпера: таргеты, метрики, TSDB |
 | Grafana | http://localhost:19000 | дашборды без логина (Viewer); admin — вход для правок |
-| PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications + cine_recommendations + cine_reminders + cine_prices + cine_ratekeeper + cine_analytics |
+| PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications + cine_recommendations + cine_reminders + cine_prices + cine_ratekeeper + cine_analytics + cine_flags |
 | Redis | localhost:6379 | кэш фильмов, TTL 60 c |
 
 Host-порты 13000/15432/18080 выбраны, чтобы не конфликтовать
@@ -169,7 +170,7 @@ cd apps/web && npm run lint && npm test
 # с подсказкой)
 cd apps/web && npm run test:ui
 
-# API: юнит (315 тестов) — логика брони, места/конфликт, pay/expire/cancel,
+# API: юнит (362 теста) — логика брони, места/конфликт, pay/expire/cancel,
 # SSE, кэш, расписание сеансов, health, пользователи/посев админа,
 # JWT-логин, retry/parking, отзывы (право/дубль/агрегаты/удаление),
 # промокоды (скидка-математика, превью, атомарное списание в оплате,
@@ -192,7 +193,11 @@ cd apps/web && npm run test:ui
 # с ERROR-статусом и пробросом в retry, флаги refresh-cookie (Secure
 # за env COOKIE_SECURE, одинаковые у set и clear), outbox (запись тем же
 # em, traceparent на момент записи; события брони/отзывов/сброса —
-# в outbox-строках, а не прямых публикациях)
+# в outbox-строках, а не прямых публикациях), тумблеры фич (вердикт и
+# бакетинг по эталонным векторам, кэш состояний с TTL и fail-safe
+# офлайн, саморегистрация каталога, гвард @FeatureFlag с сущностью
+# id→email→ip, админка /admin/flags с 502 и инвалидацией кэша, gRPC-клиент
+# с env-дедлайном и витрина аудита с деградацией)
 cd apps/api && npm test
 
 # API: интеграционные (193) — полный HTTP-стек Nest (роутинг, ValidationPipe,
@@ -1040,6 +1045,44 @@ Go-сервис без gRPC — асинхронный агрегатор: ни�
   `cine_analytics_events_total{routing_key}` и
   `cine_analytics_errors_total` — панель в Grafana «Go-сервисы».
 
+### Тумблеры фич (flags-service «Суфлёр»)
+
+Фича-флаги с процентной раскаткой и kill-switch: новый функционал
+включается постепенно — процент решает, кому он виден, а не «всем
+сразу или никому».
+
+- **«Суфлёр»** (`services/flags-service`, Go, гексагональный, контракт
+  `cine.flags.v1`: Evaluate / UpsertFlag / ListFlags / DeleteFlag) хранит
+  состояние тумблеров: мастер-выключатель, процент раскатки 0..100,
+  kill-switch (мгновенный оф поверх любых настроек) и аудит правок
+  (кто/когда/снимок — переживает удаление флага). Адаптеры: память (тесты)
+  и Postgres (своя база `cine_flags`).
+- **Вердикт детерминирован**: бакет FNV-1a 64 по паре «флаг\|сущность»
+  (0..99) — одна и та же пара всегда даёт одинаковый вердикт, «мигание»
+  фичи между запросами исключено. Приоритет правил: kill-switch →
+  мастер-тумблер → бакет; 100% = «on»; отсутствующий флаг — скрыт
+  (`not_found`). Эталонные векторы бакетинга зафиксированы тестами с
+  обеих сторон (Go и TS — зеркало `apps/api/src/flags/bucketing.ts`).
+- **API не ходит за вердиктом в сеть**: `FlagsEvaluator` держит локальный
+  кэш снимков (TTL 5 c) и считает вердикты на месте — gRPC-шум только по
+  TTL; kill-switch применяется не дольше, чем за TTL. Правки из админки
+  инвалидируют кэш сразу. Недоступность «Суфлёра» — fail-safe: вердикты
+  по последнему снимку (замороженная раскатка, не офлайн).
+- **Саморегистрация**: каталог фич `FLAG_CATALOG` живёт в коде API —
+  при первом опросе отсутствующие в сервисе флаги создаются сами
+  (`updatedBy: api:catalog`). Новый флаг = строка в каталог + точка
+  применения (`@FeatureFlag` на маршруте или `isEnabled` в сервисе).
+- **Гвард `@FeatureFlag('key')`**: сущность бакетинга `id` из JWT → email
+  (нормализуется) → `ip:адрес`; выключенный флаг — 403 `featureDisabled`
+  с причиной; без метки гвард нейтрален.
+- **Админка `/admin/flags`** (роль admin): витрина снимков, `PATCH :key` —
+  правка от имени админа (аудит видит email из JWT), `DELETE :key`,
+  `GET :key/revisions` — история правок. Сбой сервиса — 502, кэш и аудит
+  деградируют мягко.
+- Стенд: gRPC `:18095` + HTTP-витрина `:18096` (`/health`, `/flags`,
+  `/flags/revisions`, `/metrics`); девятая go-matrix-джоба CI, скрейп
+  Prometheus, compose-сеть `GRPC_FLAGS_URL=flags:8095`.
+
 ### Мониторинг: Prometheus + Grafana
 
 Метрики собирает Prometheus (скрейп `/metrics` всех сервисов раз в 5 с +
@@ -1415,6 +1458,14 @@ Outbox: API будит Курьера по `GRPC_OUTBOX_URL` (compose/k8s —
 `RELAY_BACKOFF_CAP_MS` (60 000), `GRPC_ADDR` (:8093) и `HTTP_ADDR`
 (:8094 — витрина `/outbox` и `/health`); живёт в общей базе API
 (`DATABASE_URL`), таблицу `outbox_messages` создают миграции API.
+
+Тумблеры фич: API ходит к «Суфлёру» по `GRPC_FLAGS_URL` (compose —
+`flags:8095`, dev-дефолт `localhost:18095`) с дедлайном
+`GRPC_FLAGS_TIMEOUT_MS` (1 c — вердикты не стоят долгого ожидания);
+кэш снимков обновляется раз в `FLAGS_CACHE_TTL_MS` (5000 — kill-switch
+вступает в силу не дольше, чем за него); аудит правок читается из
+HTTP-витрины `FLAGS_HTTP_URL` (compose — `http://flags:18096`,
+dev-дефолт `http://localhost:18096`).
 
 ## Заметки
 
