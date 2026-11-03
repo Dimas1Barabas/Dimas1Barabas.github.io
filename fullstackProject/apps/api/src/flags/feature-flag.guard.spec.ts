@@ -64,11 +64,13 @@ describe('FeatureFlagGuard', () => {
     await guard.canActivate(makeContext({ user: { id: 'u-1' }, body: { email: 'x@y.z' }, ip: '10.0.0.1' }));
     await guard.canActivate(makeContext({ body: { email: 'X@Y.Z' }, ip: '10.0.0.2' }));
     await guard.canActivate(makeContext({ ip: '10.0.0.3' }));
+    await guard.canActivate(makeContext({})); // ни ip, ни email — unknown
 
     expect(seen).toEqual([
       'checkout.new_flow|u-1',
       'checkout.new_flow|x@y.z', // email нормализуется, как у лимитов
       'checkout.new_flow|ip:10.0.0.3',
+      'checkout.new_flow|ip:unknown',
     ]);
   });
 });

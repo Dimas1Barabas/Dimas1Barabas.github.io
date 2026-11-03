@@ -16,7 +16,7 @@ const snap: FlagSnapshot = {
 };
 
 /** Стабы: клиент сервиса + кэш + HTTP-витрина аудита */
-function makeController(opts?: { failUpsert?: boolean }) {
+function makeController(opts?: { failUpsert?: boolean; failDelete?: boolean }) {
   const upserts: UpsertFlagInput[] = [];
   let deleted: string | null = null;
   const client = {
@@ -26,6 +26,7 @@ function makeController(opts?: { failUpsert?: boolean }) {
       return { ...snap, ...input, updatedAt: '2026-11-02T12:01:00Z' };
     },
     async deleteFlag(key: string): Promise<{ deleted?: boolean }> {
+      if (opts?.failDelete) throw new Error('/grpc:14 unavailable');
       deleted = key;
       return { deleted: true };
     },
@@ -106,6 +107,16 @@ describe('FlagsAdminController', () => {
     await expect(h.controller.remove('checkout.new_flow')).resolves.toEqual({ deleted: true });
     expect(h.deleted).toBe('checkout.new_flow');
     expect(h.refreshed).toBe(1);
+  });
+
+  it('DELETE /:key при сбое сервиса — 502, кэш не трогаем', async () => {
+    const h = makeController({ failDelete: true });
+    const err = await h.controller
+      .remove('checkout.new_flow')
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpException);
+    expect((err as HttpException).getStatus()).toBe(502);
+    expect(h.refreshed).toBe(0);
   });
 
   it('GET /:key/revisions — аудит из витрины сервиса', async () => {

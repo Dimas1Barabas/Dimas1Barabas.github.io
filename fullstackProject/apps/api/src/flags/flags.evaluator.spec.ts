@@ -4,7 +4,10 @@ import { FLAG_CATALOG } from './flag-catalog';
 import { UpsertFlagInput } from './flags.client';
 
 /** Стаб gRPC-клиента: снимки из «сервиса», протокол саморегистрации */
-function makeClient(snapshots: FlagSnapshot[], opts?: { fail?: boolean }) {
+function makeClient(
+  snapshots: FlagSnapshot[],
+  opts?: { fail?: boolean; upsertFail?: boolean },
+) {
   const upserts: UpsertFlagInput[] = [];
   let fail = opts?.fail ?? false;
   return {
@@ -17,6 +20,7 @@ function makeClient(snapshots: FlagSnapshot[], opts?: { fail?: boolean }) {
       return snapshots;
     },
     async upsertFlag(input: UpsertFlagInput): Promise<FlagSnapshot> {
+      if (opts?.upsertFail) throw new Error('Суфлёр недоступен');
       upserts.push(input);
       snapshots = [...snapshots.filter((f) => f.key !== input.key), {
         ...input,
@@ -83,6 +87,31 @@ describe('FlagsEvaluator', () => {
       enabled: false,
       reason: 'kill_switch',
     });
+  });
+
+  it('list() по истечении TTL сам обновляет кэш (админка видит свежее)', async () => {
+    const client = makeClient([flag({})]);
+    const evaluator = new FlagsEvaluator(client as never);
+    await evaluator.onModuleInit();
+
+    await client.upsertFlag({
+      key: 'checkout.new_flow', description: '', enabled: true,
+      percentage: 25, killed: false, updatedBy: 'admin',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const list = await evaluator.list(); // TTL истёк — refresh внутри list()
+    expect(list.find((f) => f.key === 'checkout.new_flow')?.percentage).toBe(25);
+  });
+
+  it('сбой саморегистрации не валит кэш: известные флаги остаются', async () => {
+    // сервис знает один флаг, но правки не принимает (например, read-only)
+    const client = makeClient([flag({})], { upsertFail: true });
+    const evaluator = new FlagsEvaluator(client as never);
+    await evaluator.onModuleInit(); // каждый upsert каталога упал — не страшно
+
+    const list = await evaluator.list();
+    expect(list.map((f) => f.key)).toEqual(['checkout.new_flow']);
+    expect(client.upserts).toEqual([]); // ни одна правка не дошла до счётчика
   });
 
   it('саморегистрация: флаг каталога, которого нет в сервисе, создаётся', async () => {
