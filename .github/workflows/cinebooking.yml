@@ -503,6 +503,11 @@ jobs:
   # и пробами готовности; вход — Gateway API (Envoy Gateway + LB от
   # cloud-provider-kind), e2e-сьют ходит через шлюз; NodePort 30100 —
   # страховочная health-проба мимо шлюза.
+  # Этап канареек: рядом со стабильным api живёт api-canary (метка в
+  # /api/health), HTTPRoute делит /api-трафик весами 90/10; e2e гоняется
+  # по смешанному трафику, затем CI честно промоутит (100%) и откатывает
+  # (0%) канарейку патчем весов; NodePort 30101 — прямой доступ к
+  # канарейке для проверок паритета.
   k8s:
     name: k8s — kind-кластер + стенд из манифестов
     runs-on: ubuntu-latest
@@ -588,6 +593,15 @@ jobs:
       - name: kubectl apply -k overlays/ci
         run: kubectl apply -k fullstackProject/k8s/overlays/ci
 
+      # маршруты должны приняться контроллером (условие Accepted) до
+      # ожидания подов: невалидный HTTPRoute (например, вес на
+      # несуществующем Service) падает здесь с внятной причиной,
+      # а не таймаутом rollout'а непонятно почему
+      - name: httproutes Accepted
+        run: |
+          kubectl -n cine-booking wait --for=condition=Accepted httproute/web --timeout=180s
+          kubectl -n cine-booking wait --for=condition=Accepted httproute/api --timeout=180s
+
       # порядок ожидания = порядок зависимостей: сначала инфраструктура,
       # потом сервисы; rollout status краснеет по таймауту 180с (самый
       # медленный ресурс — api с миграциями — укладывается в ~90с).
@@ -606,7 +620,7 @@ jobs:
           for resource in statefulset/postgres deploy/redis deploy/rabbitmq \
                           deploy/ratelimiter deploy/pricing deploy/recommendation \
                           deploy/reminder deploy/notification deploy/outbox-relay \
-                          deploy/worker deploy/api deploy/web; do
+                          deploy/worker deploy/api deploy/api-canary deploy/web; do
             echo "⏳ $resource"
             if kubectl -n cine-booking rollout status "$resource" --timeout=180s; then
               echo "| \`$resource\` | ok |" >> "$summary"
@@ -698,6 +712,44 @@ jobs:
         working-directory: fullstackProject/apps/api
         env:
           E2E_BASE_URL: http://${{ env.GATEWAY_HOST }}/api
+          # прямые адреса версий мимо весов маршрута — канареечная спека
+          # сверяет паритет stable/canary без примеси распределения
+          E2E_STABLE_BASE_URL: http://localhost:30100/api
+          E2E_CANARY_BASE_URL: http://localhost:30101/api
+
+      # ── Канареечный конвейер после зелёного e2e ─────────────────────
+      # e2e выше гонял полный сьют по СМЕШАННОМУ трафику (90/10) — это
+      # «канарейка под нагрузкой»: обе версии обязаны вести себя
+      # одинаково. Дальше — жизненный цикл весов руками CI: промоушен
+      # (100% канарейке) и откат (0%), каждый с честной проверкой трафика
+      # серией health-запросов (expect-version.sh).
+
+      - name: 'canary: промоушен — вес 100% на api-canary'
+        run: |
+          {
+            echo "## канарейка api: смена весов HTTPRoute"
+            echo
+            echo "| шаг | трафик через шлюз |"
+            echo "| --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n cine-booking patch httproute api --type=json -p='[
+            {"op":"replace","path":"/spec/rules/0/backendRefs/0/weight","value":0},
+            {"op":"replace","path":"/spec/rules/0/backendRefs/1/weight","value":100}
+          ]'
+          bash "$GITHUB_WORKSPACE/.github/scripts/expect-version.sh" canary "http://$GATEWAY_HOST/api"
+          echo "| промоушен: 100% api-canary | ок, вся серия от canary |" >> "$GITHUB_STEP_SUMMARY"
+
+      # откат — та же ручка в обратную сторону (kill-switch канарейки):
+      # после промоушена возвращаем 100% стабильной версии и проверяем,
+      # что канарейка исчезла из трафика
+      - name: 'canary: откат — вес 0%, трафик снова на стабильной'
+        run: |
+          kubectl -n cine-booking patch httproute api --type=json -p='[
+            {"op":"replace","path":"/spec/rules/0/backendRefs/0/weight","value":100},
+            {"op":"replace","path":"/spec/rules/0/backendRefs/1/weight","value":0}
+          ]'
+          bash "$GITHUB_WORKSPACE/.github/scripts/expect-version.sh" stable "http://$GATEWAY_HOST/api"
+          echo "| откат: 0% api-canary | ок, вся серия от stable |" >> "$GITHUB_STEP_SUMMARY"
 
       # посмертная диагностика: статус подов, PVC (не забиндился ли том),
       # описания подов (events: ImagePullBackOff, Pending, CrashLoop) и
