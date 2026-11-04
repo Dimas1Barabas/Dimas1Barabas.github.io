@@ -58,7 +58,11 @@ describe('SeatMapGateway (unit)', () => {
   let gateway: SeatMapGateway;
 
   beforeEach(() => {
-    seats = new SeatStream();
+    // шина-заглушка: юнит-тесты гейтвея — про локальные комнаты
+    seats = new SeatStream({
+      publish: () => undefined,
+      subscribe: () => undefined,
+    });
     seatMap = jest.fn(async (sessionId: string) => snapshot(sessionId, []));
     gateway = new SeatMapGateway(
       { seatMap: seatMap as never } as never,

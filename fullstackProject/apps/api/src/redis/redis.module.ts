@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from './redis.tokens';
 import { RedisService } from './redis.service';
+import { RedisStreamBus, STREAM_BUS } from './stream-bus';
 
 /**
  * Закрывает клиент при shutdown: без этого открытый сокет ioredis держал
@@ -34,7 +35,10 @@ export class RedisClientShutdown implements OnModuleDestroy {
     },
     RedisClientShutdown,
     RedisService,
+    // шина кросс-подовых событий: стримы (BookingStream/SeatStream)
+    // зависят от порта StreamBus — в тестах подменяется заглушкой
+    { provide: STREAM_BUS, useClass: RedisStreamBus },
   ],
-  exports: [RedisService],
+  exports: [RedisService, STREAM_BUS],
 })
 export class RedisModule {}

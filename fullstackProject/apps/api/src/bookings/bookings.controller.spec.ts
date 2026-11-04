@@ -21,7 +21,11 @@ function makeController(): {
   controller: BookingsController;
   stream: BookingStream;
 } {
-  const stream = new BookingStream();
+  // шина-заглушка: юнит-тесты проверяют локальную (синхронную) рассылку
+  const stream = new BookingStream({
+    publish: () => undefined,
+    subscribe: () => undefined,
+  });
   const controller = new BookingsController(
     {} as BookingsService,
     stream,
