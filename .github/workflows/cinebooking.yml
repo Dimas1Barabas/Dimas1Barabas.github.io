@@ -596,11 +596,36 @@ jobs:
       # маршруты должны приняться контроллером (условие Accepted) до
       # ожидания подов: невалидный HTTPRoute (например, вес на
       # несуществующем Service) падает здесь с внятной причиной,
-      # а не таймаутом rollout'а непонятно почему
+      # а не таймаутом rollout'а непонятно почему.
+      # НЕ kubectl wait: сразу после apply условий в status ещё нет,
+      # и wait по отсутствующему условию падает мгновенно (гейтвей-
+      # программированию ниже это не мешает — к тому моменту прошли
+      # минуты rollout'а). Опрашиваем jsonpath'ом, отсутствие условия
+      # = «ещё не готово»; при таймауте — статус обоих маршрутов
+      # error-аннотацией (она видна анонимно, логи шагов — нет)
       - name: httproutes Accepted
         run: |
-          kubectl -n cine-booking wait --for=condition=Accepted httproute/web --timeout=180s
-          kubectl -n cine-booking wait --for=condition=Accepted httproute/api --timeout=180s
+          accepted() {
+            kubectl -n cine-booking get httproute "$1" -o \
+              jsonpath='{.status.parents[0].conditions[?(@.type=="Accepted")].status}' 2>/dev/null
+          }
+          for attempt in $(seq 1 60); do
+            web=$(accepted web); api=$(accepted api)
+            if [ "$web" = "True" ] && [ "$api" = "True" ]; then
+              echo "HTTPRoute web и api приняты Envoy Gateway (попытка $attempt)"
+              exit 0
+            fi
+            sleep 3
+          done
+          snap="$(
+            echo "web Accepted: '$(accepted web)' | api Accepted: '$(accepted api)'"
+            kubectl -n cine-booking get httproute -o \
+              custom-columns='NAME:.metadata.name,ACCEPTED:.status.parents[0].conditions[?(@.type=="Accepted")].status,RESOLVED_REFS:.status.parents[0].conditions[?(@.type=="ResolvedRefs")].status,REASON:.status.parents[0].conditions[?(@.type=="Accepted")].reason' 2>/dev/null
+          )"
+          echo "$snap"
+          encoded=$(printf '%s' "$snap" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' | head -c 4000)
+          echo "::error::title=httproutes Accepted::за 180с маршруты не приняты — $encoded"
+          exit 1
 
       # порядок ожидания = порядок зависимостей: сначала инфраструктура,
       # потом сервисы; rollout status краснеет по таймауту 180с (самый
