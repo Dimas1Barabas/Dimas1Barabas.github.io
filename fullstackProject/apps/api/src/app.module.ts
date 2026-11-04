@@ -33,11 +33,13 @@ import { FlagsModule } from './flags/flags.module';
     // Схему создают миграции: migrationsRun прогоняет их при старте,
     // до onModuleInit сервисов — поэтому посев фильмов работает как раньше.
     // В проде с несколькими репликами миграции выносят в отдельный шаг
-    // деплоя; для одного инстанса автозапуск — норма.
+    // деплоя; для одного инстанса автозапуск — норма. RUN_MIGRATIONS=false
+    // выключает автозапуск — второй+ под (канарейка, реплика) не гоняет
+    // схему наперегонки с первым: миграции катит ровно один раннер.
     TypeOrmModule.forRoot({
       ...dataSourceOptions,
       autoLoadEntities: true,
-      migrationsRun: true,
+      migrationsRun: process.env.RUN_MIGRATIONS !== 'false',
     }),
 
     // RabbitMQ — транспорт событий между API и Go-воркером
