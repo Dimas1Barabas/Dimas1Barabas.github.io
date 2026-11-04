@@ -11,9 +11,12 @@ kind: Kustomization
 
 resources:
   - ../../base
-  # вход кластера — Gateway API (GatewayClass/Gateway/HTTPRoute);
-  # CRD Gateway API ставит helm-чарт Envoy Gateway в джобе ДО apply -k
+  # вход кластера — Gateway API (GatewayClass/Gateway/HTTPRoute):
+  # web-маршрут (catch-all на SPA) + api-маршрут с весами канарейки
   - gateway.yaml
+  # канареечный под api: та же сборка, build-метка canary, без миграций;
+  # Service типа NodePort 30101 — прямые проверки из e2e
+  - api-canary.yaml
 
 images:
   - name: cine-booking-api

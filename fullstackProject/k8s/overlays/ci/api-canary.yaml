@@ -1,0 +1,102 @@
+# Канареечный под api (этап канареек): та же сборка, что у стабильной
+# версии (в CI нет registry со старыми тегами — «версия» здесь различается
+# build-меткой API_BUILD_LABEL, видимой в /api/health: механизм весов,
+# наблюдения и отката проверяем честно, реальный образ подставит prod).
+#
+# Отличия от base/api.yaml принципиальны ровно в двух env:
+#   API_BUILD_LABEL=canary — метка в health-ответе
+#   RUN_MIGRATIONS=false   — схему катит один раннер (стабильный под),
+#                            канарейка не гоняет миграции наперегонки
+# Остальное (initContainers ожидания, пробы, ресурсы) — как у стабильной:
+# канарейка обязана выдерживать тот же трафик и те же зависимостей.
+#
+# Кросс-подовые события (SSE-лента, WS живой карты) канарейка получает
+# Redis-шиной — второй AMQP-консьюмер больше не роняет доставку кадров.
+#
+# Namespace явный: overlay не наследует namespace-трансформер base.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-canary
+  namespace: cine-booking
+spec:
+  # NodePort наружу раннера — прямые проверки канарейки из e2e
+  # (паритет версий) без примеси весов маршрута; конвенция портов 3xxxx
+  type: NodePort
+  selector:
+    app: api-canary
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      nodePort: 30101
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-canary
+  namespace: cine-booking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-canary
+  template:
+    metadata:
+      labels:
+        app: api-canary
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: postgres:16-alpine
+          command: ['sh', '-c', 'until pg_isready -h postgres -p 5432 -U cine -q; do echo ждём postgres; sleep 2; done']
+        - name: wait-redis
+          image: redis:7-alpine
+          command: ['sh', '-c', 'until redis-cli -h redis ping | grep -q PONG; do echo ждём redis; sleep 2; done']
+        - name: wait-rabbitmq
+          image: rabbitmq:3.13-management-alpine
+          command: ['sh', '-c', 'until nc rabbitmq 5672 </dev/null >/dev/null 2>&1; do echo ждём rabbitmq; sleep 2; done']
+      containers:
+        - name: api
+          # тот же образ, что у стабильного api: тег подставит kustomize
+          # (images: cine-booking-api → kind-ci)
+          image: cine-booking-api
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: api-env
+            - secretRef:
+                name: cine-secrets
+          # явный env перекрывает envFrom — метка канарейки и гейт миграций
+          env:
+            - name: API_BUILD_LABEL
+              value: canary
+            - name: RUN_MIGRATIONS
+              value: 'false'
+          ports:
+            - containerPort: 3000
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 18
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              memory: 768Mi

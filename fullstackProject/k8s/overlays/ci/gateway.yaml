@@ -63,3 +63,38 @@ spec:
         # посреди ожидания вердикта оплаты
         request: '3600s'
         backendRequest: '3600s'
+---
+# Канареечный маршрут /api (этап канареек): префикс /api специфичнее
+# catch-all web-маршрута выше — Gateway API отдаёт /api-запросы этому
+# правилу, и трафик API делится по весам между стабильной версией
+# (Service api) и канарейкой (Service api-canary) прямо в Envoy.
+# nginx веба из этого пути выпадает (его /api-проксирование остаётся
+# для compose-стенда и как запасной путь) — WS-апгрейд и SSE-стрим
+# Envoy держит сам, таймауты те же 3600с.
+#
+# Веса относительные: 90/10. Промоушен и откат — смена весов
+# (kubectl patch в CI-джобе: 0/100 и обратно), Envoy перекладывает
+# трафик без разрыва соединений.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: api
+  namespace: cine-booking
+spec:
+  parentRefs:
+    - name: cine
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: api
+          port: 3000
+          weight: 90
+        - name: api-canary
+          port: 3000
+          weight: 10
+      timeouts:
+        request: '3600s'
+        backendRequest: '3600s'
