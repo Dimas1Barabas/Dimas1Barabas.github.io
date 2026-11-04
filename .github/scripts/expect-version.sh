@@ -19,7 +19,7 @@ for attempt in $(seq 1 15); do
   foreign=0
   for _ in $(seq 1 25); do
     version=$(curl -fsS --max-time 10 "$base/health" 2>/dev/null \
-      | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+      | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' || true)
     if [ "$version" != "$want" ]; then
       foreign=$((foreign + 1))
     fi
