@@ -7,6 +7,9 @@ import { RedisService } from '../redis/redis.service';
 
 type CheckStatus = 'up' | 'down';
 
+/** build-метка пода: у канарейки своя, видно из ответа health (этап канареек) */
+const buildLabel = (): string => process.env.API_BUILD_LABEL ?? 'stable';
+
 @Public()
 @ApiTags('health')
 @Controller('health')
@@ -37,7 +40,8 @@ export class HealthController {
   @Get()
   @ApiOperation({
     summary: 'Health-check',
-    description: 'Ping трёх зависимостей: `{ status: "ok" | "degraded", checks: { postgres, redis, rabbitmq } }`',
+    description:
+      'Ping трёх зависимостей + build-метка пода: `{ status: "ok" | "degraded", checks: { postgres, redis, rabbitmq }, version }` — version отличает канарейку от стабильной версии в трафике',
   })
   @ApiOkResponse({ description: 'ok — все зависимости up, degraded — что-то лежит' })
   async check() {
@@ -55,6 +59,7 @@ export class HealthController {
     return {
       status,
       checks,
+      version: buildLabel(),
       uptimeSec: Math.round(process.uptime()),
       timestamp: new Date().toISOString(),
     };

@@ -49,6 +49,22 @@ describe('HealthController (unit)', () => {
     expect(result.uptimeSec).toBeGreaterThanOrEqual(0);
   });
 
+  it('version — build-метка из API_BUILD_LABEL, по умолчанию stable', async () => {
+    const previous = process.env.API_BUILD_LABEL;
+
+    const plain = await buildController(true, true, true);
+    expect((await plain.check()).version).toBe('stable');
+
+    process.env.API_BUILD_LABEL = 'canary';
+    try {
+      const canary = await buildController(true, true, true);
+      expect((await canary.check()).version).toBe('canary');
+    } finally {
+      if (previous === undefined) delete process.env.API_BUILD_LABEL;
+      else process.env.API_BUILD_LABEL = previous;
+    }
+  });
+
   it.each([
     ['postgres', false, true, true],
     ['redis', true, false, true],
