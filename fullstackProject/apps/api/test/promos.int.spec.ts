@@ -15,6 +15,7 @@ import { Booking } from '../src/bookings/booking.entity';
 import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { BookingStream } from '../src/bookings/booking-stream';
+import { STREAM_BUS } from '../src/redis/stream-bus';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingsService } from '../src/bookings/bookings.service';
@@ -263,6 +264,8 @@ describe('Промокоды: HTTP-интеграция (фейковые зав
       providers: [
         PromosService,
         BookingsService,
+        { provide: STREAM_BUS, useValue: { publish: () => undefined, subscribe: () => undefined } }, // локальный путь: кросс-подовой доставки в int нет
+
         BookingStream,
         SeatStream,
         { provide: getRepositoryToken(Promo), useValue: promosRepo },

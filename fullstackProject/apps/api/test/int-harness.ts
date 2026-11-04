@@ -34,6 +34,7 @@ import { MoviesController } from '../src/movies/movies.controller';
 import { MoviesService } from '../src/movies/movies.service';
 import { RedisService } from '../src/redis/redis.service';
 import { REDIS_CLIENT } from '../src/redis/redis.tokens';
+import { STREAM_BUS } from '../src/redis/stream-bus';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Booking } from '../src/bookings/booking.entity';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
@@ -63,7 +64,10 @@ export function pricingFake() {
   };
 }
 
-/** Map-фейк Redis-клиента: get/set/del/ping поверх переданного store */
+/** Map-фейк Redis-клиента: get/set/del/ping поверх переданного store.
+ *  publish + duplicate — под шину кросс-подовых событий (RedisStreamBus):
+ *  в одном процессе подписчику некого получать чужие кадры, поэтому
+ *  duplicate() отдаёт подписчика-заглушку без доставки */
 export function redisFake(store: Map<string, string>) {
   return {
     get: async (key: string) => store.get(key) ?? null,
@@ -75,6 +79,12 @@ export function redisFake(store: Map<string, string>) {
       keys.forEach((k) => store.delete(k));
     },
     ping: async () => 'PONG',
+    publish: async () => 1,
+    duplicate: () => ({
+      on: () => undefined,
+      subscribe: async () => 'OK',
+      disconnect: () => undefined,
+    }),
   };
 }
 
@@ -445,6 +455,9 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
       SeatStream,
       RedisService,
       { provide: REDIS_CLIENT, useValue: redisFake(redisStore) },
+      // шина-заглушка: стримы в int-тестах живут локальным путём
+      // (emit → subject), кросс-подовая доставка инертна — процесс один
+      { provide: STREAM_BUS, useValue: { publish: () => undefined, subscribe: () => undefined } },
       { provide: getRepositoryToken(Movie), useValue: moviesRepo },
       { provide: getRepositoryToken(Session), useValue: sessionsRepo },
       { provide: getRepositoryToken(Booking), useValue: bookingsRepo },

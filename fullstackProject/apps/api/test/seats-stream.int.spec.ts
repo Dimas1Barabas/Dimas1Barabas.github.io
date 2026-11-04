@@ -20,6 +20,7 @@ import { Booking } from '../src/bookings/booking.entity';
 import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { BookingStream } from '../src/bookings/booking-stream';
+import { STREAM_BUS } from '../src/redis/stream-bus';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingsService } from '../src/bookings/bookings.service';
 import { SeatMapGateway } from '../src/bookings/seat-map.gateway';
@@ -292,6 +293,8 @@ describe('WS живая карта мест: HTTP+socket-интеграция (�
       controllers: [BookingsController],
       providers: [
         BookingsService,
+        { provide: STREAM_BUS, useValue: { publish: () => undefined, subscribe: () => undefined } }, // локальный путь: кросс-подовой доставки в int нет
+
         BookingStream,
         SeatStream,
         SeatMapGateway,

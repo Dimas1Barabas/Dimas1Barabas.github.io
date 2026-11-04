@@ -13,6 +13,7 @@ import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { Booking } from '../src/bookings/booking.entity';
 import { BookingStream } from '../src/bookings/booking-stream';
+import { STREAM_BUS } from '../src/redis/stream-bus';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingsService } from '../src/bookings/bookings.service';
@@ -139,6 +140,8 @@ describe('QR-билеты: HTTP-интеграция (фейковые зави�
       controllers: [BookingsController],
       providers: [
         BookingsService,
+        { provide: STREAM_BUS, useValue: { publish: () => undefined, subscribe: () => undefined } }, // локальный путь: кросс-подовой доставки в int нет
+
         BookingStream,
         SeatStream,
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
