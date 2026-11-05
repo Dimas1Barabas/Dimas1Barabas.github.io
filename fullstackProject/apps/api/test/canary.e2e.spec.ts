@@ -34,6 +34,12 @@ interface MovieBody {
   sessions: { id: string; hall: string; startsAt: string }[];
 }
 
+/** GET /movies отвечает обёрткой — витрина это поле data (см. MoviesController) */
+interface MoviesPage {
+  source: string;
+  data: MovieBody[];
+}
+
 type Snapshot = { id: string; title: string; sessions: { id: string }[] }[];
 
 /** компактный диф снимков для сообщения падения — короткий, чтобы
@@ -139,7 +145,7 @@ it('паритет витрины: /movies у версий идентичен �
   // снимки стабильной версии обязаны совпасть (мир не менялся), и лишь
   // тогда canary обязан равняться им. Окна нет — повторяем.
   const snapshot = async (url: string): Promise<Snapshot> =>
-    fingerprint(await getJson<MovieBody[]>(`${url}/movies`)) as Snapshot;
+    fingerprint((await getJson<MoviesPage>(`${url}/movies`)).data) as Snapshot;
   const same = (a: Snapshot, b: Snapshot): boolean =>
     JSON.stringify(a) === JSON.stringify(b);
 
