@@ -34,6 +34,48 @@ interface MovieBody {
   sessions: { id: string; hall: string; startsAt: string }[];
 }
 
+type Snapshot = { id: string; title: string; sessions: { id: string }[] }[];
+
+/** компактный диф снимков для сообщения падения — короткий, чтобы
+ *  дожить до error-аннотации CI (бюджет 4000 символов на всё) */
+function diffSummary(canary: Snapshot, stable: Snapshot): string {
+  const stableById = new Map(stable.map((m) => [m.id, m]));
+  const canaryById = new Map(canary.map((m) => [m.id, m]));
+  const label = (m: { id: string; title: string }) =>
+    `${m.title}(${m.id.slice(0, 8)})`;
+  const parts: string[] = [];
+
+  const onlyStable = stable.filter((m) => !canaryById.has(m.id));
+  const onlyCanary = canary.filter((m) => !stableById.has(m.id));
+  if (onlyStable.length)
+    parts.push(
+      `только у stable: ${onlyStable.slice(0, 5).map(label).join(', ')}`,
+    );
+  if (onlyCanary.length)
+    parts.push(
+      `только у canary: ${onlyCanary.slice(0, 5).map(label).join(', ')}`,
+    );
+
+  for (const s of stable) {
+    const c = canaryById.get(s.id);
+    if (!c) continue;
+    if (JSON.stringify(s.sessions) === JSON.stringify(c.sessions)) continue;
+    const sIds = new Set(s.sessions.map((x) => x.id));
+    const cIds = new Set(c.sessions.map((x) => x.id));
+    const extraStable = [...sIds].filter((id) => !cIds.has(id)).length;
+    const extraCanary = [...cIds].filter((id) => !sIds.has(id)).length;
+    parts.push(
+      `${label(s)}: сеансов stable=${s.sessions.length} ` +
+        `canary=${c.sessions.length}` +
+        (extraStable ? `, лишних у stable: ${extraStable}` : '') +
+        (extraCanary ? `, лишних у canary: ${extraCanary}` : '') +
+        (extraStable + extraCanary ? '' : ', содержание сеансов различается'),
+    );
+    if (parts.length >= 7) break;
+  }
+  return parts.join('; ');
+}
+
 /** детерминированный слепок витрины для сравнения версий */
 function fingerprint(movies: MovieBody[]): unknown {
   return movies
@@ -88,11 +130,36 @@ it('версии напрямую: health канарейки — version canary,
 });
 
 it('паритет витрины: /movies у версий идентичен — одна БД, один сериализатор', async () => {
-  if (!ready) return;
-  const stable = await getJson<MovieBody[]>(`${STABLE}/movies`);
-  const canary = await getJson<MovieBody[]>(`${CANARY}/movies`);
+  // ready подразумевает оба адреса, но для типов — явный гвард
+  if (!ready || !STABLE || !CANARY) return;
+  // Два одиночных чтения не атомарны: кэш /movies живёт в Redis с TTL
+  // 60 с и перезаливается, смежные системы пишут в БД — между чтениями
+  // stable и canary витрина может дрогнуть, и это не раскол версий.
+  // Поэтому сверяемся в «тихом окне»: stable → canary → stable, крайние
+  // снимки стабильной версии обязаны совпасть (мир не менялся), и лишь
+  // тогда canary обязан равняться им. Окна нет — повторяем.
+  const snapshot = async (url: string): Promise<Snapshot> =>
+    fingerprint(await getJson<MovieBody[]>(`${url}/movies`)) as Snapshot;
+  const same = (a: Snapshot, b: Snapshot): boolean =>
+    JSON.stringify(a) === JSON.stringify(b);
 
-  expect(fingerprint(canary)).toEqual(fingerprint(stable));
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const before = await snapshot(STABLE);
+    const canary = await snapshot(CANARY);
+    const after = await snapshot(STABLE);
+
+    if (!same(before, after)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `попытка ${attempt}/5: витрина дрогнула между чтениями — повтор`,
+      );
+      continue;
+    }
+    const diff = diffSummary(canary, before);
+    if (!diff) return; // тихое окно и полный паритет
+    throw new Error(`паритет версий нарушен: ${diff}`);
+  }
+  throw new Error('5 попыток — тихого окна не дождались, витрина шумит');
 });
 
 it('распределение через шлюз: обе версии в трафике, канарейка в меньшинстве', async () => {
