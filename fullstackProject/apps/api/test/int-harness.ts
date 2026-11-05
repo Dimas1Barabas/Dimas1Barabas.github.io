@@ -26,6 +26,8 @@ import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsService } from '../src/bookings/bookings.service';
+import { FeatureFlagGuard } from '../src/flags/feature-flag.guard';
+import { FlagsEvaluator } from '../src/flags/flags.evaluator';
 import { SeatsController } from '../src/bookings/seats.controller';
 import { HealthController } from '../src/health/health.controller';
 import { Movie } from '../src/movies/movie.entity';
@@ -91,6 +93,16 @@ export function redisFake(store: Map<string, string>) {
 /** валидный по формату uuid, которого нет в фейк-репозитории */
 export function validUuid(): string {
   return '00000000-0000-4000-8000-000000000001';
+}
+
+/** фейк «Суфлёра»: вердикты по умолчанию выключены (как при 0% раскатки) —
+ *  спеки флаг-маршрутов переключают isEnabled точечно mockResolvedValue */
+export function flagsEvaluatorFake() {
+  return {
+    isEnabled: jest.fn(async () => ({ enabled: false, reason: 'off' })),
+    list: jest.fn(async () => []),
+    refresh: jest.fn(async () => undefined),
+  };
 }
 
 /** каталог из /api/movies (DTO с sessions[]) */
@@ -311,6 +323,8 @@ export interface IntAppContext {
   /** outbox-записи бизнес-событий (booking.payment.wait, booking.created) */
   outboxRows: { routingKey: string; payload: object }[];
   bookingsService: BookingsService;
+  /** вердикты флагов для @FeatureFlag-маршрутов (по умолчанию выключены) */
+  flagsEvaluator: ReturnType<typeof flagsEvaluatorFake>;
   /** Authorization: владелец брони, чужак и администратор */
   bearer: string;
   bearerB: string;
@@ -335,6 +349,8 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
   const promosRepo = { findOneBy: jest.fn(async () => null) };
   const redisStore = new Map<string, string>();
   const rabbitPublish = jest.fn();
+  // вердикты флагов: по умолчанию всё скрыто (0% раскатки)
+  const flagsEvaluator = flagsEvaluatorFake();
   // outbox-записи create/pay: enqueueOutbox пишет через em-транзакцию
   const outboxRows: { routingKey: string; payload: object }[] = [];
 
@@ -480,13 +496,43 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
         provide: DataSource,
         useValue: {
           query: jest.fn(async () => []),
-          transaction: (cb: (e: typeof em) => unknown) => cb(em),
+          // как в promos.int: настоящая транзакция откатывает всё при
+          // исключении — снимок строк на входе и откат при броске; иначе
+          // отказ оплаты (промокод/бонусы) оставлял бы в фейках фантомный
+          // PENDING, которого в живой БД нет
+          transaction: async (cb: (e: typeof em) => unknown) => {
+            const bookingsSnap = bookingsRepo.rows.map((r) => ({ ...r }));
+            const occupancySnap = occupancyRepo.rows.map((r) => ({ ...r }));
+            const outboxSnap = outboxRows.map((r) => ({ ...r }));
+            const bonusSnap = [...bonusRows];
+            try {
+              return await cb(em);
+            } catch (err) {
+              bookingsRepo.rows.splice(
+                0,
+                bookingsRepo.rows.length,
+                ...bookingsSnap.map((r) => ({ ...r })),
+              );
+              occupancyRepo.rows.splice(
+                0,
+                occupancyRepo.rows.length,
+                ...occupancySnap.map((r) => ({ ...r })),
+              );
+              outboxRows.splice(0, outboxRows.length, ...outboxSnap);
+              bonusRows.splice(0, bonusRows.length, ...bonusSnap);
+              throw err;
+            }
+          },
         },
       },
       // JwtStrategy берёт секрет из ConfigService; фейк отдаёт дефолт,
       // поэтому AUTH_SECRET объявлен равным 'dev-cine-secret'
       { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },
       JwtStrategy,
+      // «Суфлёр» для @FeatureFlag-маршрутов: вердикты из фейка, без
+      // gRPC; FeatureFlagGuard инжектит Reflector (ядро) + этот эвалюатор
+      { provide: FlagsEvaluator, useValue: flagsEvaluator },
+      FeatureFlagGuard,
       // как в AppModule: все эндпоинты за JWT, витрина — @Public(),
       // следом RolesGuard сверяет @Roles(...) с ролью из токена
       { provide: APP_GUARD, useClass: JwtAuthGuard },
@@ -522,6 +568,7 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
     rabbitPublish,
     outboxRows,
     bookingsService: moduleRef.get(BookingsService),
+    flagsEvaluator,
     bearer: `Bearer ${await sign('user-a', 'Анна Тест', 'user')}`,
     bearerB: `Bearer ${await sign('user-b', 'Борис Чужой', 'user')}`,
     bearerAdmin: `Bearer ${await sign('admin-1', 'Админ Тестов', 'admin')}`,

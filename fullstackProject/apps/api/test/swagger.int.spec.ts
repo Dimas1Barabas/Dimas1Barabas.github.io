@@ -12,6 +12,8 @@ import { AuthController } from '../src/auth/auth.controller';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
+import { FeatureFlagGuard } from '../src/flags/feature-flag.guard';
+import { FlagsEvaluator } from '../src/flags/flags.evaluator';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingStream } from '../src/bookings/booking-stream';
@@ -74,6 +76,9 @@ describe('Swagger UI /api/docs (integration)', () => {
         { provide: AmqpConnection, useValue: {} },
         { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },
         JwtStrategy,
+        // «Суфлёр» для @FeatureFlag-маршрута чекаута: вердикты фейка (все скрыты)
+        { provide: FlagsEvaluator, useValue: { isEnabled: jest.fn(async () => ({ enabled: false, reason: 'off' })) } },
+        FeatureFlagGuard,
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
       ],

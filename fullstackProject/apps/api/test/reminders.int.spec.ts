@@ -9,6 +9,8 @@ import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { STREAM_BUS } from '../src/redis/stream-bus';
 import { BookingsController } from '../src/bookings/bookings.controller';
+import { FeatureFlagGuard } from '../src/flags/feature-flag.guard';
+import { FlagsEvaluator } from '../src/flags/flags.evaluator';
 import { BookingsService } from '../src/bookings/bookings.service';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
@@ -166,6 +168,9 @@ describe('Reminders (integration)', () => {
         // Тарификатор: базовая цена без факторов (ценовые кейсы — в pricing.int)
         { provide: PricingClient, useValue: { quote: jest.fn(async (input: { basePriceRub: number }) => ({ priceRub: input.basePriceRub, basePriceRub: input.basePriceRub, factors: [], occupied: 0, capacity: 80 })) } },
         { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
+        // «Суфлёр» для @FeatureFlag-маршрута чекаута: вердикты фейка (все скрыты)
+        { provide: FlagsEvaluator, useValue: { isEnabled: jest.fn(async () => ({ enabled: false, reason: 'off' })) } },
+        FeatureFlagGuard,
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         {
           provide: getRepositoryToken(Movie),

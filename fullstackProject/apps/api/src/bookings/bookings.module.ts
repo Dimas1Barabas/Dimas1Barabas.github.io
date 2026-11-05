@@ -16,6 +16,7 @@ import { BookingStream } from './booking-stream';
 import { BookingsConsumer } from './bookings.consumer';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
+import { FlagsModule } from '../flags/flags.module';
 import { SeatMapGateway } from './seat-map.gateway';
 import { SeatOccupancy } from './seat-occupancy.entity';
 import { SeatsController } from './seats.controller';
@@ -42,6 +43,9 @@ import { SeatStream } from './seat-stream';
     ]),
     // RatelimiterModule — гвард лимитов на create() (клиент gRPC общий)
     RatelimiterModule,
+    // FlagsModule — FeatureFlagGuard на POST /bookings/checkout
+    // (new_flow): модуль-синглтон, кэш состояний делится с админкой
+    FlagsModule,
     // OutboxModule — будильник Курьера после коммита outbox-записей
     OutboxModule,
     rabbitMqModule,

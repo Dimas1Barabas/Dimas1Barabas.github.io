@@ -28,11 +28,14 @@ import { interval, merge, map, Observable } from 'rxjs';
 import { AuthUser } from '../auth/auth-user';
 import { Public } from '../auth/public.decorator';
 import { Roles } from '../auth/roles.decorator';
+import { FeatureFlag } from '../flags/feature-flag.decorator';
+import { FeatureFlagGuard } from '../flags/feature-flag.guard';
 import { RateLimited } from '../ratelimiter/rate-limited.decorator';
 import { RateLimitGuard } from '../ratelimiter/rate-limit.guard';
 import { BookingDto } from './booking.entity';
 import { BookingStream } from './booking-stream';
 import { BookingsService } from './bookings.service';
+import { CheckoutDto } from './dto/checkout.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { PayBookingDto } from './dto/pay-booking.dto';
 import { VerifyTicketDto } from './dto/verify-ticket.dto';
@@ -48,6 +51,46 @@ export class BookingsController {
     private readonly bookings: BookingsService,
     private readonly bus: BookingStream,
   ) {}
+
+  /** мгновенный чекаут — новый поток за флагом: вне раскатки маршрут скрыт */
+  @Post('checkout')
+  @HttpCode(201)
+  @UseGuards(RateLimitGuard, FeatureFlagGuard)
+  @RateLimited('bookings.create')
+  @FeatureFlag('checkout.new_flow')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Мгновенный чекаут: бронь + оплата одним вызовом (новый поток)',
+    description:
+      'Первый маршрут за тумблером «Суфлёра» (флаг checkout.new_flow): ' +
+      'композиция тех же create/pay — места бронируются и оплата ' +
+      'запускается одним запросом, статус ответа PENDING, вердикт придёт ' +
+      'по SSE-стриму. Промокод и бонусы — поля оплаты, семантика та же. ' +
+      'Вне раскатки (флаг выключен/убит/сущность вне процента) маршрут ' +
+      'отвечает 403 featureDisabled, как будто его нет — старый поток ' +
+      'из двух запросов не затронут.',
+  })
+  @ApiCreatedResponse({ type: BookingDto })
+  @ApiUnauthorizedResponse({ description: 'Нет JWT' })
+  @ApiNotFoundResponse({ description: 'Сеанс не найден' })
+  @ApiConflictResponse({
+    description:
+      'Места заняты (seatsTaken) либо оплата отказала: промокод ' +
+      'исчерпан (promoExhausted), бонусы (bonusOverLimit / ' +
+      'bonusInsufficient) — бронь при отказе оплаты остаётся в ' +
+      'PENDING_PAYMENT',
+  })
+  @ApiForbiddenResponse({
+    description:
+      'Флаг выключен или сущность вне раскатки — код featureDisabled, ' +
+      'имя флага и причина в теле',
+  })
+  @ApiTooManyRequestsResponse({
+    description: 'Лимит броней в минуту исчерпан (корзина bookings.create)',
+  })
+  checkout(@Body() dto: CheckoutDto, @Req() req: { user: AuthUser }) {
+    return this.bookings.checkout(dto, req.user);
+  }
 
   /** покупает билет тот, кто предъявил токен: имя и владелец — из JWT */
   @Post()

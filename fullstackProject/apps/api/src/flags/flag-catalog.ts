@@ -21,7 +21,8 @@ export const FLAG_CATALOG: readonly CatalogFlag[] = [
   {
     key: 'checkout.new_flow',
     description:
-      'Новый пошаговый чекаут брони (демо раскатки: процент решает, кому виден)',
+      'Мгновенный чекаут POST /bookings/checkout: бронь + оплата одним ' +
+      'вызовом (вне раскатки маршрут скрыт, 403 featureDisabled)',
     enabled: true,
     percentage: 0,
     killed: false,

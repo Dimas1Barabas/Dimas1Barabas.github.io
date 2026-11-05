@@ -9,6 +9,8 @@ import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { STREAM_BUS } from '../src/redis/stream-bus';
 import { BookingsController } from '../src/bookings/bookings.controller';
+import { FeatureFlagGuard } from '../src/flags/feature-flag.guard';
+import { FlagsEvaluator } from '../src/flags/flags.evaluator';
 import { BookingsService } from '../src/bookings/bookings.service';
 import { SessionPriceController } from '../src/bookings/session-price.controller';
 import { SeatStream } from '../src/bookings/seat-stream';
@@ -130,6 +132,9 @@ describe('Pricing (integration)', () => {
         SeatStream,
         { provide: PricingClient, useValue: pricing },
         { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
+        // «Суфлёр» для @FeatureFlag-маршрута чекаута: вердикты фейка (все скрыты)
+        { provide: FlagsEvaluator, useValue: { isEnabled: jest.fn(async () => ({ enabled: false, reason: 'off' })) } },
+        FeatureFlagGuard,
         { provide: RemindersClient, useValue: { schedule: jest.fn(), cancel: jest.fn() } },
         { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },

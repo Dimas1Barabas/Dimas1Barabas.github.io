@@ -67,6 +67,7 @@ import {
   compareSeats,
 } from './hall';
 import { SeatOccupancy } from './seat-occupancy.entity';
+import { CheckoutDto } from './dto/checkout.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import {
   PriceFactorDto,
@@ -559,6 +560,20 @@ export class BookingsService {
     );
     await this.push(booking, movie, session);
     return toBookingDto(booking, movie, session);
+  }
+
+  /**
+   * Мгновенный чекаут — новый поток оплаты за флагом checkout.new_flow:
+   * бронь и оплата одним вызовом, клиент нового потока не живёт в
+   * состоянии «забронировал, но не заплатил». Композиция тех же
+   * create/pay — семантика каждого шага не меняется: гонки за места и
+   * статус решает БД, как раньше. Отказ оплаты (промокод/бонусы/статус)
+   * летит клиенту как есть — бронь к тому моменту создана и честно ждёт
+   * оплаты в PENDING_PAYMENT, старый флоу вытащит её оплатой отдельно.
+   */
+  async checkout(dto: CheckoutDto, user: AuthUser): Promise<BookingDto> {
+    const booking = await this.create(dto, user);
+    return this.pay(booking.id, user, dto.promoCode, dto.useBonuses);
   }
 
   /** баланс бонусного счёта: SUM(accrual) − SUM(spend) от источника-ledger */

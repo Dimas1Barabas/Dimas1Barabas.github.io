@@ -10,6 +10,8 @@ import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { DataSource } from 'typeorm';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
+import { FeatureFlagGuard } from '../src/flags/feature-flag.guard';
+import { FlagsEvaluator } from '../src/flags/flags.evaluator';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { Booking } from '../src/bookings/booking.entity';
 import { BookingStream } from '../src/bookings/booking-stream';
@@ -162,6 +164,9 @@ describe('QR-билеты: HTTP-интеграция (фейковые зави�
         { provide: DataSource, useValue: { query: jest.fn(async () => [[], 0]) } },
         { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },
         JwtStrategy,
+        // «Суфлёр» для @FeatureFlag-маршрута чекаута: вердикты фейка (все скрыты)
+        { provide: FlagsEvaluator, useValue: { isEnabled: jest.fn(async () => ({ enabled: false, reason: 'off' })) } },
+        FeatureFlagGuard,
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
       ],
