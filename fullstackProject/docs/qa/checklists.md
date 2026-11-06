@@ -288,5 +288,5 @@
 - [ ] отказ промокода: 404/409 летит клиенту как есть, бронь жива в PENDING_PAYMENT, booking.created нет
 - [ ] Swagger: POST /bookings/checkout в спеке bookings с описанием флага и ответами (403 featureDisabled, отказы оплаты)
 - [ ] старый поток не затронут: POST /bookings + /bookings/:id/pay зелёные (существующие спеки)
-- [ ] ✋ стенд: PATCH /admin/flags/checkout.new_flow на 100% → чекаут 201 PENDING; возврат 0% → 403; кэш перестраивается за TTL
+- [ ] e2e checkout-flag: 0% — 403 featureDisabled; PATCH админкой на 100% — 201 PENDING + вердикт go-worker-1 одним вызовом; откат 0% — снова 403; afterAll возвращает исходный снимок тумблера
 - [ ] ✋ k8s-стенд: флаг-сервиса нет — маршрут скрыт 403, витрина жива (fail-safe офлайн-снапшотов)
