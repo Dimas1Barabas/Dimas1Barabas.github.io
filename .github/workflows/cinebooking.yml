@@ -551,17 +551,29 @@ jobs:
           config: fullstackProject/k8s/kind/config.yaml
 
       # образы уже на раннере — перекладываем в containerd ноды,
-      # kubelet с IfNotPresent возьмёт их без выхода в registry
+      # kubelet с IfNotPresent возьмёт их без выхода в registry.
+      # kind load иногда флейкнет на ровном месте (сбой сокета докера /
+      # containerd ноды сразу после создания кластера — runs 292–293);
+      # операция идемпотентна, повторяем с коротким бэкоффом
       - name: kind load docker-image
         run: |
-          kind load docker-image \
-            cine-booking-api:kind-ci cine-booking-web:kind-ci \
-            cine-booking-worker:kind-ci cine-booking-notification:kind-ci \
-            cine-booking-recommendation:kind-ci cine-booking-reminder:kind-ci \
-            cine-booking-pricing:kind-ci cine-booking-ratelimiter:kind-ci \
-            cine-booking-outbox-relay:kind-ci \
-            postgres:16-alpine redis:7-alpine rabbitmq:3.13-management-alpine \
-            --name cine
+          for attempt in 1 2 3; do
+            if kind load docker-image \
+              cine-booking-api:kind-ci cine-booking-web:kind-ci \
+              cine-booking-worker:kind-ci cine-booking-notification:kind-ci \
+              cine-booking-recommendation:kind-ci cine-booking-reminder:kind-ci \
+              cine-booking-pricing:kind-ci cine-booking-ratelimiter:kind-ci \
+              cine-booking-outbox-relay:kind-ci \
+              postgres:16-alpine redis:7-alpine rabbitmq:3.13-management-alpine \
+              --name cine; then
+              echo "kind load — ok (попытка $attempt)"
+              exit 0
+            fi
+            echo "::warning::kind load попытка $attempt не прошла — повтор через 15 с"
+            sleep 15
+          done
+          echo "::error::kind load не прошёл за 3 попытки"
+          exit 1
 
       # LB-контроллер для kind: у kind нет своего LoadBalancer, а Envoy
       # Gateway выставляет шлюз Service'ом типа LoadBalancer. Контроллер
