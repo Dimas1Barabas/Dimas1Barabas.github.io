@@ -158,7 +158,9 @@ jobs:
   # спек-файлы (singleton в globalThis).
   api-containers:
     name: api — live-int (testcontainers PG+Rabbit+Redis)
-    runs-on: ubuntu-latest
+    # ubuntu-latest с 19.10.2026 = Ubuntu 26 (новый docker/containerd);
+    # testcontainers на нём падал (run 294) — держим 24.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
@@ -510,7 +512,10 @@ jobs:
   # канарейке для проверок паритета.
   k8s:
     name: k8s — kind-кластер + стенд из манифестов
-    runs-on: ubuntu-latest
+    # ubuntu-latest с 19.10.2026 = Ubuntu 26: новый docker/containerd,
+    # который kind-action@v1 не переваривает (runs 292–294, kind load
+    # падал даже с ретраем) — держим 24.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
