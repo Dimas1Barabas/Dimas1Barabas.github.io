@@ -9,9 +9,11 @@ import type {
   BonusKind,
   BonusReason,
   BonusTransaction,
+  CheckoutPayload,
   CreateBookingPayload,
   CreatePromoPayload,
   CreateReviewPayload,
+  FlagVerdict,
   LoginResult,
   Movie,
   MovieSession,
@@ -588,6 +590,28 @@ class DemoEngine {
     );
   }
 
+  // ── Флаги: витринные вердикты ──────────────────────────────────────
+  // Миниатюра GET /flags/:key: демо не ходит в «Суфлёра», состояние
+  // витрины решено статически — новый чекаут раскатан на демо целиком
+  // (портфолио показывает фичу). Незнакомый ключ — fail-safe: выключен.
+
+  /** витринные вердикты демо: что включено на Pages */
+  private static readonly DEMO_FLAGS: Record<
+    string,
+    { enabled: boolean; reason: FlagVerdict['reason'] }
+  > = {
+    'checkout.new_flow': { enabled: true, reason: 'on' },
+  };
+
+  /** вердикт флага для витрины (кнопка новой фичи) */
+  flag(key: string): FlagVerdict {
+    const verdict = DemoEngine.DEMO_FLAGS[key] ?? {
+      enabled: false,
+      reason: 'not_found' as const,
+    };
+    return { key, ...verdict };
+  }
+
   /** сброс состояния (тесты) */
   reset(): void {
     this.expiryTimers.forEach((t) => clearTimeout(t));
@@ -1156,6 +1180,19 @@ class DemoEngine {
     );
 
     return booking;
+  }
+
+  /**
+   * Мгновенный чекаут — миниатюра POST /bookings/checkout (новый поток
+   * оплаты за флагом checkout.new_flow): та же композиция create/pay,
+   * что в API, — бронь и запуск оплаты одним вызовом, ответ уже PENDING,
+   * вердикт вынесет «воркер». Отказ оплаты (промокод/бонусы) не
+   * разворачивает бронь: она честно ждёт в PENDING_PAYMENT, старый
+   * поток дооплатит отдельно. Гонку мест решает create (409 seatsTaken).
+   */
+  checkout(payload: CheckoutPayload): Booking {
+    const booking = this.create(payload);
+    return this.pay(booking.id, payload.promoCode, payload.useBonuses);
   }
 
   /**

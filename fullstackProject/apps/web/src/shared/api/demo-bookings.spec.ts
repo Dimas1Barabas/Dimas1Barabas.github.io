@@ -333,3 +333,124 @@ describe('demoEngine: бронирования: lifecycle и сага отмен
 
   /** подтверждённая демо-бронь на фильм (pay + вердикт «воркера») */
 });
+
+describe('demoEngine: мгновенный чекаут за флагом checkout.new_flow', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    demoEngine.reset();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('flag: чекаут раскатан на демо-витрину; незнакомый ключ — fail-safe', () => {
+    expect(demoEngine.flag('checkout.new_flow')).toEqual({
+      key: 'checkout.new_flow',
+      enabled: true,
+      reason: 'on',
+    });
+    // как у живого API: незнакомый флаг выключен, фича не «засветится»
+    expect(demoEngine.flag('no.such_flag')).toEqual({
+      key: 'no.such_flag',
+      enabled: false,
+      reason: 'not_found',
+    });
+  });
+
+  it('checkout: бронь + оплата одним вызовом — PENDING и вердикт «воркера»', async () => {
+    const { session } = firstSession();
+    const seat = freeSeat(demoEngine.seatMap(session.id));
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+    const booking = demoEngine.checkout({
+      sessionId: session.id,
+      customerName: 'Мгновенный',
+      seats: [seat],
+    });
+
+    // не PENDING_PAYMENT: платёж запущен тем же вызовом
+    expect(booking.status).toBe('PENDING');
+    expect(booking.seats).toEqual([seat]);
+    expect(demoEngine.list()[0].id).toBe(booking.id);
+
+    await vi.advanceTimersByTimeAsync(3000);
+    randomSpy.mockRestore();
+
+    const done = demoEngine.list()[0];
+    expect(done.status).toBe('CONFIRMED');
+    expect(done.processedBy).toBe('go-worker (демо)');
+  });
+
+  it('checkout с промокодом: скидка в том же вызове, активация списана', async () => {
+    const { session } = firstSession();
+    const seats = firstFreeSeats(demoEngine.seatMap(session.id), 2);
+    const price = seatPriceOf(session.id);
+    const total = price * 2;
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+    const booking = demoEngine.checkout({
+      sessionId: session.id,
+      customerName: 'С промо',
+      seats,
+      promoCode: 'CINE10', // сид: −10%
+    });
+    await vi.advanceTimersByTimeAsync(3000);
+    randomSpy.mockRestore();
+
+    expect(booking.promoCode).toBe('CINE10');
+    expect(booking.totalRub).toBe(Math.round(total * 0.9));
+    // активация списана тем же вызовом чекаута (как транзакция оплаты API)
+    const promo = demoEngine.listPromos().find((p) => p.code === 'CINE10');
+    expect(promo?.usedCount).toBe(1);
+  });
+
+  it('checkout: занятое место — 409 seatsTaken, бронь не родилась', () => {
+    const { session } = firstSession();
+    const map = demoEngine.seatMap(session.id);
+    const taken = map.occupied[0];
+
+    let caught: unknown;
+    try {
+      demoEngine.checkout({
+        sessionId: session.id,
+        customerName: 'Конфликт',
+        seats: [taken],
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    const apiErr = caught as ApiError;
+    expect(apiErr.status).toBe(409);
+    expect(JSON.parse(apiErr.body).seatsTaken).toEqual([taken]);
+    const mine = demoEngine.list().find((b) => b.customerName === 'Конфликт');
+    expect(mine).toBeUndefined();
+  });
+
+  it('checkout: отказ бонусов — 409, бронь осталась ждать оплаты', () => {
+    const { session } = firstSession();
+    const seat = freeSeat(demoEngine.seatMap(session.id));
+    const price = seatPriceOf(session.id);
+
+    let caught: unknown;
+    try {
+      demoEngine.checkout({
+        sessionId: session.id,
+        customerName: 'Жадный',
+        seats: [seat],
+        useBonuses: Math.ceil(price * 2), // больше половины чека
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    const apiErr = caught as ApiError;
+    expect(apiErr.status).toBe(409);
+    expect(JSON.parse(apiErr.body).code).toBe('bonusOverLimit');
+    // бронь создана и честно ждёт в PENDING_PAYMENT — старый поток дооплатит
+    const booking = demoEngine.list().find((b) => b.customerName === 'Жадный');
+    expect(booking?.status).toBe('PENDING_PAYMENT');
+  });
+});
