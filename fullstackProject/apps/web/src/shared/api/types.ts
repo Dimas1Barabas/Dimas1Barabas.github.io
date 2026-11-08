@@ -141,6 +141,25 @@ export interface CreateBookingPayload {
   seats: string[];
 }
 
+/**
+ * Мгновенный чекаут (новый поток оплаты за флагом checkout.new_flow):
+ * поля брони те же, поля оплаты — опциональные промокод и бонусы.
+ */
+export interface CheckoutPayload extends CreateBookingPayload {
+  promoCode?: string;
+  useBonuses?: number;
+}
+
+/**
+ * Витринный вердикт флага (GET /flags/:key): показывать ли точку
+ * применения. Процент раскатки наружу не идёт — только вкл/причина.
+ */
+export interface FlagVerdict {
+  key: string;
+  enabled: boolean;
+  reason: 'on' | 'percentage' | 'flag_off' | 'kill_switch' | 'not_found';
+}
+
 export type UserRole = 'user' | 'admin';
 
 /** UserDto из POST /auth/register */

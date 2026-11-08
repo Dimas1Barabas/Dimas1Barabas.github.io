@@ -5,10 +5,12 @@ import type {
   BookingStats,
   BonusAccount,
   ChangePasswordPayload,
+  CheckoutPayload,
   CreateBookingPayload,
   CreateMoviePayload,
   CreatePromoPayload,
   CreateReviewPayload,
+  FlagVerdict,
   HealthResponse,
   LoginResult,
   Movie,
@@ -197,6 +199,20 @@ export const api = {
     request<SessionQuote>(`/sessions/${sessionId}/price`),
   createBooking: (payload: CreateBookingPayload) =>
     request<Booking>('/bookings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  /** витринный вердикт флага для вошедшего: показывать ли новую фичу
+   *  (та же сущность бакетинга, что у гварда маршрута, — кнопка и POST
+   *  за ней не расходятся; вне раскатки enabled=false, как будто фичи нет) */
+  flag: (key: string) =>
+    request<FlagVerdict>(`/flags/${encodeURIComponent(key)}`),
+  /** мгновенный чекаут — новый поток за флагом checkout.new_flow:
+   *  бронь + оплата одним вызовом, статус ответа PENDING, вердикт
+   *  прилетит по SSE-стриму; вне раскатки маршрут скрыт (403) */
+  checkoutBooking: (payload: CheckoutPayload) =>
+    request<Booking>('/bookings/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

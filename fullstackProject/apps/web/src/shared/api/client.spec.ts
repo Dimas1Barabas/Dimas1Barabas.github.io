@@ -173,6 +173,65 @@ describe('api client: сессия и refresh', () => {
   });
 });
 
+describe('api client: флаг-вердикт и мгновенный чекаут', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it('flag(): GET /flags/:key с вердиктом витрины', async () => {
+    saveAuth('jwt-1', user);
+    const fetchMock = mockFetch([
+      {
+        match: (p, m) => p === '/flags/checkout.new_flow' && m === 'GET',
+        respond: () =>
+          jsonResponse({ key: 'checkout.new_flow', enabled: true, reason: 'percentage' }),
+      },
+    ]);
+
+    const verdict = await api.flag('checkout.new_flow');
+
+    expect(verdict).toEqual({
+      key: 'checkout.new_flow',
+      enabled: true,
+      reason: 'percentage',
+    });
+    expect(calls(fetchMock)[0]).toMatchObject({
+      path: '/flags/checkout.new_flow',
+      method: 'GET',
+      auth: 'Bearer jwt-1',
+    });
+  });
+
+  it('checkoutBooking(): POST /bookings/checkout с телом чекаута', async () => {
+    saveAuth('jwt-1', user);
+    const fetchMock = mockFetch([
+      {
+        match: (p, m) => p === '/bookings/checkout' && m === 'POST',
+        respond: () => jsonResponse({ id: 'b-1', status: 'PENDING' }),
+      },
+    ]);
+
+    const booking = await api.checkoutBooking({
+      sessionId: 's-1',
+      seats: ['5-7'],
+    });
+
+    expect(booking).toMatchObject({ id: 'b-1', status: 'PENDING' });
+    const call = calls(fetchMock)[0];
+    expect(call).toMatchObject({
+      path: '/bookings/checkout',
+      method: 'POST',
+      auth: 'Bearer jwt-1',
+    });
+    // тело — ровно payload: без пустых promoCode/useBonuses
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0][1] as RequestInit).body as string,
+    );
+    expect(body).toEqual({ sessionId: 's-1', seats: ['5-7'] });
+  });
+});
+
 describe('wsUrl: адрес WebSocket живой карты', () => {
   it('относительный BASE (тот же origin) → ws по текущему host', () => {
     const url = wsUrl('/seats');
