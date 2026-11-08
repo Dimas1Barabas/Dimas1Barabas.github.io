@@ -74,6 +74,18 @@ function postCheckout(payload: unknown): Promise<Response> {
   });
 }
 
+/** витринный вердикт флага для e2e-пользователя (кнопка «Купить») */
+async function getVerdict(): Promise<{
+  enabled: boolean;
+  reason: string;
+}> {
+  const res = await fetch(`${BASE}/flags/${FLAG}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(res.status).toBe(200);
+  return (await res.json()) as { enabled: boolean; reason: string };
+}
+
 let original: FlagSnapshot | undefined;
 
 beforeAll(async () => {
@@ -106,6 +118,9 @@ describe('Мгновенный чекаут за флагом checkout.new_flow 
     if (!available || !original) return;
     await patchFlag({ ...original, enabled: true, percentage: 0, killed: false });
 
+    // витринный вердикт синхронен гварду: кнопки «Купить» на витрине нет
+    expect(await getVerdict()).toMatchObject({ enabled: false });
+
     const movies = await api<{ data: E2EMovie[] }>('/movies');
     const session = movies.data[0].sessions[0];
 
@@ -127,6 +142,9 @@ describe('Мгновенный чекаут за флагом checkout.new_flow 
   it('раскатка 100%: чекаут одним вызовом — PENDING и вердикт воркера', async () => {
     if (!available || !original) return;
     await patchFlag({ ...original, enabled: true, percentage: 100, killed: false });
+
+    // витринный вердикт включает кнопку той же сущностью, что гвард
+    expect(await getVerdict()).toMatchObject({ enabled: true, reason: 'on' });
 
     const movies = await api<{ data: E2EMovie[] }>('/movies');
     const session = movies.data[0].sessions[0];
