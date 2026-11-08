@@ -4,6 +4,7 @@ import { nextTick } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Booking, Movie, SeatMap } from '@/shared/api/types';
+import { api, ApiError, saveAuth } from '@/shared/api/client';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useBookingsStore } from '@/entities/booking/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
@@ -89,12 +90,78 @@ describe('BookingModal', () => {
     expect(chips).toHaveLength(1);
     expect(chips[0].text()).toContain('1-4');
 
+    // демо: флаг включён — главная кнопка «Купить», старый поток младшей
     const submit = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
-    expect(submit.text()).toBe('Забронировать');
+    expect(submit.text()).toBe('Купить за 400 ₽');
     expect(submit.attributes('disabled')).toBeUndefined();
+    const ghosts = wrapper.findAll('.modal__actions .btn--ghost');
+    expect(ghosts.map((b) => b.text())).toEqual(['Отмена', 'Забронировать']);
   });
 
-  it('пока бронь создаётся — кнопка крутит спиннер и выключена', async () => {
+  it('пока мгновенная покупка в полёте — обе кнопки заморожены, спиннер на нажатой', async () => {
+    const { wrapper } = mountModal();
+    const bookingsStore = useBookingsStore();
+    let resolveCheckout!: (booking: Booking) => void;
+    bookingsStore.checkout = vi.fn(
+      () => new Promise<Booking>((resolve) => (resolveCheckout = resolve)),
+    );
+
+    await wrapper.find('input.field__input').setValue('Дима');
+    await wrapper
+      .findAll('button.hall__seat:not([disabled])')[0]
+      .trigger('click');
+
+    const buy = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+    const book = wrapper
+      .findAll('.modal__actions .btn--ghost')
+      .find((b) => b.text() === 'Забронировать')!;
+    void buy.trigger('click'); // не ждём — checkout висит в pending
+    await nextTick();
+
+    expect(buy.classes()).toContain('btn--loading');
+    expect(buy.find('.spinner').exists()).toBe(true);
+    expect(buy.attributes('aria-busy')).toBe('true');
+    expect(buy.attributes('disabled')).toBeDefined();
+    expect(buy.text()).toContain('Отправляем');
+    // младшая кнопка не даёт запустить второй поток на том же выборе
+    expect(book.attributes('disabled')).toBeDefined();
+
+    resolveCheckout({
+      id: 'b-1',
+      movieId: 'm-1',
+      movieTitle: 'Рекурсия',
+      movieHue: 275,
+      movieGenreIcon: '👻',
+      sessionId: 's-1',
+      sessionAt: new Date(2030, 0, 10, 19, 0).toISOString(),
+      hall: 'IMAX',
+      customerName: 'Дима',
+      userId: null,
+      seats: ['1-2'],
+      totalRub: 400,
+      promoCode: null,
+      discountRub: null,
+      bonusSpent: null,
+      status: 'PENDING', // мгновенный чекаут: платёж уже запущен
+      expiresAt: null,
+      message: null,
+      processedBy: null,
+      processedAt: null,
+      createdAt: '2026-11-08T10:00:00Z',
+    });
+    await flushPromises();
+
+    expect(bookingsStore.checkout).toHaveBeenCalledWith({
+      sessionId: 's-1',
+      customerName: 'Дима', // демо спрашивает имя — уходит в чекаут
+      seats: ['1-2'],
+    });
+    expect(buy.classes()).not.toContain('btn--loading');
+    expect(buy.find('.spinner').exists()).toBe(false);
+    expect(wrapper.emitted('created')).toHaveLength(1);
+  });
+
+  it('пока бронь создаётся (старый поток) — спиннер на младшей кнопке', async () => {
     const { wrapper } = mountModal();
     const bookingsStore = useBookingsStore();
     let resolveCreate!: (booking: Booking) => void;
@@ -107,18 +174,20 @@ describe('BookingModal', () => {
       .findAll('button.hall__seat:not([disabled])')[0]
       .trigger('click');
 
-    const submit = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
-    void submit.trigger('click'); // не ждём — create висит в pending
+    const buy = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+    const book = wrapper
+      .findAll('.modal__actions .btn--ghost')
+      .find((b) => b.text() === 'Забронировать')!;
+    void book.trigger('click');
     await nextTick();
 
-    expect(submit.classes()).toContain('btn--loading');
-    expect(submit.find('.spinner').exists()).toBe(true);
-    expect(submit.attributes('aria-busy')).toBe('true');
-    expect(submit.attributes('disabled')).toBeDefined();
-    expect(submit.text()).toContain('Отправляем');
+    expect(book.classes()).toContain('btn--loading');
+    expect(book.text()).toContain('Отправляем');
+    expect(book.attributes('disabled')).toBeDefined();
+    expect(buy.attributes('disabled')).toBeDefined(); // главная тоже заморожена
 
     resolveCreate({
-      id: 'b-1',
+      id: 'b-2',
       movieId: 'm-1',
       movieTitle: 'Рекурсия',
       movieHue: 275,
@@ -142,8 +211,9 @@ describe('BookingModal', () => {
     });
     await flushPromises();
 
-    expect(submit.classes()).not.toContain('btn--loading');
-    expect(submit.find('.spinner').exists()).toBe(false);
+    expect(bookingsStore.create).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 's-1', seats: ['1-2'] }),
+    );
     expect(wrapper.emitted('created')).toHaveLength(1);
   });
 
@@ -187,7 +257,11 @@ describe('BookingModal', () => {
 
     await wrapper.find('input.field__input').setValue('Дима');
     await wrapper.findAll('button.hall__seat:not([disabled])')[0].trigger('click');
-    await wrapper.find('.modal__actions .btn:not(.btn--ghost)').trigger('click');
+    // старый поток — младшая кнопка «Забронировать»
+    await wrapper
+      .findAll('.modal__actions .btn--ghost')
+      .find((b) => b.text() === 'Забронировать')!
+      .trigger('click');
 
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 's-1', seats: ['1-2'] }),
@@ -274,5 +348,145 @@ describe('BookingModal: цена сеанса (Тарификатор)', () => {
     const chips = wrapper.findAll('.session-chip');
     await chips[1].trigger('click'); // s-2
     expect(moviesStore.loadQuote).toHaveBeenCalledWith('s-2');
+  });
+});
+
+describe('BookingModal: мгновенная покупка за флагом (live-вердикты)', () => {
+  /** live-режим: карты в сторе, стрим и загрузки замоканы, сессия — опционально */
+  function mountModalLive(opts?: { authed?: boolean }) {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const appStore = useAppStore();
+    const moviesStore = useMoviesStore();
+    appStore.mode = 'live';
+    moviesStore.loadSeats = vi.fn();
+    moviesStore.loadQuote = vi.fn();
+    moviesStore.startSeatStream = vi.fn();
+    moviesStore.seatMap = seatMap;
+    if (opts?.authed) {
+      saveAuth('jwt-1', {
+        id: 'u-1',
+        email: 'anna@example.com',
+        name: 'Анна',
+        role: 'user',
+        createdAt: '2026-01-01T00:00:00Z',
+      });
+    }
+    const wrapper = mount(BookingModal, {
+      props: { movie },
+      global: { plugins: [pinia], stubs: { Teleport: true } },
+    });
+    return { wrapper, moviesStore };
+  }
+
+  const verdict = (enabled: boolean) =>
+    Promise.resolve({
+      key: 'checkout.new_flow',
+      enabled,
+      reason: enabled ? 'on' : 'flag_off',
+    } as const);
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('без входа кнопки мгновенной покупки нет — вердикт не спрашивается', async () => {
+    const flagSpy = vi.spyOn(api, 'flag');
+    const { wrapper } = mountModalLive(); // аноним
+    await flushPromises();
+
+    expect(flagSpy).not.toHaveBeenCalled(); // чекаут требует JWT — смысла нет
+    const primary = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+    expect(primary.text()).toBe('Выберите места'); // осталась одна главная
+    expect(wrapper.text()).not.toContain('Купить');
+    flagSpy.mockRestore();
+  });
+
+  it('вердикт on: главная — «Купить», чекаут уходит без имени (оно в JWT)', async () => {
+    const flagSpy = vi
+      .spyOn(api, 'flag')
+      .mockReturnValue(verdict(true) as never);
+    const { wrapper } = mountModalLive({ authed: true });
+    const bookingsStore = useBookingsStore();
+    bookingsStore.checkout = vi.fn().mockResolvedValue({ id: 'b-9' } as Booking);
+    await flushPromises();
+
+    await wrapper
+      .findAll('button.hall__seat:not([disabled])')[0]
+      .trigger('click');
+    const buy = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+    expect(buy.text()).toBe('Купить за 400 ₽');
+    await buy.trigger('click');
+
+    expect(bookingsStore.checkout).toHaveBeenCalledWith({
+      sessionId: 's-1',
+      seats: ['1-2'], // без customerName: live берёт имя из токена
+    });
+    expect(wrapper.emitted('created')).toHaveLength(1);
+    flagSpy.mockRestore();
+  });
+
+  it('вердикт off (вне раскатки): мгновенной кнопки нет, старый поток целый', async () => {
+    const flagSpy = vi
+      .spyOn(api, 'flag')
+      .mockReturnValue(verdict(false) as never);
+    const { wrapper } = mountModalLive({ authed: true });
+    await flushPromises();
+
+    await wrapper
+      .findAll('button.hall__seat:not([disabled])')[0]
+      .trigger('click');
+    const primary = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+    expect(primary.text()).toBe('Забронировать');
+    expect(wrapper.text()).not.toContain('Купить за');
+    flagSpy.mockRestore();
+  });
+
+  it('403 featureDisabled: тумблер повернули после вердикта — кнопка прячется', async () => {
+    const flagSpy = vi
+      .spyOn(api, 'flag')
+      .mockReturnValue(verdict(true) as never);
+    const { wrapper } = mountModalLive({ authed: true });
+    const bookingsStore = useBookingsStore();
+    bookingsStore.checkout = vi.fn().mockRejectedValue(
+      new ApiError(
+        'HTTP 403',
+        403,
+        JSON.stringify({
+          statusCode: 403,
+          code: 'featureDisabled',
+          flag: 'checkout.new_flow',
+          reason: 'kill_switch',
+        }),
+      ),
+    );
+    await flushPromises();
+
+    await wrapper
+      .findAll('button.hall__seat:not([disabled])')[0]
+      .trigger('click');
+    await wrapper.find('.modal__actions .btn:not(.btn--ghost)').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('забронируйте обычным способом');
+    expect(wrapper.text()).not.toContain('Купить за'); // кнопка ушла
+    // старый поток остался доступным
+    expect(
+      wrapper
+        .findAll('.modal__actions .btn')
+        .some((b) => b.text() === 'Забронировать'),
+    ).toBe(true);
+    flagSpy.mockRestore();
+  });
+
+  it('сбой вердикта (сеть): кнопки нет — fail-safe, как у гварда', async () => {
+    const flagSpy = vi
+      .spyOn(api, 'flag')
+      .mockRejectedValue(new Error('HTTP 502') as never);
+    const { wrapper } = mountModalLive({ authed: true });
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain('Купить за');
+    flagSpy.mockRestore();
   });
 });

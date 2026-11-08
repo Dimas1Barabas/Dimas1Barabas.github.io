@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import type { Booking, Movie } from '@/shared/api/types';
-import { ApiError, retryAfterFrom } from '@/shared/api/client';
+import { api, ApiError, retryAfterFrom } from '@/shared/api/client';
+import { demoEngine } from '@/shared/api/demo-engine';
 import {
   createDwellClock,
   trackAnalytics,
@@ -36,8 +37,22 @@ const customerName = ref('');
 const selected = ref<string[]>([]);
 /** выбранный сеанс — по нему карта зала и бронь */
 const selectedSessionId = ref<string | null>(null);
-const submitting = ref(false);
+/**
+ * Какой поток оформления в полёте: 'book' — старый (создать бронь),
+ * 'buy' — мгновенная покупка. Спиннер рисуется на нажатой кнопке,
+ * обе кнопки заморожены — гонки двух потоков на одном выборе нет.
+ */
+const inFlight = ref<'book' | 'buy' | null>(null);
+const submitting = computed(() => inFlight.value !== null);
 const error = ref<string | null>(null);
+/**
+ * Тумблер «Суфлёра» (флаг checkout.new_flow): показывать ли кнопку
+ * мгновенной покупки. Вердикт приезжает при открытии модалки; кнопка
+ * видна ровно тогда, когда POST за ней пройдёт гвард — сущность
+ * бакетинга у вердикта и гварда одна (id из JWT).
+ */
+const CHECKOUT_FLAG = 'checkout.new_flow';
+const instantFlow = ref(false);
 /** кулдаун после 429 Привратника: пока тикает — кнопка брони заморожена */
 const { cooldownSec, startCooldown } = useCooldown();
 /** сам диалог — фокусируем при открытии, чтобы Esc закрывал без клика */
@@ -142,35 +157,65 @@ async function leaveQueue(): Promise<void> {
   await waitlistStore.leave(selectedSessionId.value);
 }
 
-async function submit(): Promise<void> {
-  if (!props.movie || submitting.value || cooldownSec.value > 0) return;
+/** общие проверки оформления (оба потока): null — можно отправлять */
+function validateSelection(action: string): string | null {
   if (needLogin.value) {
-    error.value = 'Войдите, чтобы забронировать — бронь оформляется на ваш профиль';
-    return;
+    return `Войдите, чтобы ${action} — бронь оформляется на ваш профиль`;
   }
   if (askName.value && customerName.value.trim().length < 2) {
-    error.value = 'Введите имя (минимум 2 символа)';
+    return 'Введите имя (минимум 2 символа)';
+  }
+  if (!selectedSessionId.value) return 'Нет доступных сеансов';
+  if (!selected.value.length) return 'Выберите хотя бы одно место';
+  return null;
+}
+
+/**
+ * Разбор отказа оформления — общая кухня обоих потоков: 429 Привратника
+ * замораживает форму на retryAfterSec, 409 места фильтрует выбор и
+ * тащит свежую карту, остальное — текст ошибки.
+ */
+function applyFlowError(err: unknown, fallback: string): void {
+  const retryAfter = retryAfterFrom(err);
+  if (retryAfter !== null) {
+    startCooldown(retryAfter);
+    error.value = `Слишком много броней — подождите ${retryAfter} с и попробуйте снова`;
     return;
   }
-  if (!selectedSessionId.value) {
-    error.value = 'Нет доступных сеансов';
+  if (err instanceof ApiError && err.status === 409) {
+    // место успели занять прямо под выбором — обновляем карту
+    const taken = seatsTakenFrom(err);
+    error.value = taken.length
+      ? `Места уже заняты: ${formatSeats(taken)} — выберите другие`
+      : 'Выбранные места уже заняты — обновите выбор';
+    selected.value = selected.value.filter((s) => !taken.includes(s));
+    if (selectedSessionId.value) {
+      void moviesStore.loadSeats(selectedSessionId.value);
+    }
     return;
   }
-  if (!selected.value.length) {
-    error.value = 'Выберите хотя бы одно место';
+  error.value = err instanceof Error ? err.message : fallback;
+}
+
+async function submit(): Promise<void> {
+  if (!props.movie || submitting.value || cooldownSec.value > 0) return;
+  const invalid = validateSelection('забронировать');
+  if (invalid) {
+    error.value = invalid;
     return;
   }
+  const sessionId = selectedSessionId.value!; // проверки выше прошли
   // намерение забронировать: места выбраны и отправлены (409/429 — тоже путь)
   trackAnalytics('seats_selected', {
-    sessionId: selectedSessionId.value,
+    sessionId,
     count: selected.value.length,
   });
   deepestStep = deepestStep === 'created' ? 'created' : 'seats';
-  submitting.value = true;
+  inFlight.value = 'book';
   error.value = null;
   try {
     const booking = await bookingsStore.create({
-      sessionId: selectedSessionId.value,
+      sessionId,
       // в live имя возьмёт из JWT; в демо — как раньше, из поля
       ...(askName.value ? { customerName: customerName.value } : {}),
       seats: selected.value,
@@ -178,31 +223,83 @@ async function submit(): Promise<void> {
     trackAnalytics('booking_created', {
       bookingId: booking.id,
       movieId: props.movie.id,
-      sessionId: selectedSessionId.value,
+      sessionId,
     });
     deepestStep = 'created';
     emit('created', booking);
   } catch (err) {
-    const retryAfter = retryAfterFrom(err);
-    if (retryAfter !== null) {
-      // Привратник исчерпал корзину брони (10/мин на юзера) — форма
-      // замораживается на retryAfterSec из тела ответа
-      startCooldown(retryAfter);
-      error.value = `Слишком много броней — подождите ${retryAfter} с и попробуйте снова`;
-    } else if (err instanceof ApiError && err.status === 409) {
-      // место успели занять прямо под выбором — обновляем карту
-      const taken = seatsTakenFrom(err);
-      error.value = taken.length
-        ? `Места уже заняты: ${formatSeats(taken)} — выберите другие`
-        : 'Выбранные места уже заняты — обновите выбор';
-      selected.value = selected.value.filter((s) => !taken.includes(s));
-      void moviesStore.loadSeats(selectedSessionId.value);
-    } else {
-      error.value =
-        err instanceof Error ? err.message : 'Не удалось создать бронь';
-    }
+    applyFlowError(err, 'Не удалось создать бронь');
   } finally {
-    submitting.value = false;
+    inFlight.value = null;
+  }
+}
+
+/**
+ * Мгновенная покупка — новый поток оплаты за флагом checkout.new_flow:
+ * бронь и оплата одним вызовом, статус ответа PENDING, вердикт Go-воркера
+ * покажет экран оплаты (SSE). Отличие от submit — только 403: тумблер
+ * могли повернуть между вердиктом витрины и кликом.
+ */
+async function buyNow(): Promise<void> {
+  if (!props.movie || submitting.value || cooldownSec.value > 0) return;
+  const invalid = validateSelection('купить');
+  if (invalid) {
+    error.value = invalid;
+    return;
+  }
+  const sessionId = selectedSessionId.value!; // проверки выше прошли
+  trackAnalytics('seats_selected', {
+    sessionId,
+    count: selected.value.length,
+  });
+  deepestStep = deepestStep === 'created' ? 'created' : 'seats';
+  inFlight.value = 'buy';
+  error.value = null;
+  try {
+    const booking = await bookingsStore.checkout({
+      sessionId,
+      ...(askName.value ? { customerName: customerName.value } : {}),
+      seats: selected.value,
+    });
+    // событие то же, что у старого потока: набор полей закрыт контрактом
+    // Аналитика; экран оплаты доошлёт payment_opened — воронка честная
+    trackAnalytics('booking_created', {
+      bookingId: booking.id,
+      movieId: props.movie.id,
+      sessionId,
+    });
+    deepestStep = 'created';
+    emit('created', booking);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 403) {
+      // фича ушла из раскатки (kill-switch/откат) — прячем кнопку,
+      // старый поток работает как раньше
+      instantFlow.value = false;
+      error.value =
+        'Мгновенная покупка сейчас недоступна — забронируйте обычным способом';
+      return;
+    }
+    applyFlowError(err, 'Не удалось оформить покупку');
+  } finally {
+    inFlight.value = null;
+  }
+}
+
+/**
+ * Вердикт тумблера «Суфлёра» для этого пользователя. Анониму и при
+ * сбое сети кнопка не показывается — новая фича не «засветится»
+ * аварией (fail-safe, как у гварда на маршруте).
+ */
+async function loadInstantFlow(): Promise<void> {
+  if (appStore.mode === 'demo') {
+    instantFlow.value = demoEngine.flag(CHECKOUT_FLAG).enabled;
+    return;
+  }
+  if (!authStore.isAuthed) return; // чекаут требует JWT — кнопке нечего открывать
+  try {
+    instantFlow.value = (await api.flag(CHECKOUT_FLAG)).enabled;
+  } catch {
+    instantFlow.value = false;
   }
 }
 
@@ -215,11 +312,13 @@ watch(
     customerName.value = '';
     selected.value = [];
     error.value = null;
+    instantFlow.value = false; // вердикт приезжает заново на каждое открытие
     if (movie) {
       // аналитика: интерес к фильку = открытие модалки; часы — до закрытия
       trackAnalytics('booking_modal_open', { movieId: movie.id });
       dwellClock = createDwellClock();
       deepestStep = '';
+      void loadInstantFlow();
       // дефолт — ближайший будущий сеанс (loadSeats здесь: при переоткрытии
       // того же сеанса watch(selectedSessionId) не сработает — id не сменится)
       selectedSessionId.value = upcomingSessions(movie.sessions)[0]?.id ?? null;
@@ -558,10 +657,20 @@ watch(
             <p v-if="error" class="modal__error">{{ error }}</p>
 
             <p class="modal__note">
-              После создания бронь будет ждать оплаты: места резервируются за
-              вами на ограниченное окно, а после оплаты Go-воркер ticket-worker
-              «проведёт платёж» и вернёт вердикт. Занятые места защищены
-              констрейнтом в Postgres — дважды одно место продать нельзя.
+              <template v-if="instantFlow">
+                «Купить за сумму» — мгновенный чекаут: бронь и оплата одним
+                действием, вердикт Go-воркера прилетит на экране оплаты.
+                «Забронировать» оставит прежний поток — оплата отдельным
+                шагом, с промокодом и бонусами. Занятые места защищены
+                констрейнтом в Postgres — дважды одно место продать нельзя.
+              </template>
+              <template v-else>
+                После создания бронь будет ждать оплаты: места резервируются
+                за вами на ограниченное окно, а после оплаты Go-воркер
+                ticket-worker «проведёт платёж» и вернёт вердикт. Занятые
+                места защищены констрейнтом в Postgres — дважды одно место
+                продать нельзя.
+              </template>
             </p>
           </div>
 
@@ -580,15 +689,35 @@ watch(
               >
                 Отмена
               </button>
+              <!-- старый поток живёт: за флагом он младшая кнопка -->
+              <button
+                v-if="instantFlow"
+                class="btn btn--ghost"
+                type="button"
+                :class="{ 'btn--loading': inFlight === 'book' }"
+                :disabled="
+                  submitting || cooldownSec > 0 || !selectedSessionId || !selected.length
+                "
+                :aria-busy="inFlight === 'book' || undefined"
+                @click="submit"
+              >
+                <span
+                  v-if="inFlight === 'book'"
+                  class="spinner"
+                  aria-hidden="true"
+                ></span>
+                {{ inFlight === 'book' ? 'Отправляем…' : 'Забронировать' }}
+              </button>
               <button
                 class="btn"
                 :class="{ 'btn--loading': submitting }"
                 type="button"
+                data-testid="primary-action"
                 :disabled="
                   submitting || cooldownSec > 0 || !selectedSessionId || !selected.length
                 "
                 :aria-busy="submitting || undefined"
-                @click="submit"
+                @click="instantFlow ? buyNow() : submit()"
               >
                 <span
                   v-if="submitting"
@@ -601,7 +730,9 @@ watch(
                     : cooldownSec
                       ? `Подождите ${cooldownSec} с`
                       : selected.length
-                        ? 'Забронировать'
+                        ? instantFlow
+                          ? `Купить за ${formatPrice(total)}`
+                          : 'Забронировать'
                         : 'Выберите места'
                 }}
               </button>

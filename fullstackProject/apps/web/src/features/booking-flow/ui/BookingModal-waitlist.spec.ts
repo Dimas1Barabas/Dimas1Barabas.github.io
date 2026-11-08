@@ -275,11 +275,17 @@ describe('BookingModal: Привратник — лимит броней (429)',
     createdAt: '2026-09-12T10:00:00Z',
   };
 
-  /** демо спрашивает имя: заполняем, выбираем место, жмём бронь */
+  /** демо спрашивает имя: заполняем, выбираем место, жмём бронь (младшая кнопка —
+   *  главная теперь «Купить», а этот сьют гоняет старый поток create) */
+  const bookButton = (wrapper: ReturnType<typeof mountNoStream>['wrapper']) =>
+    wrapper
+      .findAll('.modal__actions .btn--ghost')
+      .find((b) => b.text() === 'Забронировать')!;
+
   async function attempt(wrapper: ReturnType<typeof mountNoStream>['wrapper']) {
     await wrapper.find('input.field__input').setValue('Дима');
     await wrapper.findAll('button.hall__seat:not([disabled])')[0].trigger('click');
-    await wrapper.find('.modal__actions .btn:not(.btn--ghost)').trigger('click');
+    await bookButton(wrapper).trigger('click');
   }
 
   beforeEach(() => {
@@ -295,22 +301,25 @@ describe('BookingModal: Привратник — лимит броней (429)',
     bookingsStore.create = vi.fn().mockRejectedValue(rateLimited(7));
 
     await attempt(wrapper);
-    const submit = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+    const primary = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
 
     expect(wrapper.text()).toContain('Слишком много броней');
     expect(wrapper.text()).toContain('подождите 7 с');
-    expect(submit.attributes('disabled')).toBeDefined();
-    expect(submit.text()).toContain('Подождите 7');
+    // обе кнопки заморожены; отсчёт кулдауна — в подписи главной
+    expect(bookButton(wrapper).attributes('disabled')).toBeDefined();
+    expect(primary.attributes('disabled')).toBeDefined();
+    expect(primary.text()).toContain('Подождите 7');
 
     vi.advanceTimersByTime(3000);
     await nextTick();
-    expect(submit.text()).toContain('Подождите 4');
+    expect(primary.text()).toContain('Подождите 4');
 
     vi.advanceTimersByTime(4000);
     await nextTick();
-    // кулдаун кончился — выбор мест жив, кнопка снова «Забронировать»
-    expect(submit.attributes('disabled')).toBeUndefined();
-    expect(submit.text()).toContain('Забронировать');
+    // кулдаун кончился — выбор мест жив, обе кнопки вернулись
+    expect(primary.attributes('disabled')).toBeUndefined();
+    expect(primary.text()).toContain('Купить за');
+    expect(bookButton(wrapper).attributes('disabled')).toBeUndefined();
   });
 
   it('по окончании кулдауна бронь создаётся повторной отправкой', async () => {
@@ -325,7 +334,7 @@ describe('BookingModal: Привратник — лимит броней (429)',
     vi.advanceTimersByTime(5000);
     await nextTick();
 
-    await wrapper.find('.modal__actions .btn:not(.btn--ghost)').trigger('click');
+    await bookButton(wrapper).trigger('click');
 
     expect(create).toHaveBeenCalledTimes(2);
     expect(wrapper.emitted('created')).toHaveLength(1);
@@ -339,10 +348,10 @@ describe('BookingModal: Привратник — лимит броней (429)',
     );
 
     await attempt(wrapper);
-    const submit = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+    const primary = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
 
-    expect(submit.text()).not.toContain('Подождите');
-    expect(submit.attributes('disabled')).toBeUndefined();
+    expect(primary.text()).not.toContain('Подождите');
+    expect(bookButton(wrapper).attributes('disabled')).toBeUndefined();
     // общий текст ветки — конструктор ApiError, не тело
     expect(wrapper.text()).toContain('HTTP 429');
   });
