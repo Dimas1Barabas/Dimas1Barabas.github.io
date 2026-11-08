@@ -47,6 +47,31 @@ describe('stores: демо-режим целиком (bookings)', () => {
     expect(bookings.error).toBeNull();
   });
 
+  it('checkout: мгновенный чекаут — сразу PENDING (не PENDING_PAYMENT)', async () => {
+    const sessionId = demoEngine.movies().data[0].sessions[0].id;
+    const [seat] = freeSeats(demoEngine.seatMap(sessionId), 1);
+    const bookings = useBookingsStore();
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+    const booking = await bookings.checkout({
+      sessionId,
+      customerName: 'Мгновенный',
+      seats: [seat],
+    });
+
+    expect(booking.status).toBe('PENDING');
+    expect(bookings.bookings[0].id).toBe(booking.id);
+    expect(bookings.stats.PENDING).toBeGreaterThanOrEqual(1);
+    expect(bookings.creating).toBe(false); // запрос завершён
+    expect(bookings.error).toBeNull();
+
+    // вердикт «воркера» долетит подписчикам (SSE-стрим в live)
+    await vi.advanceTimersByTimeAsync(3000);
+    randomSpy.mockRestore();
+    await bookings.refresh();
+    expect(bookings.bookings[0].status).toBe('CONFIRMED');
+  });
+
   it('pay: PENDING_PAYMENT → PENDING, затем вердикт «воркера»', async () => {
     const sessionId = demoEngine.movies().data[0].sessions[0].id;
     const [seat] = freeSeats(demoEngine.seatMap(sessionId), 1);

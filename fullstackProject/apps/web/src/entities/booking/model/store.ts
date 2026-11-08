@@ -5,6 +5,7 @@ import type {
   Booking,
   BookingStats,
   BookingStreamPayload,
+  CheckoutPayload,
   CreateBookingPayload,
 } from '@/shared/api/types';
 import { useAppStore } from '@/shared/api/app-mode';
@@ -80,6 +81,27 @@ export const useBookingsStore = defineStore('bookings', {
           app.mode === 'demo'
             ? demoEngine.create(payload)
             : await api.createBooking(payload);
+        await this.refresh();
+        return booking;
+      } finally {
+        this.creating = false;
+      }
+    },
+
+    /**
+     * Мгновенный чекаут — новый поток оплаты за флагом checkout.new_flow:
+     * бронь и оплата одним вызовом, статус ответа PENDING, вердикт воркера
+     * прилетит по SSE. Ошибки — те же, что у create/pay (409 места/промо/
+     * бонусы, 429 лимит): их разруливает вызывающий экран, как у create.
+     */
+    async checkout(payload: CheckoutPayload): Promise<Booking> {
+      this.creating = true;
+      const app = useAppStore();
+      try {
+        const booking =
+          app.mode === 'demo'
+            ? demoEngine.checkout(payload)
+            : await api.checkoutBooking(payload);
         await this.refresh();
         return booking;
       } finally {

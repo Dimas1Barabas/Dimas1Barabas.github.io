@@ -1,7 +1,7 @@
 /** bookings store: live-режим — SSE-поток брони и личный кабинет (api-моки). Вырезано из store.spec.ts (демо-режим остался там). Самодостаточен: свой FakeEventSource. */
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, saveAuth } from '@/shared/api/client';
+import { api, ApiError, saveAuth } from '@/shared/api/client';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useBookingsStore } from '@/entities/booking/model/store';
 import type { Booking, BookingStats } from '@/shared/api/types';
@@ -87,6 +87,59 @@ describe('stores: live-поток (bookings)', () => {
     bookings.stopListening();
     expect(es.closed).toBe(true);
     expect(bookings.source).toBeNull();
+  });
+});
+
+describe('stores: мгновенный чекаут в live (bookings.checkout)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    localStorage.clear();
+    useAppStore().mode = 'live';
+  });
+
+  it('checkout: POST /bookings/checkout + refresh списков, PENDING наружу', async () => {
+    const pending = { id: 'b-co-1', status: 'PENDING' } as Booking;
+    const checkoutSpy = vi
+      .spyOn(api, 'checkoutBooking')
+      .mockResolvedValue(pending);
+    vi.spyOn(api, 'bookings').mockResolvedValue([pending]);
+    vi.spyOn(api, 'stats').mockResolvedValue({
+      PENDING_PAYMENT: 0,
+      PENDING: 1,
+      CONFIRMED: 0,
+      FAILED: 0,
+      EXPIRED: 0,
+      CANCELLING: 0,
+      CANCELLED: 0,
+    });
+
+    const bookings = useBookingsStore();
+    const booking = await bookings.checkout({
+      sessionId: 's-1',
+      seats: ['5-7'],
+    });
+
+    expect(booking).toBe(pending);
+    expect(checkoutSpy).toHaveBeenCalledWith({ sessionId: 's-1', seats: ['5-7'] });
+    // из реактивного стора объект приезжает прокси — сверяем по содержимому
+    expect(bookings.bookings[0]).toMatchObject({ id: 'b-co-1', status: 'PENDING' });
+    expect(bookings.stats.PENDING).toBe(1);
+    expect(bookings.creating).toBe(false);
+  });
+
+  it('checkout: 409 прокидывается экрану, список не тронут', async () => {
+    vi.spyOn(api, 'checkoutBooking').mockRejectedValue(
+      new ApiError('HTTP 409', 409, JSON.stringify({ seatsTaken: ['5-7'] })),
+    );
+    const bookingsSpy = vi.spyOn(api, 'bookings').mockResolvedValue([]);
+
+    const bookings = useBookingsStore();
+    await expect(
+      bookings.checkout({ sessionId: 's-1', seats: ['5-7'] }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(bookings.creating).toBe(false);
+    // отказ до refresh: гонку мест показываем по свежей карте, не по списку
+    expect(bookingsSpy).not.toHaveBeenCalled();
   });
 });
 
