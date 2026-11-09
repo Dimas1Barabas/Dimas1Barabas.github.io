@@ -35,6 +35,7 @@ import {
 } from '../recommendations/recommendation-events';
 import { PricingClient } from '../pricing/pricing.client';
 import { RemindersClient } from '../reminders/reminders.client';
+import { FlagsEvaluator } from '../flags/flags.evaluator';
 import { User } from '../users/user.entity';
 import {
   WaitlistReleaseReason,
@@ -161,6 +162,9 @@ export class BookingsService {
     private readonly pricing: PricingClient,
     // будильник Курьера: записи закоммичены — доставка без poll-типа
     private readonly outboxRelay: OutboxRelayClient,
+    // конверсия эксперимента checkout.new_flow: успешный чекаут — то самое
+    // бизнес-событие, ради которого считаются экспозиции (fire-and-forget)
+    private readonly flagsEvaluator: FlagsEvaluator,
   ) {}
 
   /**
@@ -573,7 +577,11 @@ export class BookingsService {
    */
   async checkout(dto: CheckoutDto, user: AuthUser): Promise<BookingDto> {
     const booking = await this.create(dto, user);
-    return this.pay(booking.id, user, dto.promoCode, dto.useBonuses);
+    const paid = await this.pay(booking.id, user, dto.promoCode, dto.useBonuses);
+    // конверсия эксперимента: покупка за флагом состоялась — вариант
+    // пересчитает «Суфлёр» по тому же бакетингу, что пропустил гвард
+    this.flagsEvaluator.reportConversion('checkout.new_flow', user.id);
+    return paid;
   }
 
   /** баланс бонусного счёта: SUM(accrual) − SUM(spend) от источника-ledger */

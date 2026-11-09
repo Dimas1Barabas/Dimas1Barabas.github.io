@@ -14,6 +14,7 @@ import { Movie } from '../movies/movie.entity';
 import { Promo } from '../promos/promo.entity';
 import { PricingClient } from '../pricing/pricing.client';
 import { RemindersClient } from '../reminders/reminders.client';
+import { FlagsEvaluator } from '../flags/flags.evaluator';
 import { User } from '../users/user.entity';
 import { WaitlistEntry } from '../waitlist/waitlist.entity';
 import { Session } from '../movies/session.entity';
@@ -113,6 +114,8 @@ export interface BookingsHarness {
   stream: { emit: jest.Mock };
   /** шина живой карты мест: сигнал на каждое изменение занятости */
   seatStream: { emit: jest.Mock };
+  /** «Суфлёр»: конверсия эксперимента checkout.new_flow после чекаута */
+  flagsEvaluator: { reportConversion: jest.Mock; reportExposure: jest.Mock };
   /** что «INSERT INTO seat_occupancy» сделал внутри транзакции */
   emInsert: jest.Mock;
   /** что «UPDATE …» сделал внутри транзакции (pay: статус + скидка) */
@@ -172,6 +175,12 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
   const reminders: BookingsHarness['reminders'] = {
     schedule: jest.fn(async () => ({ status: 'SCHEDULED', dueAt: '2026-09-25T17:00:00Z' })),
     cancel: jest.fn(async () => ({ status: 'CANCELLED' })),
+  };
+  // «Суфлёр»: отчёты метрик fire-and-forget — конверсия чекаута уходит
+  // после успешной оплаты, спеки могут точечно переключать моки
+  const flagsEvaluator: BookingsHarness['flagsEvaluator'] = {
+    reportConversion: jest.fn(),
+    reportExposure: jest.fn(),
   };
   // Тарификатор по умолчанию «прозрачен»: базовая цена без факторов —
   // кейсы ценообразования переключают мок точечно
@@ -306,6 +315,7 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
       { provide: OutboxRelayClient, useValue: { poke: outboxPoke } },
       { provide: BookingStream, useValue: stream },
       { provide: SeatStream, useValue: seatStream },
+      { provide: FlagsEvaluator, useValue: flagsEvaluator },
     ],
   }).compile();
 
@@ -324,6 +334,7 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
     outboxPoke,
     stream,
     seatStream,
+    flagsEvaluator,
     emInsert,
     emUpdate,
     emQuery,

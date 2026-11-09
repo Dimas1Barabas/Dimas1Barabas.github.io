@@ -20,14 +20,24 @@ export interface FlagSnapshot {
   enabled: boolean;
   percentage: number;
   killed: boolean;
+  /** варианты A/B-эксперимента; непустой список превращает флаг в эксперимент */
+  variants?: FlagVariantSnapshot[];
   updatedBy: string;
   updatedAt: string;
+}
+
+/** Вариант A/B-эксперимента: имя и доля трафика (кумулятивно, остаток — база). */
+export interface FlagVariantSnapshot {
+  name: string;
+  percentage: number;
 }
 
 /** Какое правило вынесло вердикт — значения совпадают с доменом Go. */
 export type FlagReason =
   | 'on'
   | 'percentage'
+  | 'variant'
+  | 'base'
   | 'flag_off'
   | 'kill_switch'
   | 'not_found';
@@ -36,6 +46,8 @@ export interface FlagVerdict {
   enabled: boolean;
   reason: FlagReason;
   percentage: number;
+  /** вариант эксперимента сущности; '' — база (контроль) или не-эксперимент */
+  variant: string;
 }
 
 /** Бакет сущности в раскатке флага: 0..99, стабилен для пары (флаг, сущность). */
@@ -50,26 +62,52 @@ export function bucketOf(key: string, entityId: string): number {
 
 /**
  * Вердикт флага для сущности. Приоритет правил (первый совпавший решает):
- * kill-switch → мастер-тумблер → бакет раскатки; 100% — это «on».
+ * kill-switch → мастер-тумблер → эксперимент (варианты по кумулятивным
+ * долям, остаток — база) → бакет раскатки; 100% — это «on».
  * Отсутствующий флаг — оф с not_found: новая фича по умолчанию скрыта.
  */
 export function evaluateFlag(
   flag: FlagSnapshot | undefined,
   entityId: string,
 ): FlagVerdict {
-  if (!flag) return { enabled: false, reason: 'not_found', percentage: 0 };
+  if (!flag) {
+    return { enabled: false, reason: 'not_found', percentage: 0, variant: '' };
+  }
   if (flag.killed) {
-    return { enabled: false, reason: 'kill_switch', percentage: flag.percentage };
+    return {
+      enabled: false,
+      reason: 'kill_switch',
+      percentage: flag.percentage,
+      variant: '',
+    };
   }
   if (!flag.enabled) {
-    return { enabled: false, reason: 'flag_off', percentage: flag.percentage };
+    return {
+      enabled: false,
+      reason: 'flag_off',
+      percentage: flag.percentage,
+      variant: '',
+    };
+  }
+  const variants = flag.variants ?? [];
+  if (variants.length > 0) {
+    const bucket = bucketOf(flag.key, entityId);
+    let cumulative = 0;
+    for (const v of variants) {
+      cumulative += v.percentage;
+      if (bucket < cumulative) {
+        return { enabled: true, reason: 'variant', percentage: 0, variant: v.name };
+      }
+    }
+    return { enabled: false, reason: 'base', percentage: 0, variant: '' };
   }
   if (flag.percentage >= 100) {
-    return { enabled: true, reason: 'on', percentage: 100 };
+    return { enabled: true, reason: 'on', percentage: 100, variant: '' };
   }
   return {
     enabled: bucketOf(flag.key, entityId) < flag.percentage,
     reason: 'percentage',
     percentage: flag.percentage,
+    variant: '',
   };
 }

@@ -102,6 +102,38 @@ describe('FlagsAdminController', () => {
     ).rejects.toBeInstanceOf(HttpException);
   });
 
+  it('PATCH /:key с вариантами — эксперимент уходит в сервис целиком', async () => {
+    const h = makeController();
+    await h.controller.upsert(
+      'booking.qr_v2',
+      {
+        description: 'A/B QR-билетов',
+        enabled: true,
+        percentage: 0,
+        killed: false,
+        variants: [
+          { name: 'a', percentage: 10 },
+          { name: 'b', percentage: 30 },
+        ],
+      },
+      { user: admin },
+    );
+    expect(h.upserts[0]).toMatchObject({
+      key: 'booking.qr_v2',
+      variants: [
+        { name: 'a', percentage: 10 },
+        { name: 'b', percentage: 30 },
+      ],
+    });
+    // пустой variants — обычный флаг: список уходит пустым, не undefined
+    await h.controller.upsert(
+      'booking.qr_v2',
+      { description: '', enabled: false, percentage: 0, killed: false, variants: [] },
+      { user: admin },
+    );
+    expect(h.upserts[1]?.variants).toEqual([]);
+  });
+
   it('DELETE /:key — удаление + инвалидация кэша', async () => {
     const h = makeController();
     await expect(h.controller.remove('checkout.new_flow')).resolves.toEqual({ deleted: true });

@@ -35,6 +35,8 @@ describe('POST /api/bookings/checkout за флагом checkout.new_flow (int)'
     ctx.flagsEvaluator.isEnabled.mockResolvedValue({
       enabled: false,
       reason: 'off',
+      percentage: 0,
+      variant: '',
     });
 
     const res = await request(app.getHttpServer())
@@ -61,6 +63,8 @@ describe('POST /api/bookings/checkout за флагом checkout.new_flow (int)'
     ctx.flagsEvaluator.isEnabled.mockResolvedValue({
       enabled: true,
       reason: 'on',
+      percentage: 100,
+      variant: '',
     });
 
     const res = await request(app.getHttpServer())
@@ -76,12 +80,20 @@ describe('POST /api/bookings/checkout за флагом checkout.new_flow (int)'
       'booking.created',
     ]);
     expect(ctx.bookingsRepo.rows[0].status).toBe('PENDING');
+    // покупка за флагом состоялась — конверсия эксперимента той же сущностью
+    expect(ctx.flagsEvaluator.reportConversion).toHaveBeenCalledWith(
+      'checkout.new_flow',
+      'user-a',
+    );
   });
 
   it('включён, но промокод не найден: 404, бронь осталась в PENDING_PAYMENT', async () => {
+    ctx.flagsEvaluator.reportConversion.mockClear();
     ctx.flagsEvaluator.isEnabled.mockResolvedValue({
       enabled: true,
       reason: 'on',
+      percentage: 100,
+      variant: '',
     });
 
     const res = await request(app.getHttpServer())
@@ -99,5 +111,7 @@ describe('POST /api/bookings/checkout за флагом checkout.new_flow (int)'
       'booking.created',
       'booking.payment.wait',
     ]);
+    // оплата не состоялась — конверсии эксперимента нет
+    expect(ctx.flagsEvaluator.reportConversion).not.toHaveBeenCalled();
   });
 });

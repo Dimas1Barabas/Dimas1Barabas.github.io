@@ -17,6 +17,8 @@ export interface UpsertFlagInput {
   enabled: boolean;
   percentage: number;
   killed: boolean;
+  /** варианты A/B-эксперимента — ПОЛНОЕ состояние (upsert перезаписывает) */
+  variants?: FlagSnapshot['variants'];
   updatedBy: string;
 }
 
@@ -25,6 +27,13 @@ export interface EvaluateGrpcResponse {
   enabled?: boolean;
   reason?: string;
   percentage?: number;
+  variant?: string;
+}
+
+/** Ответ ReportExposure/ReportConversion */
+export interface ReportGrpcResponse {
+  variant?: string;
+  counted?: boolean;
 }
 
 export interface FlagStateGrpc extends FlagSnapshot {}
@@ -49,6 +58,16 @@ type FlagsStub = {
     request: { key: string },
     options: { deadline: Date },
     callback: (err: ServiceError | null, response: { deleted?: boolean }) => void,
+  ): void;
+  ReportExposure(
+    request: { key: string; entityId: string },
+    options: { deadline: Date },
+    callback: (err: ServiceError | null, response: ReportGrpcResponse) => void,
+  ): void;
+  ReportConversion(
+    request: { key: string; entityId: string },
+    options: { deadline: Date },
+    callback: (err: ServiceError | null, response: ReportGrpcResponse) => void,
   ): void;
 };
 
@@ -125,6 +144,34 @@ export class FlagsClient {
     return new Promise((resolve, reject) => {
       this.stub.DeleteFlag(
         { key },
+        { deadline: new Date(Date.now() + deadlineMs()) },
+        (err, res) => (err ? reject(err) : resolve(res)),
+      );
+    });
+  }
+
+  /**
+   * Засчитать экспозицию: точка применения показана сущности. Вариант
+   * не присылаем — сервис пересчитает его из бакетинга; несуществующий
+   * флаг — counted=false, не ошибка.
+   */
+  reportExposure(key: string, entityId: string): Promise<ReportGrpcResponse> {
+    return this.report('ReportExposure', key, entityId);
+  }
+
+  /** Засчитать конверсию: бизнес-событие сущности после экспозиции. */
+  reportConversion(key: string, entityId: string): Promise<ReportGrpcResponse> {
+    return this.report('ReportConversion', key, entityId);
+  }
+
+  private report(
+    method: 'ReportExposure' | 'ReportConversion',
+    key: string,
+    entityId: string,
+  ): Promise<ReportGrpcResponse> {
+    return new Promise((resolve, reject) => {
+      this.stub[method](
+        { key, entityId },
         { deadline: new Date(Date.now() + deadlineMs()) },
         (err, res) => (err ? reject(err) : resolve(res)),
       );

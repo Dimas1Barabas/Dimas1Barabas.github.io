@@ -10,7 +10,13 @@ import { FlagSnapshot } from './bucketing';
 
 /** Зафиксированный вызов: метод, запрос, дедлайн (мс от эпохи) */
 interface Captured {
-  method: 'Evaluate' | 'ListFlags' | 'UpsertFlag' | 'DeleteFlag';
+  method:
+    | 'Evaluate'
+    | 'ListFlags'
+    | 'UpsertFlag'
+    | 'DeleteFlag'
+    | 'ReportExposure'
+    | 'ReportConversion';
   request: unknown;
   deadline: number;
 }
@@ -47,6 +53,8 @@ function makeClient(answer: (method: string, request: unknown) => Answer) {
     ListFlags: record('ListFlags'),
     UpsertFlag: record('UpsertFlag'),
     DeleteFlag: record('DeleteFlag'),
+    ReportExposure: record('ReportExposure'),
+    ReportConversion: record('ReportConversion'),
   };
   return {
     client,
@@ -135,6 +143,41 @@ describe('FlagsClient', () => {
       method: 'DeleteFlag',
       request: { key: 'checkout.new_flow' },
     });
+  });
+
+  it('reportExposure/reportConversion: ключ и сущность уходят, вариант возвращается', async () => {
+    const { client, calls } = tracked((method) => ({
+      res: { variant: method === 'ReportExposure' ? 'a' : '', counted: true },
+    }));
+    await expect(
+      client.reportExposure('booking.qr_v2', 'user-2'),
+    ).resolves.toEqual({ variant: 'a', counted: true });
+    await expect(
+      client.reportConversion('booking.qr_v2', 'user-1'),
+    ).resolves.toEqual({ variant: '', counted: true });
+    // вариант НЕ присылаем — его считает сервис из бакетинга
+    expect(calls).toMatchObject([
+      { method: 'ReportExposure', request: { key: 'booking.qr_v2', entityId: 'user-2' } },
+      { method: 'ReportConversion', request: { key: 'booking.qr_v2', entityId: 'user-1' } },
+    ]);
+  });
+
+  it('upsertFlag с вариантами: список уходит как есть (полное состояние)', async () => {
+    const { client, calls } = tracked(() => ({ res: snap }));
+    const input: UpsertFlagInput = {
+      key: 'booking.qr_v2',
+      description: 'A/B QR',
+      enabled: true,
+      percentage: 0,
+      killed: false,
+      variants: [
+        { name: 'a', percentage: 10 },
+        { name: 'b', percentage: 30 },
+      ],
+      updatedBy: 'qa',
+    };
+    await expect(client.upsertFlag(input)).resolves.toEqual(snap);
+    expect(calls[0]).toMatchObject({ method: 'UpsertFlag', request: input });
   });
 
   it('GRPC_FLAGS_TIMEOUT_MS задаёт дедлайн; мусор и ноль — дефолт 1 c', async () => {

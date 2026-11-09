@@ -83,6 +83,98 @@ describe('evaluateFlag', () => {
       enabled: false,
       reason: 'not_found',
       percentage: 0,
+      variant: '',
+    });
+  });
+});
+
+describe('evaluateFlag: A/B-эксперименты (зеркало домена Go)', () => {
+  // те же векторы: user-1 → бакет 99, user-2 → 10, user-3 → 21
+  const exp: FlagSnapshot = {
+    key: 'checkout.new_flow',
+    description: '',
+    enabled: true,
+    percentage: 0, // в эксперименте процент не участвует
+    killed: false,
+    variants: [
+      { name: 'a', percentage: 15 }, // [0..15)
+      { name: 'b', percentage: 20 }, // [15..35)
+    ],
+    updatedBy: 'qa',
+    updatedAt: '2026-11-09T12:00:00Z',
+  };
+
+  it('кумулятивные доли: бакет 10 — вариант a, бакет 21 — вариант b', () => {
+    expect(evaluateFlag(exp, 'user-2')).toEqual({
+      enabled: true,
+      reason: 'variant',
+      percentage: 0,
+      variant: 'a',
+    });
+    expect(evaluateFlag(exp, 'user-3')).toMatchObject({
+      enabled: true,
+      reason: 'variant',
+      variant: 'b',
+    });
+  });
+
+  it('остаток трафика — база: фича скрыта, вариант пустой', () => {
+    expect(evaluateFlag(exp, 'user-1')).toEqual({
+      enabled: false,
+      reason: 'base',
+      percentage: 0,
+      variant: '',
+    });
+  });
+
+  it('kill-switch и пауза гасят эксперимент без варианта', () => {
+    expect(evaluateFlag({ ...exp, killed: true }, 'user-2')).toMatchObject({
+      enabled: false,
+      reason: 'kill_switch',
+      variant: '',
+    });
+    expect(evaluateFlag({ ...exp, enabled: false }, 'user-2')).toMatchObject({
+      enabled: false,
+      reason: 'flag_off',
+      variant: '',
+    });
+  });
+
+  it('нулевая доля не получает трафика; сумма 100 — базы нет', () => {
+    const zero = {
+      ...exp,
+      variants: [
+        { name: 'a', percentage: 0 },
+        { name: 'b', percentage: 50 },
+      ],
+    };
+    expect(evaluateFlag(zero, 'user-2').variant).toBe('b');
+    const full = {
+      ...exp,
+      variants: [
+        { name: 'a', percentage: 50 },
+        { name: 'b', percentage: 50 },
+      ],
+    };
+    for (const entity of ['user-1', 'user-2', 'user-3']) {
+      const v = evaluateFlag(full, entity);
+      expect(v.enabled).toBe(true);
+      expect(v.variant).not.toBe('');
+    }
+  });
+
+  it('распределение стабильно: сущность не перелетает между вариантами', () => {
+    const first = evaluateFlag(exp, 'user-2');
+    for (let i = 0; i < 100; i++) {
+      expect(evaluateFlag(exp, 'user-2')).toEqual(first);
+    }
+  });
+
+  it('пустой variants — обычный флаг-тумблер (процент решает)', () => {
+    const plain: FlagSnapshot = { ...exp, variants: [] };
+    expect(evaluateFlag(plain, 'user-2')).toMatchObject({
+      enabled: false,
+      reason: 'percentage',
     });
   });
 });

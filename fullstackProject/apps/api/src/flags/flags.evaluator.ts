@@ -47,6 +47,24 @@ export class FlagsEvaluator implements OnModuleInit {
     return [...this.snapshots.values()].sort((a, b) => a.key.localeCompare(b.key));
   }
 
+  /**
+   * Засчитать экспозицию точки применения (витринный вердикт показан).
+   * Fire-and-forget: метрики эксперимента не должны ни задерживать ответ,
+   * ни ронять его — сбой сервиса уже погашен офлайн-снимком вердикта.
+   */
+  reportExposure(key: string, entityId: string): void {
+    this.client.reportExposure(key, entityId).catch((err: unknown) => {
+      this.logger.warn(`экспозиция ${key} не засчитана: ${String(err)}`);
+    });
+  }
+
+  /** Засчитать конверсию (бизнес-событие после экспозиции) — та же семантика. */
+  reportConversion(key: string, entityId: string): void {
+    this.client.reportConversion(key, entityId).catch((err: unknown) => {
+      this.logger.warn(`конверсия ${key} не засчитана: ${String(err)}`);
+    });
+  }
+
   /** Обновить кэш: снимок из сервиса + досоздать неизвестные флаги каталога */
   async refresh(): Promise<void> {
     if (this.inflight) return this.inflight;

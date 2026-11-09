@@ -99,9 +99,17 @@ export function validUuid(): string {
  *  спеки флаг-маршрутов переключают isEnabled точечно mockResolvedValue */
 export function flagsEvaluatorFake() {
   return {
-    isEnabled: jest.fn(async () => ({ enabled: false, reason: 'off' })),
+    isEnabled: jest.fn(async () => ({
+      enabled: false,
+      reason: 'off',
+      percentage: 0,
+      variant: '',
+    })),
     list: jest.fn(async () => []),
     refresh: jest.fn(async () => undefined),
+    // отчёты метрик экспериментов: fire-and-forget, спеки могут проверять вызовы
+    reportExposure: jest.fn(),
+    reportConversion: jest.fn(),
   };
 }
 

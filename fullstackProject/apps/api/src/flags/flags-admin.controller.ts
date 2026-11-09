@@ -62,7 +62,9 @@ export class FlagsAdminController {
     summary: 'Создать/обновить флаг (админка)',
     description:
       'Полное новое состояние тумблера: процент раскатки, мастер-тумблер, ' +
-      'kill-switch. Правка уходит в сервис от имени админа и попадает в аудит.',
+      'kill-switch, варианты A/B-эксперимента (кумулятивные доли, сумма ≤ 100, ' +
+      'остаток — база; невалидный список — 400 от сервиса). Правка уходит в ' +
+      'сервис от имени админа и попадает в аудит.',
   })
   @ApiUnauthorizedResponse({ description: 'Нет JWT' })
   @ApiForbiddenResponse({ description: 'Роль не admin' })
@@ -78,6 +80,10 @@ export class FlagsAdminController {
         enabled: dto.enabled,
         percentage: dto.percentage,
         killed: dto.killed,
+        variants: dto.variants?.map((v) => ({
+          name: v.name,
+          percentage: v.percentage,
+        })),
         updatedBy: req.user?.email ?? 'admin',
       });
       // правка только что случилась — кэш может ещё жить по TTL, инвалидируем

@@ -34,6 +34,8 @@ interface FlagSnapshot {
   enabled: boolean;
   percentage: number;
   killed: boolean;
+  /** варианты A/B-эксперимента: непустой список превращает флаг в эксперимент */
+  variants?: { name: string; percentage: number }[];
 }
 
 /** админ-запрос: токен один на jest-процесс (кэш в e2e-context) */
@@ -59,6 +61,7 @@ async function patchFlag(state: FlagSnapshot): Promise<void> {
       enabled: state.enabled,
       percentage: state.percentage,
       killed: state.killed,
+      ...(state.variants ? { variants: state.variants } : {}),
     }),
   });
 }
@@ -78,12 +81,13 @@ function postCheckout(payload: unknown): Promise<Response> {
 async function getVerdict(): Promise<{
   enabled: boolean;
   reason: string;
+  variant: string;
 }> {
   const res = await fetch(`${BASE}/flags/${FLAG}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(res.status).toBe(200);
-  return (await res.json()) as { enabled: boolean; reason: string };
+  return (await res.json()) as { enabled: boolean; reason: string; variant: string };
 }
 
 let original: FlagSnapshot | undefined;
@@ -169,6 +173,39 @@ describe('Мгновенный чекаут за флагом checkout.new_flow 
     const verdict = await waitForStatus(booking.id, 'PENDING');
     expect(['CONFIRMED', 'FAILED']).toContain(verdict.status);
     expect(verdict.processedBy).toBe('go-worker-1');
+  });
+
+  it('A/B-эксперимент a=100: вердикт несёт вариант, чекаут проходит', async () => {
+    if (!available || !original) return;
+    // флаг становится экспериментом: вариант «a» — весь трафик, базы нет
+    await patchFlag({
+      ...original,
+      enabled: true,
+      percentage: 0, // в эксперименте процент не участвует
+      killed: false,
+      variants: [{ name: 'a', percentage: 100 }],
+    });
+
+    // витринный вердикт синхронен гварду и несёт вариант сущности
+    const verdict = await getVerdict();
+    expect(verdict).toMatchObject({ enabled: true, reason: 'variant' });
+    expect(verdict.variant).toBe('a');
+
+    const movies = await api<{ data: E2EMovie[] }>('/movies');
+    const session = movies.data[0].sessions[0];
+
+    const res = await postCheckout({
+      sessionId: session.id,
+      customerName: 'E2E Эксперимент-a',
+      seats: [await freeSeat(session.id)],
+    });
+    // сущность в варианте — гвард пропускает, как при 100% раскатке
+    expect(res.status).toBe(201);
+    const booking = (await res.json()) as { id: string; status: string };
+    expect(booking.status).toBe('PENDING');
+    // конверсия эксперимента ушла fire-and-forget — вердикт воркера честный
+    const workerVerdict = await waitForStatus(booking.id, 'PENDING');
+    expect(['CONFIRMED', 'FAILED']).toContain(workerVerdict.status);
   });
 
   it('откат к 0%: маршрут снова скрыт — 403', async () => {
