@@ -348,12 +348,15 @@ describe('demoEngine: мгновенный чекаут за флагом checko
       key: 'checkout.new_flow',
       enabled: true,
       reason: 'on',
+      // демо не экспериментирует — вариант пустой (база), как у обычного флага
+      variant: '',
     });
     // как у живого API: незнакомый флаг выключен, фича не «засветится»
     expect(demoEngine.flag('no.such_flag')).toEqual({
       key: 'no.such_flag',
       enabled: false,
       reason: 'not_found',
+      variant: '',
     });
   });
 

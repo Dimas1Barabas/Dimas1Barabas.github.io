@@ -603,13 +603,17 @@ class DemoEngine {
     'checkout.new_flow': { enabled: true, reason: 'on' },
   };
 
-  /** вердикт флага для витрины (кнопка новой фичи) */
+  /**
+   * Вердикт флага для витрины (кнопка новой фичи). Демо не эксперимен-
+   * тирует — вариант пустой (база): точка применения варианта на витрине
+   * появится вместе с живым A/B-экспериментом.
+   */
   flag(key: string): FlagVerdict {
     const verdict = DemoEngine.DEMO_FLAGS[key] ?? {
       enabled: false,
       reason: 'not_found' as const,
     };
-    return { key, ...verdict };
+    return { key, ...verdict, variant: '' };
   }
 
   /** сброс состояния (тесты) */

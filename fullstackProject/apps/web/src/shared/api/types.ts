@@ -153,11 +153,21 @@ export interface CheckoutPayload extends CreateBookingPayload {
 /**
  * Витринный вердикт флага (GET /flags/:key): показывать ли точку
  * применения. Процент раскатки наружу не идёт — только вкл/причина.
+ * У A/B-эксперимента причина variant/base и вариант сущности
+ * (пустая строка — база, контрольный опыт).
  */
 export interface FlagVerdict {
   key: string;
   enabled: boolean;
-  reason: 'on' | 'percentage' | 'flag_off' | 'kill_switch' | 'not_found';
+  reason:
+    | 'on'
+    | 'percentage'
+    | 'variant'
+    | 'base'
+    | 'flag_off'
+    | 'kill_switch'
+    | 'not_found';
+  variant: string;
 }
 
 export type UserRole = 'user' | 'admin';
