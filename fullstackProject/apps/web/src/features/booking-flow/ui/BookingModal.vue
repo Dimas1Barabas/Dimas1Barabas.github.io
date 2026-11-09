@@ -16,10 +16,13 @@ import {
   formatTime,
 } from '@/shared/lib/format';
 import { useCooldown } from '@/shared/lib/use-cooldown';
+import { PROMO_CODE_RE } from '@/shared/lib/promo';
+import { spendCap } from '@/shared/lib/bonus';
 import { upcomingSessions } from '@/entities/movie/lib/sessions';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useBookingsStore } from '@/entities/booking/model/store';
+import { useBonusStore } from '@/entities/bonus/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
 import { useWaitlistStore } from '@/entities/waitlist/model/store';
 import SeatPicker from '@/features/booking-flow/ui/SeatPicker.vue';
@@ -30,6 +33,7 @@ const emit = defineEmits<{ close: []; created: [booking: Booking] }>();
 const appStore = useAppStore();
 const authStore = useAuthStore();
 const bookingsStore = useBookingsStore();
+const bonuses = useBonusStore();
 const moviesStore = useMoviesStore();
 const waitlistStore = useWaitlistStore();
 
@@ -45,6 +49,18 @@ const selectedSessionId = ref<string | null>(null);
 const inFlight = ref<'book' | 'buy' | null>(null);
 const submitting = computed(() => inFlight.value !== null);
 const error = ref<string | null>(null);
+/**
+ * Промокод мгновенной покупки: превью здесь нет — брони (и её суммы)
+ * до чекаута не существует, код активирует касса в момент оплаты.
+ * Отказы (не найден/истёк/исчерпан) вернутся ответом чекаута —
+ * бронь к этому моменту уже создана и ждёт оплаты (FR-115).
+ */
+const promoInput = ref('');
+const promoError = ref<string | null>(null);
+/** бонусы: потолок «половина суммы» и баланс; списание подтвердит API */
+const useBonus = ref(false);
+const bonusSpend = ref(0);
+const bonusError = ref<string | null>(null);
 /**
  * Тумблер «Суфлёра» (флаг checkout.new_flow): показывать ли кнопку
  * мгновенной покупки. Вердикт приезжает при открытии модалки; кнопка
@@ -97,6 +113,33 @@ const seatPrice = computed(() =>
 const total = computed(() =>
   props.movie && seatMap.value ? seatPrice.value * selected.value.length : 0,
 );
+
+/** максимум бонусов к списанию: половина суммы выбора и баланс на счету */
+const bonusCap = computed(() => spendCap(total.value, bonuses.balance));
+/** блок бонусов есть смысл показывать, когда списать что-то можно */
+const bonusAvailable = computed(() => bonusCap.value > 0);
+/** сколько реально спишем: ручной ввод зажимаем в [0, cap] */
+const clampedSpend = computed(() => {
+  const raw = Number(bonusSpend.value);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.min(Math.floor(raw), bonusCap.value);
+});
+/**
+ * Сумма мгновенной покупки: бонусы вычитаем сразу (баланс известен),
+ * скидку промокода посчитает касса — до чекаута брони ещё нет.
+ */
+const payTotal = computed(
+  () => total.value - (useBonus.value ? clampedSpend.value : 0),
+);
+
+// сумма выбора меняет потолок — зажимаем введённое
+watch(bonusCap, (cap) => {
+  if (bonusSpend.value > cap) bonusSpend.value = cap;
+});
+// включили бонусы — по умолчанию предлагаем максимум
+watch(useBonus, (on) => {
+  if (on) bonusSpend.value = bonusCap.value;
+});
 
 /** ёмкость и заполненность зала — для мини-бара занятости */
 const totalSeats = computed(() =>
@@ -170,6 +213,40 @@ function validateSelection(action: string): string | null {
   return null;
 }
 
+/** подсказки по кодам отказа оплаты (те же коды, что у PaymentView) */
+const PROMO_HINTS: Record<string, string> = {
+  promoNotFound: 'Промокод не найден',
+  promoExpired: 'Срок действия промокода истёк',
+  promoExhausted: 'Лимит активаций промокода исчерпан',
+};
+const BONUS_HINTS: Record<string, string> = {
+  bonusOverLimit: 'Бонусами можно закрыть не больше половины суммы',
+  bonusInsufficient: 'Не хватает бонусов на счету',
+  bonusUnavailable: 'Гостевые брони нельзя оплатить бонусами',
+};
+
+/** код ошибки из тела ApiError (null — тело не JSON или кода нет) */
+function apiCodeOf(err: unknown): string | null {
+  if (!(err instanceof ApiError)) return null;
+  try {
+    const { code } = JSON.parse(err.body) as { code?: string };
+    return code ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Отказ оплаты в чекауте не отменяет бронь: она создана и ждёт
+ * PENDING_PAYMENT — тянем свежие списки, чтобы она появилась
+ * в «Моих билетах» (повторный чекаут упрётся в 409 тех же мест).
+ */
+function syncListsAfterPaymentRefusal(): Promise<void> {
+  return appStore.mode === 'demo'
+    ? bookingsStore.refresh()
+    : bookingsStore.refreshMine();
+}
+
 /**
  * Разбор отказа оформления — общая кухня обоих потоков: 429 Привратника
  * замораживает форму на retryAfterSec, 409 места фильтрует выбор и
@@ -237,8 +314,9 @@ async function submit(): Promise<void> {
 /**
  * Мгновенная покупка — новый поток оплаты за флагом checkout.new_flow:
  * бронь и оплата одним вызовом, статус ответа PENDING, вердикт Go-воркера
- * покажет экран оплаты (SSE). Отличие от submit — только 403: тумблер
- * могли повернуть между вердиктом витрины и кликом.
+ * покажет экран оплаты (SSE). Отличия от submit — промо/бонусы летят
+ * в тот же вызов (скидку посчитает касса) и 403: тумблер могли повернуть
+ * между вердиктом витрины и кликом.
  */
 async function buyNow(): Promise<void> {
   if (!props.movie || submitting.value || cooldownSec.value > 0) return;
@@ -247,6 +325,14 @@ async function buyNow(): Promise<void> {
     error.value = invalid;
     return;
   }
+  // формат кода проверяем до отправки — остальное решит касса
+  const code = promoInput.value.trim();
+  if (code && !PROMO_CODE_RE.test(code)) {
+    promoError.value = 'Код: 3–32 символа — латиница, цифры и дефис';
+    return;
+  }
+  const spend =
+    useBonus.value && clampedSpend.value > 0 ? clampedSpend.value : undefined;
   const sessionId = selectedSessionId.value!; // проверки выше прошли
   trackAnalytics('seats_selected', {
     sessionId,
@@ -255,11 +341,15 @@ async function buyNow(): Promise<void> {
   deepestStep = deepestStep === 'created' ? 'created' : 'seats';
   inFlight.value = 'buy';
   error.value = null;
+  promoError.value = null;
+  bonusError.value = null;
   try {
     const booking = await bookingsStore.checkout({
       sessionId,
       ...(askName.value ? { customerName: customerName.value } : {}),
       seats: selected.value,
+      ...(code ? { promoCode: code } : {}),
+      ...(spend ? { useBonuses: spend } : {}),
     });
     // событие то же, что у старого потока: набор полей закрыт контрактом
     // Аналитика; экран оплаты доошлёт payment_opened — воронка честная
@@ -279,6 +369,23 @@ async function buyNow(): Promise<void> {
         'Мгновенная покупка сейчас недоступна — забронируйте обычным способом';
       return;
     }
+    // отказ оплаты не прячет бронь (FR-115): она уже создана и ждёт
+    // PENDING_PAYMENT — подсказываем путь к дооплате, списки тянем
+    const refusal = apiCodeOf(err);
+    if (refusal && PROMO_HINTS[refusal]) {
+      promoError.value = `${PROMO_HINTS[refusal]} — бронь уже создана и ждёт оплаты, дооплатите её в «Моих билетах»`;
+      void syncListsAfterPaymentRefusal();
+      return;
+    }
+    if (refusal && BONUS_HINTS[refusal]) {
+      bonusError.value = `${BONUS_HINTS[refusal]} — бронь уже создана и ждёт оплаты, дооплатите её в «Моих билетах»`;
+      // баланс могли потратить в другом окне — освежаем и зажимаем ввод
+      void bonuses.refresh().then(() => {
+        bonusSpend.value = bonusCap.value;
+      });
+      void syncListsAfterPaymentRefusal();
+      return;
+    }
     applyFlowError(err, 'Не удалось оформить покупку');
   } finally {
     inFlight.value = null;
@@ -293,11 +400,13 @@ async function buyNow(): Promise<void> {
 async function loadInstantFlow(): Promise<void> {
   if (appStore.mode === 'demo') {
     instantFlow.value = demoEngine.flag(CHECKOUT_FLAG).enabled;
+    if (instantFlow.value) void bonuses.refresh(); // потолок бонусов — по балансу
     return;
   }
   if (!authStore.isAuthed) return; // чекаут требует JWT — кнопке нечего открывать
   try {
     instantFlow.value = (await api.flag(CHECKOUT_FLAG)).enabled;
+    if (instantFlow.value) void bonuses.refresh();
   } catch {
     instantFlow.value = false;
   }
@@ -312,6 +421,11 @@ watch(
     customerName.value = '';
     selected.value = [];
     error.value = null;
+    promoInput.value = '';
+    promoError.value = null;
+    useBonus.value = false;
+    bonusSpend.value = 0;
+    bonusError.value = null;
     instantFlow.value = false; // вердикт приезжает заново на каждое открытие
     if (movie) {
       // аналитика: интерес к фильку = открытие модалки; часы — до закрытия
@@ -654,14 +768,67 @@ watch(
               </p>
             </div>
 
+            <!-- промо и бонусы мгновенной покупки: превью нет — брони ещё
+                 нет, код и списание применит касса в момент чекаута -->
+            <div v-if="instantFlow && selected.length" class="modal__pay">
+              <label class="field">
+                <span class="field__label">Промокод</span>
+                <input
+                  v-model="promoInput"
+                  class="field__input"
+                  type="text"
+                  maxlength="32"
+                  placeholder="Например, CINE10 — скидку посчитаем при оплате"
+                  :disabled="submitting"
+                  autocomplete="off"
+                />
+              </label>
+              <p v-if="promoError" class="hint hint--error">{{ promoError }}</p>
+              <div v-if="bonusAvailable" class="pay-bonus">
+                <label class="pay-bonus__toggle">
+                  <input
+                    v-model="useBonus"
+                    type="checkbox"
+                    :disabled="submitting"
+                  />
+                  <span>
+                    Списать бонусы
+                    <span class="pay-bonus__balance">
+                      {{ bonuses.balance }} на счету · максимум {{ bonusCap }},
+                      курс 1 бонус = 1 ₽
+                    </span>
+                  </span>
+                </label>
+                <div v-if="useBonus" class="pay-bonus__controls">
+                  <input
+                    v-model.number="bonusSpend"
+                    class="field__input pay-bonus__input"
+                    type="number"
+                    inputmode="numeric"
+                    min="0"
+                    :max="bonusCap"
+                    :disabled="submitting"
+                  />
+                  <span class="pay-bonus__cap">
+                    не больше половины суммы покупки
+                  </span>
+                </div>
+              </div>
+              <p v-if="bonusError" class="hint hint--error">
+                {{ bonusError }}
+              </p>
+            </div>
+
             <p v-if="error" class="modal__error">{{ error }}</p>
 
             <p class="modal__note">
               <template v-if="instantFlow">
                 «Купить за сумму» — мгновенный чекаут: бронь и оплата одним
                 действием, вердикт Go-воркера прилетит на экране оплаты.
-                «Забронировать» оставит прежний поток — оплата отдельным
-                шагом, с промокодом и бонусами. Занятые места защищены
+                Промокод и бонусы из этой формы применит касса; если оплата
+                не пройдёт, бронь не исчезнет — дооплатите её в «Моих
+                билетах». «Забронировать» оставит прежний поток: оплата
+                отдельным шагом, с превью промокода. Занятые места защищены
                 констрейнтом в Postgres — дважды одно место продать нельзя.
               </template>
               <template v-else>
@@ -676,7 +843,7 @@ watch(
 
           <footer class="modal__foot">
             <span class="modal__total">
-              Итого: {{ formatPrice(total) }}
+              Итого: {{ formatPrice(payTotal) }}
               <template v-if="selected.length">
                 · места {{ formatSeats(selected) }}
               </template>
@@ -731,7 +898,7 @@ watch(
                       ? `Подождите ${cooldownSec} с`
                       : selected.length
                         ? instantFlow
-                          ? `Купить за ${formatPrice(total)}`
+                          ? `Купить за ${formatPrice(payTotal)}`
                           : 'Забронировать'
                         : 'Выберите места'
                 }}
@@ -745,6 +912,15 @@ watch(
 </template>
 
 <style scoped>
+/* промо и бонусы мгновенной покупки */
+.modal__pay {
+  margin-top: 12px;
+}
+
+.modal__pay .field {
+  margin-bottom: 0;
+}
+
 .modal__login-hint {
   margin: 0 0 12px;
   color: var(--text-muted, #9aa4b2);

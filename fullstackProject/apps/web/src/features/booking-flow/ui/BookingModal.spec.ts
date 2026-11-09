@@ -490,3 +490,175 @@ describe('BookingModal: мгновенная покупка за флагом (l
     flagSpy.mockRestore();
   });
 });
+
+describe('BookingModal: промо и бонусы мгновенной покупки', () => {
+  /** live + вердикт on: поля оплаты видны, баланс замокан */
+  function mountModalWithBalance(balance: number) {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const appStore = useAppStore();
+    const moviesStore = useMoviesStore();
+    appStore.mode = 'live';
+    moviesStore.loadSeats = vi.fn();
+    moviesStore.loadQuote = vi.fn();
+    moviesStore.startSeatStream = vi.fn();
+    moviesStore.seatMap = seatMap;
+    saveAuth('jwt-1', {
+      id: 'u-1',
+      email: 'anna@example.com',
+      name: 'Анна',
+      role: 'user',
+      createdAt: '2026-01-01T00:00:00Z',
+    });
+    const flagSpy = vi
+      .spyOn(api, 'flag')
+      .mockResolvedValue({ key: 'checkout.new_flow', enabled: true, reason: 'on' } as never);
+    const balanceSpy = vi
+      .spyOn(api, 'myBonuses')
+      .mockResolvedValue({ balance, transactions: [] } as never);
+    const wrapper = mount(BookingModal, {
+      props: { movie },
+      global: { plugins: [pinia], stubs: { Teleport: true } },
+    });
+    return { wrapper, flagSpy, balanceSpy };
+  }
+
+  /** два свободных места: 1-2 и 1-4 — сумма 800 ₽ */
+  async function pickTwoSeats(wrapper: ReturnType<typeof mountModalWithBalance>['wrapper']) {
+    const free = wrapper.findAll('button.hall__seat:not([disabled])');
+    await free[0].trigger('click'); // 1-2
+    await free[2].trigger('click'); // 1-4
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('промокод и бонусы летят в чекаут; кнопка пересчитывает сумму списанием', async () => {
+    const { wrapper, flagSpy, balanceSpy } = mountModalWithBalance(300);
+    const bookingsStore = useBookingsStore();
+    bookingsStore.checkout = vi.fn().mockResolvedValue({ id: 'b-9' } as Booking);
+    await flushPromises();
+
+    await pickTwoSeats(wrapper); // 800 ₽
+    // блок бонусов виден: потолок = min(половина суммы, баланс) = 300
+    expect(wrapper.find('.pay-bonus').exists()).toBe(true);
+    expect(wrapper.text()).toContain('максимум 300');
+    await wrapper.find('.modal__pay input[type="text"]').setValue('CINE10');
+    await wrapper.find('.pay-bonus__toggle input[type="checkbox"]').setValue(true);
+    // включили бонусы — дефолт максимум, кнопка пересчиталась: 800 − 300
+    const buy = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+    expect(buy.text()).toBe('Купить за 500 ₽');
+    await buy.trigger('click');
+
+    expect(bookingsStore.checkout).toHaveBeenCalledWith({
+      sessionId: 's-1',
+      seats: ['1-2', '1-4'],
+      promoCode: 'CINE10',
+      useBonuses: 300,
+    });
+    flagSpy.mockRestore();
+    balanceSpy.mockRestore();
+  });
+
+  it('пустой промо и выключенные бонусы в payload не попадают', async () => {
+    const { wrapper, flagSpy, balanceSpy } = mountModalWithBalance(300);
+    const bookingsStore = useBookingsStore();
+    bookingsStore.checkout = vi.fn().mockResolvedValue({ id: 'b-9' } as Booking);
+    await flushPromises();
+
+    await pickTwoSeats(wrapper);
+    await wrapper.find('.modal__actions .btn:not(.btn--ghost)').trigger('click');
+
+    expect(bookingsStore.checkout).toHaveBeenCalledWith({
+      sessionId: 's-1',
+      seats: ['1-2', '1-4'],
+    });
+    flagSpy.mockRestore();
+    balanceSpy.mockRestore();
+  });
+
+  it('кривой формат промокода — ошибка до отправки, чекаута нет', async () => {
+    const { wrapper, flagSpy, balanceSpy } = mountModalWithBalance(300);
+    const bookingsStore = useBookingsStore();
+    bookingsStore.checkout = vi.fn();
+    await flushPromises();
+
+    await pickTwoSeats(wrapper);
+    await wrapper.find('.modal__pay input[type="text"]').setValue('xx');
+    await wrapper.find('.modal__actions .btn:not(.btn--ghost)').trigger('click');
+
+    expect(bookingsStore.checkout).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain('Код: 3–32 символа');
+    flagSpy.mockRestore();
+    balanceSpy.mockRestore();
+  });
+
+  it('отказ промо: подсказка про созданную бронь, «мои» тянутся', async () => {
+    const { wrapper, flagSpy, balanceSpy } = mountModalWithBalance(300);
+    const bookingsStore = useBookingsStore();
+    bookingsStore.checkout = vi.fn().mockRejectedValue(
+      new ApiError(
+        'HTTP 409',
+        409,
+        JSON.stringify({ statusCode: 409, code: 'promoExhausted' }),
+      ),
+    );
+    bookingsStore.refreshMine = vi.fn().mockResolvedValue(undefined);
+    await flushPromises();
+
+    await pickTwoSeats(wrapper);
+    await wrapper.find('.modal__pay input[type="text"]').setValue('CINE10');
+    await wrapper.find('.modal__actions .btn:not(.btn--ghost)').trigger('click');
+    await flushPromises();
+
+    // отказ оплаты не прячет бронь: подсказываем путь к дооплате
+    expect(wrapper.text()).toContain('Лимит активаций промокода исчерпан');
+    expect(wrapper.text()).toContain('дооплатите её в «Моих билетах»');
+    expect(bookingsStore.refreshMine).toHaveBeenCalledTimes(1);
+    // кнопка мгновенной покупки на месте — фича не при чём, не прошёл код
+    expect(wrapper.text()).toContain('Купить за');
+    flagSpy.mockRestore();
+    balanceSpy.mockRestore();
+  });
+
+  it('отказ бонусов: подсказка, счёт освежен и ввод зажат по потолку', async () => {
+    const { wrapper, flagSpy, balanceSpy } = mountModalWithBalance(1000);
+    // первый баланс 1000 → потолок 400; после отказа сервер скажет 100
+    balanceSpy.mockResolvedValue({ balance: 100, transactions: [] } as never);
+    const bookingsStore = useBookingsStore();
+    bookingsStore.checkout = vi.fn().mockRejectedValue(
+      new ApiError(
+        'HTTP 409',
+        409,
+        JSON.stringify({ statusCode: 409, code: 'bonusInsufficient' }),
+      ),
+    );
+    bookingsStore.refreshMine = vi.fn().mockResolvedValue(undefined);
+    await flushPromises();
+
+    await pickTwoSeats(wrapper); // 800 ₽
+    await wrapper.find('.pay-bonus__toggle input[type="checkbox"]').setValue(true);
+    await wrapper.find('.modal__actions .btn:not(.btn--ghost)').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Не хватает бонусов на счету');
+    expect(wrapper.text()).toContain('дооплатите её в «Моих билетах»');
+    // баланс перечитан и ввод зажат по новому потолку: min(400, 100) = 100
+    expect(balanceSpy).toHaveBeenCalledTimes(2);
+    expect(
+      (wrapper.find('.pay-bonus__input').element as HTMLInputElement).value,
+    ).toBe('100');
+    flagSpy.mockRestore();
+    balanceSpy.mockRestore();
+  });
+
+  it('без мест блок оплаты не показывается', async () => {
+    const { wrapper, flagSpy, balanceSpy } = mountModalWithBalance(300);
+    await flushPromises();
+
+    expect(wrapper.find('.modal__pay').exists()).toBe(false);
+    flagSpy.mockRestore();
+    balanceSpy.mockRestore();
+  });
+});
