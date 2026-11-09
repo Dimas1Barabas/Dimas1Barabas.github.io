@@ -42,11 +42,16 @@ func main() {
 	// wiring: за портом FlagStore стоит конкретный адаптер; домен
 	// и service о них не знают. Хранилище выбирает composition root
 	// по STORAGE: память (дефолт — стенд без БД не падает) или Postgres
-	// со своей базой, которую адаптер создаёт сам.
+	// со своей базой, которую адаптер создаёт сам. Оба адаптера закрывают
+	// оба порта: флаги и счётчики метрик экспериментов живут в одном
+	// хранилище — right behind the same STORAGE switch.
 	var store domain.FlagStore
+	var stats domain.ExperimentStore
 	switch cfg.Storage {
 	case "memory":
-		store = memory.NewStore()
+		mem := memory.NewStore()
+		store = mem
+		stats = mem
 	case "postgres":
 		// fail fast: без живого PG сервис не стартует, молчаливый
 		// fallback на память скрыл бы потерю флагов — а это уже
@@ -57,11 +62,12 @@ func main() {
 		}
 		defer func() { _ = pgStore.Close() }()
 		store = pgStore
+		stats = pgStore
 	default:
 		logging.Fatalf("неизвестный STORAGE=%q: ожидается memory или postgres", cfg.Storage)
 	}
 
-	flags := service.New(store)
+	flags := service.New(store, stats)
 	// счётчики вердиктов/правок — на границе gRPC-адаптера
 	metrics := prom.New()
 

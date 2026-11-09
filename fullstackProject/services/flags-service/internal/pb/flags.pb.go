@@ -83,8 +83,9 @@ func (x *EvaluateRequest) GetEntityId() string {
 type EvaluateResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Enabled       bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`       // показывать ли фичу этой сущности
-	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`          // вердикт: on | percentage | flag_off | kill_switch | not_found
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`          // вердикт: on | percentage | variant | base | flag_off | kill_switch | not_found
 	Percentage    int32                  `protobuf:"varint,3,opt,name=percentage,proto3" json:"percentage,omitempty"` // текущий процент раскатки флага
+	Variant       string                 `protobuf:"bytes,4,opt,name=variant,proto3" json:"variant,omitempty"`        // вариант A/B-эксперимента этой сущности (пустой = база / не-эксперимент)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -140,23 +141,85 @@ func (x *EvaluateResponse) GetPercentage() int32 {
 	return 0
 }
 
+func (x *EvaluateResponse) GetVariant() string {
+	if x != nil {
+		return x.Variant
+	}
+	return ""
+}
+
+// Вариант A/B-эксперимента: имя и доля трафика. Сумма долей ≤ 100,
+// остаток — «база» (контрольный опыт без фичи).
+type Variant struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`              // [a-z0-9_-], 1..30, без повторов внутри флага
+	Percentage    int32                  `protobuf:"varint,2,opt,name=percentage,proto3" json:"percentage,omitempty"` // доля трафика варианта: 0..100
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Variant) Reset() {
+	*x = Variant{}
+	mi := &file_flags_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Variant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Variant) ProtoMessage() {}
+
+func (x *Variant) ProtoReflect() protoreflect.Message {
+	mi := &file_flags_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Variant.ProtoReflect.Descriptor instead.
+func (*Variant) Descriptor() ([]byte, []int) {
+	return file_flags_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Variant) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Variant) GetPercentage() int32 {
+	if x != nil {
+		return x.Percentage
+	}
+	return 0
+}
+
 // Снимок флага — состояние и последняя правка.
 type FlagState struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                              // ключ флага
 	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`              // что это за фича, человеком
 	Enabled       bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`                     // мастер-тумблер: пауза раскатки без потери процента
-	Percentage    int32                  `protobuf:"varint,4,opt,name=percentage,proto3" json:"percentage,omitempty"`               // доля сущностей, которым фича видна: 0..100
+	Percentage    int32                  `protobuf:"varint,4,opt,name=percentage,proto3" json:"percentage,omitempty"`               // доля сущностей, которым фича видна: 0..100 (не для экспериментов)
 	Killed        bool                   `protobuf:"varint,5,opt,name=killed,proto3" json:"killed,omitempty"`                       // kill-switch: мгновенный оф всем, приоритет над enabled/percentage
 	UpdatedBy     string                 `protobuf:"bytes,6,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"` // кто менял: админ/система
 	UpdatedAt     string                 `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"` // момент правки, RFC3339
+	Variants      []*Variant             `protobuf:"bytes,8,rep,name=variants,proto3" json:"variants,omitempty"`                    // непустой список превращает флаг в A/B-эксперимент
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FlagState) Reset() {
 	*x = FlagState{}
-	mi := &file_flags_proto_msgTypes[2]
+	mi := &file_flags_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -168,7 +231,7 @@ func (x *FlagState) String() string {
 func (*FlagState) ProtoMessage() {}
 
 func (x *FlagState) ProtoReflect() protoreflect.Message {
-	mi := &file_flags_proto_msgTypes[2]
+	mi := &file_flags_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -181,7 +244,7 @@ func (x *FlagState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlagState.ProtoReflect.Descriptor instead.
 func (*FlagState) Descriptor() ([]byte, []int) {
-	return file_flags_proto_rawDescGZIP(), []int{2}
+	return file_flags_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *FlagState) GetKey() string {
@@ -233,6 +296,13 @@ func (x *FlagState) GetUpdatedAt() string {
 	return ""
 }
 
+func (x *FlagState) GetVariants() []*Variant {
+	if x != nil {
+		return x.Variants
+	}
+	return nil
+}
+
 type ListFlagsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -241,7 +311,7 @@ type ListFlagsRequest struct {
 
 func (x *ListFlagsRequest) Reset() {
 	*x = ListFlagsRequest{}
-	mi := &file_flags_proto_msgTypes[3]
+	mi := &file_flags_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -253,7 +323,7 @@ func (x *ListFlagsRequest) String() string {
 func (*ListFlagsRequest) ProtoMessage() {}
 
 func (x *ListFlagsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_flags_proto_msgTypes[3]
+	mi := &file_flags_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -266,7 +336,7 @@ func (x *ListFlagsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFlagsRequest.ProtoReflect.Descriptor instead.
 func (*ListFlagsRequest) Descriptor() ([]byte, []int) {
-	return file_flags_proto_rawDescGZIP(), []int{3}
+	return file_flags_proto_rawDescGZIP(), []int{4}
 }
 
 type ListFlagsResponse struct {
@@ -278,7 +348,7 @@ type ListFlagsResponse struct {
 
 func (x *ListFlagsResponse) Reset() {
 	*x = ListFlagsResponse{}
-	mi := &file_flags_proto_msgTypes[4]
+	mi := &file_flags_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -290,7 +360,7 @@ func (x *ListFlagsResponse) String() string {
 func (*ListFlagsResponse) ProtoMessage() {}
 
 func (x *ListFlagsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_flags_proto_msgTypes[4]
+	mi := &file_flags_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -303,7 +373,7 @@ func (x *ListFlagsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFlagsResponse.ProtoReflect.Descriptor instead.
 func (*ListFlagsResponse) Descriptor() ([]byte, []int) {
-	return file_flags_proto_rawDescGZIP(), []int{4}
+	return file_flags_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListFlagsResponse) GetFlags() []*FlagState {
@@ -321,13 +391,14 @@ type UpsertFlagRequest struct {
 	Percentage    int32                  `protobuf:"varint,4,opt,name=percentage,proto3" json:"percentage,omitempty"`
 	Killed        bool                   `protobuf:"varint,5,opt,name=killed,proto3" json:"killed,omitempty"`
 	UpdatedBy     string                 `protobuf:"bytes,6,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"` // кто меняет — уйдёт в аудит правки
+	Variants      []*Variant             `protobuf:"bytes,7,rep,name=variants,proto3" json:"variants,omitempty"`                    // полное состояние: upsert перезаписывает варианты, не мерджит
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpsertFlagRequest) Reset() {
 	*x = UpsertFlagRequest{}
-	mi := &file_flags_proto_msgTypes[5]
+	mi := &file_flags_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -339,7 +410,7 @@ func (x *UpsertFlagRequest) String() string {
 func (*UpsertFlagRequest) ProtoMessage() {}
 
 func (x *UpsertFlagRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_flags_proto_msgTypes[5]
+	mi := &file_flags_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -352,7 +423,7 @@ func (x *UpsertFlagRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpsertFlagRequest.ProtoReflect.Descriptor instead.
 func (*UpsertFlagRequest) Descriptor() ([]byte, []int) {
-	return file_flags_proto_rawDescGZIP(), []int{5}
+	return file_flags_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *UpsertFlagRequest) GetKey() string {
@@ -397,6 +468,13 @@ func (x *UpsertFlagRequest) GetUpdatedBy() string {
 	return ""
 }
 
+func (x *UpsertFlagRequest) GetVariants() []*Variant {
+	if x != nil {
+		return x.Variants
+	}
+	return nil
+}
+
 type DeleteFlagRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -406,7 +484,7 @@ type DeleteFlagRequest struct {
 
 func (x *DeleteFlagRequest) Reset() {
 	*x = DeleteFlagRequest{}
-	mi := &file_flags_proto_msgTypes[6]
+	mi := &file_flags_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -418,7 +496,7 @@ func (x *DeleteFlagRequest) String() string {
 func (*DeleteFlagRequest) ProtoMessage() {}
 
 func (x *DeleteFlagRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_flags_proto_msgTypes[6]
+	mi := &file_flags_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -431,7 +509,7 @@ func (x *DeleteFlagRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFlagRequest.ProtoReflect.Descriptor instead.
 func (*DeleteFlagRequest) Descriptor() ([]byte, []int) {
-	return file_flags_proto_rawDescGZIP(), []int{6}
+	return file_flags_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DeleteFlagRequest) GetKey() string {
@@ -450,7 +528,7 @@ type DeleteFlagResponse struct {
 
 func (x *DeleteFlagResponse) Reset() {
 	*x = DeleteFlagResponse{}
-	mi := &file_flags_proto_msgTypes[7]
+	mi := &file_flags_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -462,7 +540,7 @@ func (x *DeleteFlagResponse) String() string {
 func (*DeleteFlagResponse) ProtoMessage() {}
 
 func (x *DeleteFlagResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_flags_proto_msgTypes[7]
+	mi := &file_flags_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -475,12 +553,116 @@ func (x *DeleteFlagResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFlagResponse.ProtoReflect.Descriptor instead.
 func (*DeleteFlagResponse) Descriptor() ([]byte, []int) {
-	return file_flags_proto_rawDescGZIP(), []int{7}
+	return file_flags_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *DeleteFlagResponse) GetDeleted() bool {
 	if x != nil {
 		return x.Deleted
+	}
+	return false
+}
+
+type ReportRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                           // ключ флага-эксперимента
+	EntityId      string                 `protobuf:"bytes,2,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"` // та же сущность, что у Evaluate (id из JWT)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportRequest) Reset() {
+	*x = ReportRequest{}
+	mi := &file_flags_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportRequest) ProtoMessage() {}
+
+func (x *ReportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_flags_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportRequest.ProtoReflect.Descriptor instead.
+func (*ReportRequest) Descriptor() ([]byte, []int) {
+	return file_flags_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ReportRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *ReportRequest) GetEntityId() string {
+	if x != nil {
+		return x.EntityId
+	}
+	return ""
+}
+
+type ReportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Variant       string                 `protobuf:"bytes,1,opt,name=variant,proto3" json:"variant,omitempty"`  // вариант, к которому отнесён отчёт ("" = база/on/off)
+	Counted       bool                   `protobuf:"varint,2,opt,name=counted,proto3" json:"counted,omitempty"` // false — флага нет, счётчики не тронуты
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportResponse) Reset() {
+	*x = ReportResponse{}
+	mi := &file_flags_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportResponse) ProtoMessage() {}
+
+func (x *ReportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_flags_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportResponse.ProtoReflect.Descriptor instead.
+func (*ReportResponse) Descriptor() ([]byte, []int) {
+	return file_flags_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ReportResponse) GetVariant() string {
+	if x != nil {
+		return x.Variant
+	}
+	return ""
+}
+
+func (x *ReportResponse) GetCounted() bool {
+	if x != nil {
+		return x.Counted
 	}
 	return false
 }
@@ -492,13 +674,19 @@ const file_flags_proto_rawDesc = "" +
 	"\vflags.proto\x12\rcine.flags.v1\"@\n" +
 	"\x0fEvaluateRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x1b\n" +
-	"\tentity_id\x18\x02 \x01(\tR\bentityId\"d\n" +
+	"\tentity_id\x18\x02 \x01(\tR\bentityId\"~\n" +
 	"\x10EvaluateResponse\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x1e\n" +
 	"\n" +
 	"percentage\x18\x03 \x01(\x05R\n" +
-	"percentage\"\xcf\x01\n" +
+	"percentage\x12\x18\n" +
+	"\avariant\x18\x04 \x01(\tR\avariant\"=\n" +
+	"\aVariant\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1e\n" +
+	"\n" +
+	"percentage\x18\x02 \x01(\x05R\n" +
+	"percentage\"\x83\x02\n" +
 	"\tFlagState\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x18\n" +
@@ -510,10 +698,11 @@ const file_flags_proto_rawDesc = "" +
 	"\n" +
 	"updated_by\x18\x06 \x01(\tR\tupdatedBy\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\a \x01(\tR\tupdatedAt\"\x12\n" +
+	"updated_at\x18\a \x01(\tR\tupdatedAt\x122\n" +
+	"\bvariants\x18\b \x03(\v2\x16.cine.flags.v1.VariantR\bvariants\"\x12\n" +
 	"\x10ListFlagsRequest\"C\n" +
 	"\x11ListFlagsResponse\x12.\n" +
-	"\x05flags\x18\x01 \x03(\v2\x18.cine.flags.v1.FlagStateR\x05flags\"\xb8\x01\n" +
+	"\x05flags\x18\x01 \x03(\v2\x18.cine.flags.v1.FlagStateR\x05flags\"\xec\x01\n" +
 	"\x11UpsertFlagRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x18\n" +
@@ -523,18 +712,27 @@ const file_flags_proto_rawDesc = "" +
 	"percentage\x12\x16\n" +
 	"\x06killed\x18\x05 \x01(\bR\x06killed\x12\x1d\n" +
 	"\n" +
-	"updated_by\x18\x06 \x01(\tR\tupdatedBy\"%\n" +
+	"updated_by\x18\x06 \x01(\tR\tupdatedBy\x122\n" +
+	"\bvariants\x18\a \x03(\v2\x16.cine.flags.v1.VariantR\bvariants\"%\n" +
 	"\x11DeleteFlagRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\".\n" +
 	"\x12DeleteFlagResponse\x12\x18\n" +
-	"\adeleted\x18\x01 \x01(\bR\adeleted2\xc1\x02\n" +
+	"\adeleted\x18\x01 \x01(\bR\adeleted\">\n" +
+	"\rReportRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x1b\n" +
+	"\tentity_id\x18\x02 \x01(\tR\bentityId\"D\n" +
+	"\x0eReportResponse\x12\x18\n" +
+	"\avariant\x18\x01 \x01(\tR\avariant\x12\x18\n" +
+	"\acounted\x18\x02 \x01(\bR\acounted2\xe1\x03\n" +
 	"\x05Flags\x12K\n" +
 	"\bEvaluate\x12\x1e.cine.flags.v1.EvaluateRequest\x1a\x1f.cine.flags.v1.EvaluateResponse\x12N\n" +
 	"\tListFlags\x12\x1f.cine.flags.v1.ListFlagsRequest\x1a .cine.flags.v1.ListFlagsResponse\x12H\n" +
 	"\n" +
 	"UpsertFlag\x12 .cine.flags.v1.UpsertFlagRequest\x1a\x18.cine.flags.v1.FlagState\x12Q\n" +
 	"\n" +
-	"DeleteFlag\x12 .cine.flags.v1.DeleteFlagRequest\x1a!.cine.flags.v1.DeleteFlagResponseB\"Z flags-service/internal/pb;cinepbb\x06proto3"
+	"DeleteFlag\x12 .cine.flags.v1.DeleteFlagRequest\x1a!.cine.flags.v1.DeleteFlagResponse\x12M\n" +
+	"\x0eReportExposure\x12\x1c.cine.flags.v1.ReportRequest\x1a\x1d.cine.flags.v1.ReportResponse\x12O\n" +
+	"\x10ReportConversion\x12\x1c.cine.flags.v1.ReportRequest\x1a\x1d.cine.flags.v1.ReportResponseB\"Z flags-service/internal/pb;cinepbb\x06proto3"
 
 var (
 	file_flags_proto_rawDescOnce sync.Once
@@ -548,32 +746,41 @@ func file_flags_proto_rawDescGZIP() []byte {
 	return file_flags_proto_rawDescData
 }
 
-var file_flags_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_flags_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_flags_proto_goTypes = []any{
 	(*EvaluateRequest)(nil),    // 0: cine.flags.v1.EvaluateRequest
 	(*EvaluateResponse)(nil),   // 1: cine.flags.v1.EvaluateResponse
-	(*FlagState)(nil),          // 2: cine.flags.v1.FlagState
-	(*ListFlagsRequest)(nil),   // 3: cine.flags.v1.ListFlagsRequest
-	(*ListFlagsResponse)(nil),  // 4: cine.flags.v1.ListFlagsResponse
-	(*UpsertFlagRequest)(nil),  // 5: cine.flags.v1.UpsertFlagRequest
-	(*DeleteFlagRequest)(nil),  // 6: cine.flags.v1.DeleteFlagRequest
-	(*DeleteFlagResponse)(nil), // 7: cine.flags.v1.DeleteFlagResponse
+	(*Variant)(nil),            // 2: cine.flags.v1.Variant
+	(*FlagState)(nil),          // 3: cine.flags.v1.FlagState
+	(*ListFlagsRequest)(nil),   // 4: cine.flags.v1.ListFlagsRequest
+	(*ListFlagsResponse)(nil),  // 5: cine.flags.v1.ListFlagsResponse
+	(*UpsertFlagRequest)(nil),  // 6: cine.flags.v1.UpsertFlagRequest
+	(*DeleteFlagRequest)(nil),  // 7: cine.flags.v1.DeleteFlagRequest
+	(*DeleteFlagResponse)(nil), // 8: cine.flags.v1.DeleteFlagResponse
+	(*ReportRequest)(nil),      // 9: cine.flags.v1.ReportRequest
+	(*ReportResponse)(nil),     // 10: cine.flags.v1.ReportResponse
 }
 var file_flags_proto_depIdxs = []int32{
-	2, // 0: cine.flags.v1.ListFlagsResponse.flags:type_name -> cine.flags.v1.FlagState
-	0, // 1: cine.flags.v1.Flags.Evaluate:input_type -> cine.flags.v1.EvaluateRequest
-	3, // 2: cine.flags.v1.Flags.ListFlags:input_type -> cine.flags.v1.ListFlagsRequest
-	5, // 3: cine.flags.v1.Flags.UpsertFlag:input_type -> cine.flags.v1.UpsertFlagRequest
-	6, // 4: cine.flags.v1.Flags.DeleteFlag:input_type -> cine.flags.v1.DeleteFlagRequest
-	1, // 5: cine.flags.v1.Flags.Evaluate:output_type -> cine.flags.v1.EvaluateResponse
-	4, // 6: cine.flags.v1.Flags.ListFlags:output_type -> cine.flags.v1.ListFlagsResponse
-	2, // 7: cine.flags.v1.Flags.UpsertFlag:output_type -> cine.flags.v1.FlagState
-	7, // 8: cine.flags.v1.Flags.DeleteFlag:output_type -> cine.flags.v1.DeleteFlagResponse
-	5, // [5:9] is the sub-list for method output_type
-	1, // [1:5] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2,  // 0: cine.flags.v1.FlagState.variants:type_name -> cine.flags.v1.Variant
+	3,  // 1: cine.flags.v1.ListFlagsResponse.flags:type_name -> cine.flags.v1.FlagState
+	2,  // 2: cine.flags.v1.UpsertFlagRequest.variants:type_name -> cine.flags.v1.Variant
+	0,  // 3: cine.flags.v1.Flags.Evaluate:input_type -> cine.flags.v1.EvaluateRequest
+	4,  // 4: cine.flags.v1.Flags.ListFlags:input_type -> cine.flags.v1.ListFlagsRequest
+	6,  // 5: cine.flags.v1.Flags.UpsertFlag:input_type -> cine.flags.v1.UpsertFlagRequest
+	7,  // 6: cine.flags.v1.Flags.DeleteFlag:input_type -> cine.flags.v1.DeleteFlagRequest
+	9,  // 7: cine.flags.v1.Flags.ReportExposure:input_type -> cine.flags.v1.ReportRequest
+	9,  // 8: cine.flags.v1.Flags.ReportConversion:input_type -> cine.flags.v1.ReportRequest
+	1,  // 9: cine.flags.v1.Flags.Evaluate:output_type -> cine.flags.v1.EvaluateResponse
+	5,  // 10: cine.flags.v1.Flags.ListFlags:output_type -> cine.flags.v1.ListFlagsResponse
+	3,  // 11: cine.flags.v1.Flags.UpsertFlag:output_type -> cine.flags.v1.FlagState
+	8,  // 12: cine.flags.v1.Flags.DeleteFlag:output_type -> cine.flags.v1.DeleteFlagResponse
+	10, // 13: cine.flags.v1.Flags.ReportExposure:output_type -> cine.flags.v1.ReportResponse
+	10, // 14: cine.flags.v1.Flags.ReportConversion:output_type -> cine.flags.v1.ReportResponse
+	9,  // [9:15] is the sub-list for method output_type
+	3,  // [3:9] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_flags_proto_init() }
@@ -587,7 +794,7 @@ func file_flags_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_flags_proto_rawDesc), len(file_flags_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

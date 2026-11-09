@@ -11,18 +11,23 @@ import (
 	"flags-service/internal/domain"
 )
 
-var _ domain.FlagStore = (*Store)(nil)
+var (
+	_ domain.FlagStore       = (*Store)(nil)
+	_ domain.ExperimentStore = (*Store)(nil)
+)
 
-// Store — карта флагов и журнал правок под мьютексом.
+// Store — карта флагов, журнал правок и счётчики экспериментов под
+// одним мьютексом.
 type Store struct {
 	mu        sync.Mutex
 	flags     map[string]domain.Flag
 	revisions []domain.Revision
+	stats     map[string]*domain.VariantStat // ключ "key\x00variant"
 }
 
 // NewStore — пустое хранилище.
 func NewStore() *Store {
-	return &Store{flags: make(map[string]domain.Flag)}
+	return &Store{flags: make(map[string]domain.Flag), stats: make(map[string]*domain.VariantStat)}
 }
 
 // Get — снимок флага по ключу.
@@ -80,5 +85,42 @@ func (s *Store) Revisions(_ context.Context, key string, limit int) ([]domain.Re
 			out = append(out, s.revisions[i])
 		}
 	}
+	return out, nil
+}
+
+// Add — +1 к экспозиции/конверсии варианта: строка метрик заводится
+// по первому отчёту (как NULL-строка в SQL: нули не храним).
+func (s *Store) Add(_ context.Context, key, variant string, conversion bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := key + "\x00" + variant
+	row, ok := s.stats[id]
+	if !ok {
+		row = &domain.VariantStat{Key: key, Variant: variant}
+		s.stats[id] = row
+	}
+	if conversion {
+		row.Conversions++
+	} else {
+		row.Exposures++
+	}
+	return nil
+}
+
+// Stats — все строки метрик, отсортированы (флаг, вариант): витрина
+// детерминирована между вызовами.
+func (s *Store) Stats(_ context.Context) ([]domain.VariantStat, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]domain.VariantStat, 0, len(s.stats))
+	for _, row := range s.stats {
+		out = append(out, *row)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Key != out[j].Key {
+			return out[i].Key < out[j].Key
+		}
+		return out[i].Variant < out[j].Variant
+	})
 	return out, nil
 }

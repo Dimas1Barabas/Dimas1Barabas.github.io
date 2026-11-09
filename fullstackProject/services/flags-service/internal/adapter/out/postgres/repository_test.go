@@ -228,7 +228,87 @@ func TestSchemaRejectsBadPercentage(t *testing.T) {
 
 func TestStatementsSplit(t *testing.T) {
 	got := statements(schemaSQL)
-	if len(got) != 3 {
-		t.Fatalf("сегментов схемы = %d, ожидали 3: %q", len(got), got)
+	// 2 таблицы + индекс + таблица метрик + 2 идемпотентных ALTER
+	if len(got) != 6 {
+		t.Fatalf("сегментов схемы = %d, ожидали 6: %q", len(got), got)
+	}
+}
+
+// варианты A/B-эксперимента: jsonb-раундтрип через Save/Get/List/Revisions
+func TestVariantsRoundTrip(t *testing.T) {
+	repo := withRepo(t)
+	ctx := context.Background()
+
+	f := domain.Flag{
+		Key: "ab.flag", Description: "эксперимент", Enabled: true, UpdatedBy: "qa",
+		Variants: []domain.Variant{
+			{Name: "a", Percentage: 15},
+			{Name: "b", Percentage: 20},
+		},
+		UpdatedAt: time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC),
+	}
+	if err := repo.Save(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := repo.Get(ctx, "ab.flag")
+	if err != nil || !found {
+		t.Fatalf("Get после Save: %v / %v", found, err)
+	}
+	if len(got.Variants) != 2 || got.Variants[0] != (domain.Variant{Name: "a", Percentage: 15}) || got.Variants[1].Name != "b" {
+		t.Fatalf("варианты не пережили jsonb-раундтрип: %+v", got.Variants)
+	}
+
+	// upsert БЕЗ вариантов убирает эксперимент (полное состояние)
+	f.Variants = nil
+	if err := repo.Save(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := repo.Get(ctx, "ab.flag"); len(got.Variants) != 0 {
+		t.Fatalf("upsert перезаписывает варианты, не мерджит: %+v", got.Variants)
+	}
+
+	// аудит несёт снимок с вариантами той правки
+	f.Variants = []domain.Variant{{Name: "x", Percentage: 100}}
+	if err := repo.Save(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	revs, err := repo.Revisions(ctx, "ab.flag", 1)
+	if err != nil || len(revs) != 1 {
+		t.Fatalf("аудит: %d / %v", len(revs), err)
+	}
+	if len(revs[0].Snapshot.Variants) != 1 || revs[0].Snapshot.Variants[0].Name != "x" {
+		t.Fatalf("снимок аудита с вариантами: %+v", revs[0].Snapshot.Variants)
+	}
+}
+
+// метрики экспериментов: атомарные инкременты и сортированная витрина
+func TestExperimentStats(t *testing.T) {
+	repo := withRepo(t)
+	ctx := context.Background()
+
+	// строка заводится по первому отчёту и растёт инкрементами
+	if err := repo.Add(ctx, "ab.flag", "a", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Add(ctx, "ab.flag", "a", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Add(ctx, "ab.flag", "a", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Add(ctx, "ab.flag", "", false); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := repo.Stats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// сортировка (key, variant): пустой вариант (база) впереди имён
+	if len(rows) != 2 || rows[0].Variant != "" || rows[1].Variant != "a" {
+		t.Fatalf("строки метрик: %+v", rows)
+	}
+	if rows[1].Exposures != 2 || rows[1].Conversions != 1 {
+		t.Fatalf("вариант a: 2 экспозиции и 1 конверсия: %+v", rows[1])
 	}
 }

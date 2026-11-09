@@ -68,14 +68,45 @@ func (f *fakeStore) Revisions(_ context.Context, key string, limit int) ([]domai
 	return out, nil
 }
 
-func newTestService() (*Flags, *fakeStore) {
+// fakeStats — стаб порта метрик: запоминает отчёты списком.
+type fakeStats struct {
+	rows []domain.VariantStat
+}
+
+func (f *fakeStats) Add(_ context.Context, key, variant string, conversion bool) error {
+	for i := range f.rows {
+		if f.rows[i].Key == key && f.rows[i].Variant == variant {
+			if conversion {
+				f.rows[i].Conversions++
+			} else {
+				f.rows[i].Exposures++
+			}
+			return nil
+		}
+	}
+	row := domain.VariantStat{Key: key, Variant: variant}
+	if conversion {
+		row.Conversions = 1
+	} else {
+		row.Exposures = 1
+	}
+	f.rows = append(f.rows, row)
+	return nil
+}
+
+func (f *fakeStats) Stats(_ context.Context) ([]domain.VariantStat, error) {
+	return f.rows, nil
+}
+
+func newTestService() (*Flags, *fakeStore, *fakeStats) {
 	store := &fakeStore{flags: map[string]domain.Flag{}}
-	svc := New(store)
-	return svc, store
+	stats := &fakeStats{}
+	svc := New(store, stats)
+	return svc, store, stats
 }
 
 func TestEvaluateNotFoundIsOffNotError(t *testing.T) {
-	svc, _ := newTestService()
+	svc, _, _ := newTestService()
 	v, err := svc.Evaluate(context.Background(), "no.such_flag", "user-1")
 	if err != nil {
 		t.Fatalf("отсутствие флага — не ошибка: %v", err)
@@ -86,7 +117,7 @@ func TestEvaluateNotFoundIsOffNotError(t *testing.T) {
 }
 
 func TestEvaluateUsesDomainRules(t *testing.T) {
-	svc, _ := newTestService()
+	svc, _, _ := newTestService()
 	ctx := context.Background()
 	if _, err := svc.Upsert(ctx, domain.Flag{Key: "checkout.new_flow", Description: "новый чекаут", Enabled: true, Percentage: 15, UpdatedBy: "admin"}); err != nil {
 		t.Fatal(err)
@@ -104,7 +135,7 @@ func TestEvaluateUsesDomainRules(t *testing.T) {
 }
 
 func TestUpsertValidation(t *testing.T) {
-	svc, _ := newTestService()
+	svc, _, _ := newTestService()
 	ctx := context.Background()
 
 	if _, err := svc.Upsert(ctx, domain.Flag{Key: "Плохой Ключ", Percentage: 50}); !errors.Is(err, ErrInvalidKey) {
@@ -119,7 +150,7 @@ func TestUpsertValidation(t *testing.T) {
 }
 
 func TestUpsertStampsServiceTime(t *testing.T) {
-	svc, store := newTestService()
+	svc, store, _ := newTestService()
 	fixed := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 	svc.now = func() time.Time { return fixed }
 
@@ -136,7 +167,7 @@ func TestUpsertStampsServiceTime(t *testing.T) {
 }
 
 func TestDeleteAndRevisions(t *testing.T) {
-	svc, _ := newTestService()
+	svc, _, _ := newTestService()
 	ctx := context.Background()
 
 	if _, err := svc.Upsert(ctx, domain.Flag{Key: "tmp.flag", Enabled: true, Percentage: 5, UpdatedBy: "admin"}); err != nil {
@@ -158,12 +189,123 @@ func TestDeleteAndRevisions(t *testing.T) {
 
 func TestStoreErrorPropagates(t *testing.T) {
 	boom := errors.New("хранилище мертво")
-	svc := New(&fakeStore{err: boom, flags: map[string]domain.Flag{}})
+	svc := New(&fakeStore{err: boom, flags: map[string]domain.Flag{}}, &fakeStats{})
 	ctx := context.Background()
 	if _, err := svc.Evaluate(ctx, "any.flag", "u"); !errors.Is(err, boom) {
 		t.Fatalf("ошибка хранилища должна всплыть вызывающему: %v", err)
 	}
 	if _, err := svc.Upsert(ctx, domain.Flag{Key: "ok.flag", Percentage: 1}); !errors.Is(err, boom) {
 		t.Fatalf("и на правках тоже: %v", err)
+	}
+	// отчёты метрик тоже честны со сбоем хранилища флагов
+	if _, counted, err := svc.ReportExposure(ctx, "any.flag", "u"); err == nil || counted {
+		t.Fatalf("отчёт при мёртвом хранилище — ошибка, не молчание: %v", err)
+	}
+}
+
+func TestUpsertVariants(t *testing.T) {
+	svc, _, _ := newTestService()
+	ctx := context.Background()
+
+	// валидный эксперимент сохраняется целиком
+	exp := domain.Flag{
+		Key:     "booking.qr_v2",
+		Enabled: true,
+		Variants: []domain.Variant{
+			{Name: "a", Percentage: 10},
+			{Name: "b", Percentage: 30},
+		},
+		UpdatedBy: "admin",
+	}
+	saved, err := svc.Upsert(ctx, exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Variants) != 2 || saved.Variants[0].Name != "a" {
+		t.Fatalf("варианты должны вернуться сохранёнными: %+v", saved.Variants)
+	}
+
+	// невалидные варианты — отдельная ошибка конфигурации
+	bad := exp
+	bad.Variants = []domain.Variant{
+		{Name: "a", Percentage: 60},
+		{Name: "b", Percentage: 60},
+	}
+	if _, err := svc.Upsert(ctx, bad); !errors.Is(err, ErrInvalidVariants) {
+		t.Fatalf("сумма долей 120 — ErrInvalidVariants: %v", err)
+	}
+}
+
+func TestReportExperiment(t *testing.T) {
+	svc, _, stats := newTestService()
+	ctx := context.Background()
+
+	// not_found — не ошибка и НЕ считается: реестра «известных флагов» нет
+	if variant, counted, err := svc.ReportExposure(ctx, "no.such", "user-1"); err != nil || counted || variant != "" {
+		t.Fatalf("отчёт о несуществующем флаге — counted=false: %q %v %v", variant, counted, err)
+	}
+	if len(stats.rows) != 0 {
+		t.Fatalf("счётчики не должны тронуться: %+v", stats.rows)
+	}
+
+	// эксперимент: вариант пересчитывает сервис по бакетингу
+	// (бакеты векторов: user-1 → 99, user-2 → 10, user-3 → 21)
+	if _, err := svc.Upsert(ctx, domain.Flag{
+		Key:     "checkout.new_flow",
+		Enabled: true,
+		Variants: []domain.Variant{
+			{Name: "a", Percentage: 15},
+			{Name: "b", Percentage: 20},
+		},
+		UpdatedBy: "admin",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// user-2 (бакет 10) — вариант a; user-1 (99) — база
+	if variant, counted, _ := svc.ReportExposure(ctx, "checkout.new_flow", "user-2"); !counted || variant != "a" {
+		t.Fatalf("экспозиция user-2 — вариант a: %q %v", variant, counted)
+	}
+	if variant, counted, _ := svc.ReportConversion(ctx, "checkout.new_flow", "user-2"); !counted || variant != "a" {
+		t.Fatalf("конверсия user-2 — тот же вариант a: %q %v", variant, counted)
+	}
+	if variant, _, _ := svc.ReportExposure(ctx, "checkout.new_flow", "user-1"); variant != "" {
+		t.Fatalf("экспозиция user-1 — база (пустой вариант): %q", variant)
+	}
+
+	// витрина метрик: строка на вариант, конверсия рядом с экспозицией
+	rows, err := svc.ExperimentStats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byVariant := map[string]domain.VariantStat{}
+	for _, r := range rows {
+		byVariant[r.Variant] = r
+	}
+	if byVariant["a"].Exposures != 1 || byVariant["a"].Conversions != 1 {
+		t.Fatalf("вариант a: 1 экспозиция и 1 конверсия: %+v", byVariant["a"])
+	}
+	if byVariant[""].Exposures != 1 || byVariant[""].Conversions != 0 {
+		t.Fatalf("база: 1 экспозиция без конверсий: %+v", byVariant[""])
+	}
+}
+
+func TestReportPlainFlagImplicitVariants(t *testing.T) {
+	svc, _, _ := newTestService()
+	ctx := context.Background()
+
+	// обычный флаг (без вариантов): метрики считают те же отчёты,
+	// implicit-варианты on/off — механика единая для всех тумблеров
+	if _, err := svc.Upsert(ctx, domain.Flag{Key: "checkout.new_flow", Enabled: true, Percentage: 15, UpdatedBy: "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	// user-2 (бакет 10) — внутри 15% → on; user-1 (99) — снаружи → off
+	if variant, _, _ := svc.ReportExposure(ctx, "checkout.new_flow", "user-2"); variant != "on" {
+		t.Fatalf("внутри раскатки — вариант on: %q", variant)
+	}
+	if variant, _, _ := svc.ReportExposure(ctx, "checkout.new_flow", "user-1"); variant != "off" {
+		t.Fatalf("снаружи раскатки — вариант off: %q", variant)
+	}
+	if rows, _ := svc.ExperimentStats(ctx); len(rows) != 2 {
+		t.Fatalf("on и off — две строки метрик: %+v", rows)
 	}
 }

@@ -24,3 +24,23 @@ type Revision struct {
 	ChangedAt time.Time
 	Snapshot  Flag // состояние флага ПОСЛЕ правки
 }
+
+// ExperimentStore — счётчики A/B-метрик: экспозиции и конверсии по
+// (флаг, вариант). Отдельный порт: правки флагов и метрики —
+// независимые ответственности; назначение варианта НЕ хранится —
+// оно детерминировано бакетингом и пересчитывается на каждом отчёте.
+type ExperimentStore interface {
+	// Add — +1 к экспозиции (conversion=false) или конверсии (true).
+	Add(ctx context.Context, key, variant string, conversion bool) error
+	// Stats — все строки метрик; variant="" — база эксперимента,
+	// у обычных флагов метрики считают implicit-варианты on/off.
+	Stats(ctx context.Context) ([]VariantStat, error)
+}
+
+// VariantStat — строка метрик эксперимента для витрины.
+type VariantStat struct {
+	Key         string
+	Variant     string
+	Exposures   int64
+	Conversions int64
+}

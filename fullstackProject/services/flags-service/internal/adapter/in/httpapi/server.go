@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"flags-service/internal/domain"
 	"flags-service/internal/logging"
 	"flags-service/internal/service"
 )
@@ -37,6 +38,7 @@ func New(addr string, svc *service.Flags, metricsHandler http.Handler) *http.Ser
 	mux.Handle("/metrics", metricsHandler)
 
 	// витрина флагов: как стоит раскатка — состояние всех тумблеров
+	// и варианты A/B-экспериментов
 	mux.HandleFunc("/flags", func(w http.ResponseWriter, r *http.Request) {
 		flags, err := svc.List(r.Context())
 		if err != nil {
@@ -45,17 +47,57 @@ func New(addr string, svc *service.Flags, metricsHandler http.Handler) *http.Ser
 		}
 		out := make([]map[string]any, 0, len(flags))
 		for _, f := range flags {
+			variants := make([]map[string]any, 0, len(f.Variants))
+			for _, v := range f.Variants {
+				variants = append(variants, map[string]any{
+					"name":       v.Name,
+					"percentage": v.Percentage,
+				})
+			}
 			out = append(out, map[string]any{
 				"key":         f.Key,
 				"description": f.Description,
 				"enabled":     f.Enabled,
 				"percentage":  f.Percentage,
 				"killed":      f.Killed,
+				"variants":    variants,
 				"updatedBy":   f.UpdatedBy,
 				"updatedAt":   f.UpdatedAt.Format(time.RFC3339),
 			})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"flags": out})
+	})
+
+	// витрина экспериментов: экспозиции, конверсии и CR по вариантам;
+	// конфигурация долей подтягивается из текущего состояния флагов,
+	// у удалённого флага метрики остаются (trafficPct = null)
+	mux.HandleFunc("/experiments", func(w http.ResponseWriter, r *http.Request) {
+		stats, err := svc.ExperimentStats(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		flags, err := svc.List(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		out := make([]map[string]any, 0, len(stats))
+		for _, st := range stats {
+			var cr any
+			if st.Exposures > 0 {
+				cr = float64(st.Conversions) / float64(st.Exposures)
+			}
+			out = append(out, map[string]any{
+				"key":         st.Key,
+				"variant":     st.Variant,
+				"exposures":   st.Exposures,
+				"conversions": st.Conversions,
+				"trafficPct":  variantTraffic(flags, st.Key, st.Variant),
+				"cr":          cr,
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"experiments": out})
 	})
 
 	// аудит правок флага: ?key=checkout.new_flow&limit=20, свежими сверху
@@ -78,6 +120,13 @@ func New(addr string, svc *service.Flags, metricsHandler http.Handler) *http.Ser
 		}
 		out := make([]map[string]any, 0, len(rows))
 		for _, rev := range rows {
+			variants := make([]map[string]any, 0, len(rev.Snapshot.Variants))
+			for _, v := range rev.Snapshot.Variants {
+				variants = append(variants, map[string]any{
+					"name":       v.Name,
+					"percentage": v.Percentage,
+				})
+			}
 			out = append(out, map[string]any{
 				"key":       rev.Key,
 				"changedBy": rev.ChangedBy,
@@ -86,6 +135,7 @@ func New(addr string, svc *service.Flags, metricsHandler http.Handler) *http.Ser
 					"enabled":    rev.Snapshot.Enabled,
 					"percentage": rev.Snapshot.Percentage,
 					"killed":     rev.Snapshot.Killed,
+					"variants":   variants,
 				},
 			})
 		}
@@ -95,11 +145,49 @@ func New(addr string, svc *service.Flags, metricsHandler http.Handler) *http.Ser
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"service":   "flags-service",
-			"endpoints": []string{"/health", "/flags", "/flags/revisions", "/metrics"},
+			"endpoints": []string{"/health", "/flags", "/flags/revisions", "/experiments", "/metrics"},
 		})
 	})
 
 	return &http.Server{Addr: addr, Handler: mux}
+}
+
+// variantTraffic — доля трафика варианта по ТЕКУЩЕМУ конфигу флага:
+// nil — флаг удалён или вариант неизвестен (переименовали). База
+// эксперимента — остаток от суммы долей; on/off обычного флага —
+// процент раскатки и его дополнение.
+func variantTraffic(flags []domain.Flag, key, variant string) *int {
+	for _, f := range flags {
+		if f.Key != key {
+			continue
+		}
+		sum := 0
+		for _, v := range f.Variants {
+			sum += v.Percentage
+			if v.Name == variant {
+				pct := v.Percentage
+				return &pct
+			}
+		}
+		if len(f.Variants) > 0 {
+			if variant == "" {
+				rest := 100 - sum
+				return &rest
+			}
+			return nil
+		}
+		// обычный флаг: implicit-варианты on/off по проценту раскатки
+		switch variant {
+		case "on":
+			pct := f.Percentage
+			return &pct
+		case "off":
+			rest := 100 - f.Percentage
+			return &rest
+		}
+		return nil
+	}
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, payload any) {

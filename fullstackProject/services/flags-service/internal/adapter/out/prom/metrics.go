@@ -17,6 +17,7 @@ type Metrics struct {
 
 	evaluates *prometheus.CounterVec   // key × reason
 	mutations *prometheus.CounterVec   // op (upsert | delete)
+	reports   *prometheus.CounterVec   // kind (exposure | conversion)
 	errors    *prometheus.CounterVec   // op
 	duration  *prometheus.HistogramVec // op
 }
@@ -34,6 +35,10 @@ func New() *Metrics {
 			Name: "cine_flags_mutations_total",
 			Help: "Flag mutations by operation",
 		}, []string{"op"}),
+		reports: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "cine_flags_reports_total",
+			Help: "Experiment metric reports by kind (exposure | conversion)",
+		}, []string{"kind"}),
 		errors: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "cine_flags_errors_total",
 			Help: "Flag store failures by operation",
@@ -49,7 +54,7 @@ func New() *Metrics {
 	reg.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		m.evaluates, m.mutations, m.errors, m.duration,
+		m.evaluates, m.mutations, m.reports, m.errors, m.duration,
 	)
 	return m
 }
@@ -81,6 +86,12 @@ func (m *Metrics) Delete(seconds float64) {
 // длительность, счётчик опросов неинформативен.
 func (m *Metrics) List(seconds float64) {
 	m.duration.WithLabelValues("list").Observe(seconds)
+}
+
+// Report — отчёт метрики эксперимента (exposure | conversion).
+func (m *Metrics) Report(kind string, seconds float64) {
+	m.reports.WithLabelValues(kind).Inc()
+	m.duration.WithLabelValues("report_" + kind).Observe(seconds)
 }
 
 // Error — хранилище ответило сбоем (RPC Internal).

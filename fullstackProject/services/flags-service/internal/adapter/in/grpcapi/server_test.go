@@ -14,7 +14,8 @@ import (
 )
 
 func newServer() *Server {
-	return New(service.New(memory.NewStore()), prom.New())
+	store := memory.NewStore()
+	return New(service.New(store, store), prom.New())
 }
 
 func codeOf(t *testing.T, err error) codes.Code {
@@ -132,5 +133,69 @@ func TestEvaluateEmptyEntityIsDeterministic(t *testing.T) {
 	second, _ := srv.Evaluate(ctx, &pb.EvaluateRequest{Key: "anon.flag"})
 	if first.GetEnabled() != second.GetEnabled() || first.GetReason() != second.GetReason() {
 		t.Fatalf("пустая сущность тоже детерминирована: %+v против %+v", first, second)
+	}
+}
+
+// эксперимент: Evaluate отдаёт вариант, отчёты метрик приходят тем же
+// бакетингом; витрина снимка несёт конфигурацию вариантов
+func TestExperimentEvaluateAndReports(t *testing.T) {
+	srv := newServer()
+	ctx := context.Background()
+
+	if _, err := srv.UpsertFlag(ctx, &pb.UpsertFlagRequest{
+		Key: "checkout.new_flow", Description: "A/B чекаута", Enabled: true, UpdatedBy: "qa",
+		Variants: []*pb.Variant{
+			{Name: "a", Percentage: 15},
+			{Name: "b", Percentage: 20},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// user-2 (бакет 10) — вариант a; user-1 (99) — база
+	v, err := srv.Evaluate(ctx, &pb.EvaluateRequest{Key: "checkout.new_flow", EntityId: "user-2"})
+	if err != nil || !v.Enabled || v.Reason != "variant" || v.Variant != "a" {
+		t.Fatalf("вердикт с вариантом a: %+v / %v", v, err)
+	}
+	if v, _ := srv.Evaluate(ctx, &pb.EvaluateRequest{Key: "checkout.new_flow", EntityId: "user-1"}); v.Enabled || v.Reason != "base" || v.Variant != "" {
+		t.Fatalf("база — без варианта: %+v", v)
+	}
+
+	// экспозиция и конверсия: вариант считает сервис, не вызывающий
+	rep, err := srv.ReportExposure(ctx, &pb.ReportRequest{Key: "checkout.new_flow", EntityId: "user-2"})
+	if err != nil || !rep.Counted || rep.Variant != "a" {
+		t.Fatalf("экспозиция user-2 — вариант a: %+v / %v", rep, err)
+	}
+	rep, err = srv.ReportConversion(ctx, &pb.ReportRequest{Key: "checkout.new_flow", EntityId: "user-2"})
+	if err != nil || !rep.Counted || rep.Variant != "a" {
+		t.Fatalf("конверсия user-2 — тот же вариант: %+v / %v", rep, err)
+	}
+
+	// not_found — counted=false, не ошибка RPC
+	rep, err = srv.ReportExposure(ctx, &pb.ReportRequest{Key: "ghost.flag", EntityId: "user-2"})
+	if err != nil || rep.Counted {
+		t.Fatalf("отчёт о несуществующем флаге — не ошибка и не счёт: %+v / %v", rep, err)
+	}
+
+	// пустой key — InvalidArgument у обоих отчётов
+	if _, err := srv.ReportExposure(ctx, &pb.ReportRequest{EntityId: "u"}); codeOf(t, err) != codes.InvalidArgument {
+		t.Fatalf("пустой key экспозиции — InvalidArgument: %v", err)
+	}
+	if _, err := srv.ReportConversion(ctx, &pb.ReportRequest{EntityId: "u"}); codeOf(t, err) != codes.InvalidArgument {
+		t.Fatalf("пустой key конверсии — InvalidArgument: %v", err)
+	}
+}
+
+func TestUpsertInvalidVariants(t *testing.T) {
+	srv := newServer()
+	ctx := context.Background()
+	if _, err := srv.UpsertFlag(ctx, &pb.UpsertFlagRequest{
+		Key: "bad.exp", Enabled: true,
+		Variants: []*pb.Variant{
+			{Name: "a", Percentage: 60},
+			{Name: "b", Percentage: 60},
+		},
+	}); codeOf(t, err) != codes.InvalidArgument {
+		t.Fatalf("сумма долей 120 — InvalidArgument: %v", err)
 	}
 }

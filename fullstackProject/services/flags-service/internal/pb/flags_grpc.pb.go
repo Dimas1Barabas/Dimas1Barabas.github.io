@@ -26,10 +26,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Flags_Evaluate_FullMethodName   = "/cine.flags.v1.Flags/Evaluate"
-	Flags_ListFlags_FullMethodName  = "/cine.flags.v1.Flags/ListFlags"
-	Flags_UpsertFlag_FullMethodName = "/cine.flags.v1.Flags/UpsertFlag"
-	Flags_DeleteFlag_FullMethodName = "/cine.flags.v1.Flags/DeleteFlag"
+	Flags_Evaluate_FullMethodName         = "/cine.flags.v1.Flags/Evaluate"
+	Flags_ListFlags_FullMethodName        = "/cine.flags.v1.Flags/ListFlags"
+	Flags_UpsertFlag_FullMethodName       = "/cine.flags.v1.Flags/UpsertFlag"
+	Flags_DeleteFlag_FullMethodName       = "/cine.flags.v1.Flags/DeleteFlag"
+	Flags_ReportExposure_FullMethodName   = "/cine.flags.v1.Flags/ReportExposure"
+	Flags_ReportConversion_FullMethodName = "/cine.flags.v1.Flags/ReportConversion"
 )
 
 // FlagsClient is the client API for Flags service.
@@ -46,16 +48,26 @@ type FlagsClient interface {
 	// Вердикт флага для сущности. Раскатка детерминирована:
 	// bucket = hash("key|entity_id") % 100, фича видна, если
 	// bucket < percentage — сущность всегда в одной стороне раскатки,
-	// «мигание» флага между запросами исключено.
+	// «мигание» флага между запросами исключено. У эксперимента
+	// (флаг с вариантами) бакет выбирает вариант: enabled=true только
+	// у сущностей в именованном варианте, остаток трафика — база.
 	Evaluate(ctx context.Context, in *EvaluateRequest, opts ...grpc.CallOption) (*EvaluateResponse, error)
 	// Все флаги одним снимком: API кэширует состояния и считает
 	// вердикты локально (тот же бакетинг) — kill-switch вступает
 	// в силу за TTL кэша, без похода за каждым вердиктом.
 	ListFlags(ctx context.Context, in *ListFlagsRequest, opts ...grpc.CallOption) (*ListFlagsResponse, error)
-	// Создать или обновить флаг: описание, тумблер, процент, kill-switch.
+	// Создать или обновить флаг: описание, тумблер, процент, kill-switch,
+	// варианты A/B-эксперимента.
 	UpsertFlag(ctx context.Context, in *UpsertFlagRequest, opts ...grpc.CallOption) (*FlagState, error)
 	// Удалить флаг (Evaluate ответит not_found).
 	DeleteFlag(ctx context.Context, in *DeleteFlagRequest, opts ...grpc.CallOption) (*DeleteFlagResponse, error)
+	// Засчитать экспозицию: вариант вызывающий НЕ присылает — сервис
+	// пересчитывает его сам из детерминированного бакетинга (хранить
+	// назначения сущностей не нужно). Отчёт о несуществующем флаге —
+	// не ошибка: counted=false, счётчики не тронуты.
+	ReportExposure(ctx context.Context, in *ReportRequest, opts ...grpc.CallOption) (*ReportResponse, error)
+	// Засчитать конверсию той же семантикой: (флаг, сущность) → вариант.
+	ReportConversion(ctx context.Context, in *ReportRequest, opts ...grpc.CallOption) (*ReportResponse, error)
 }
 
 type flagsClient struct {
@@ -106,6 +118,26 @@ func (c *flagsClient) DeleteFlag(ctx context.Context, in *DeleteFlagRequest, opt
 	return out, nil
 }
 
+func (c *flagsClient) ReportExposure(ctx context.Context, in *ReportRequest, opts ...grpc.CallOption) (*ReportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportResponse)
+	err := c.cc.Invoke(ctx, Flags_ReportExposure_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *flagsClient) ReportConversion(ctx context.Context, in *ReportRequest, opts ...grpc.CallOption) (*ReportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportResponse)
+	err := c.cc.Invoke(ctx, Flags_ReportConversion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FlagsServer is the server API for Flags service.
 // All implementations must embed UnimplementedFlagsServer
 // for forward compatibility.
@@ -120,16 +152,26 @@ type FlagsServer interface {
 	// Вердикт флага для сущности. Раскатка детерминирована:
 	// bucket = hash("key|entity_id") % 100, фича видна, если
 	// bucket < percentage — сущность всегда в одной стороне раскатки,
-	// «мигание» флага между запросами исключено.
+	// «мигание» флага между запросами исключено. У эксперимента
+	// (флаг с вариантами) бакет выбирает вариант: enabled=true только
+	// у сущностей в именованном варианте, остаток трафика — база.
 	Evaluate(context.Context, *EvaluateRequest) (*EvaluateResponse, error)
 	// Все флаги одним снимком: API кэширует состояния и считает
 	// вердикты локально (тот же бакетинг) — kill-switch вступает
 	// в силу за TTL кэша, без похода за каждым вердиктом.
 	ListFlags(context.Context, *ListFlagsRequest) (*ListFlagsResponse, error)
-	// Создать или обновить флаг: описание, тумблер, процент, kill-switch.
+	// Создать или обновить флаг: описание, тумблер, процент, kill-switch,
+	// варианты A/B-эксперимента.
 	UpsertFlag(context.Context, *UpsertFlagRequest) (*FlagState, error)
 	// Удалить флаг (Evaluate ответит not_found).
 	DeleteFlag(context.Context, *DeleteFlagRequest) (*DeleteFlagResponse, error)
+	// Засчитать экспозицию: вариант вызывающий НЕ присылает — сервис
+	// пересчитывает его сам из детерминированного бакетинга (хранить
+	// назначения сущностей не нужно). Отчёт о несуществующем флаге —
+	// не ошибка: counted=false, счётчики не тронуты.
+	ReportExposure(context.Context, *ReportRequest) (*ReportResponse, error)
+	// Засчитать конверсию той же семантикой: (флаг, сущность) → вариант.
+	ReportConversion(context.Context, *ReportRequest) (*ReportResponse, error)
 	mustEmbedUnimplementedFlagsServer()
 }
 
@@ -151,6 +193,12 @@ func (UnimplementedFlagsServer) UpsertFlag(context.Context, *UpsertFlagRequest) 
 }
 func (UnimplementedFlagsServer) DeleteFlag(context.Context, *DeleteFlagRequest) (*DeleteFlagResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteFlag not implemented")
+}
+func (UnimplementedFlagsServer) ReportExposure(context.Context, *ReportRequest) (*ReportResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportExposure not implemented")
+}
+func (UnimplementedFlagsServer) ReportConversion(context.Context, *ReportRequest) (*ReportResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportConversion not implemented")
 }
 func (UnimplementedFlagsServer) mustEmbedUnimplementedFlagsServer() {}
 func (UnimplementedFlagsServer) testEmbeddedByValue()               {}
@@ -245,6 +293,42 @@ func _Flags_DeleteFlag_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Flags_ReportExposure_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FlagsServer).ReportExposure(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Flags_ReportExposure_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FlagsServer).ReportExposure(ctx, req.(*ReportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Flags_ReportConversion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FlagsServer).ReportConversion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Flags_ReportConversion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FlagsServer).ReportConversion(ctx, req.(*ReportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Flags_ServiceDesc is the grpc.ServiceDesc for Flags service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -267,6 +351,14 @@ var Flags_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteFlag",
 			Handler:    _Flags_DeleteFlag_Handler,
+		},
+		{
+			MethodName: "ReportExposure",
+			Handler:    _Flags_ReportExposure_Handler,
+		},
+		{
+			MethodName: "ReportConversion",
+			Handler:    _Flags_ReportConversion_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

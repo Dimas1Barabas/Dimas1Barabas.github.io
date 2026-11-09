@@ -20,16 +20,26 @@ service Flags {
   // Вердикт флага для сущности. Раскатка детерминирована:
   // bucket = hash("key|entity_id") % 100, фича видна, если
   // bucket < percentage — сущность всегда в одной стороне раскатки,
-  // «мигание» флага между запросами исключено.
+  // «мигание» флага между запросами исключено. У эксперимента
+  // (флаг с вариантами) бакет выбирает вариант: enabled=true только
+  // у сущностей в именованном варианте, остаток трафика — база.
   rpc Evaluate (EvaluateRequest) returns (EvaluateResponse);
   // Все флаги одним снимком: API кэширует состояния и считает
   // вердикты локально (тот же бакетинг) — kill-switch вступает
   // в силу за TTL кэша, без похода за каждым вердиктом.
   rpc ListFlags (ListFlagsRequest) returns (ListFlagsResponse);
-  // Создать или обновить флаг: описание, тумблер, процент, kill-switch.
+  // Создать или обновить флаг: описание, тумблер, процент, kill-switch,
+  // варианты A/B-эксперимента.
   rpc UpsertFlag (UpsertFlagRequest) returns (FlagState);
   // Удалить флаг (Evaluate ответит not_found).
   rpc DeleteFlag (DeleteFlagRequest) returns (DeleteFlagResponse);
+  // Засчитать экспозицию: вариант вызывающий НЕ присылает — сервис
+  // пересчитывает его сам из детерминированного бакетинга (хранить
+  // назначения сущностей не нужно). Отчёт о несуществующем флаге —
+  // не ошибка: counted=false, счётчики не тронуты.
+  rpc ReportExposure (ReportRequest) returns (ReportResponse);
+  // Засчитать конверсию той же семантикой: (флаг, сущность) → вариант.
+  rpc ReportConversion (ReportRequest) returns (ReportResponse);
 }
 
 message EvaluateRequest {
@@ -39,8 +49,16 @@ message EvaluateRequest {
 
 message EvaluateResponse {
   bool  enabled    = 1; // показывать ли фичу этой сущности
-  string reason    = 2; // вердикт: on | percentage | flag_off | kill_switch | not_found
+  string reason    = 2; // вердикт: on | percentage | variant | base | flag_off | kill_switch | not_found
   int32 percentage = 3; // текущий процент раскатки флага
+  string variant   = 4; // вариант A/B-эксперимента этой сущности (пустой = база / не-эксперимент)
+}
+
+// Вариант A/B-эксперимента: имя и доля трафика. Сумма долей ≤ 100,
+// остаток — «база» (контрольный опыт без фичи).
+message Variant {
+  string name = 1;      // [a-z0-9_-], 1..30, без повторов внутри флага
+  int32  percentage = 2; // доля трафика варианта: 0..100
 }
 
 // Снимок флага — состояние и последняя правка.
@@ -48,10 +66,11 @@ message FlagState {
   string key         = 1;  // ключ флага
   string description = 2;  // что это за фича, человеком
   bool   enabled     = 3;  // мастер-тумблер: пауза раскатки без потери процента
-  int32  percentage  = 4;  // доля сущностей, которым фича видна: 0..100
+  int32  percentage  = 4;  // доля сущностей, которым фича видна: 0..100 (не для экспериментов)
   bool   killed      = 5;  // kill-switch: мгновенный оф всем, приоритет над enabled/percentage
   string updated_by  = 6;  // кто менял: админ/система
   string updated_at  = 7;  // момент правки, RFC3339
+  repeated Variant variants = 8; // непустой список превращает флаг в A/B-эксперимент
 }
 
 message ListFlagsRequest {
@@ -68,6 +87,7 @@ message UpsertFlagRequest {
   int32  percentage  = 4;
   bool   killed      = 5;
   string updated_by  = 6; // кто меняет — уйдёт в аудит правки
+  repeated Variant variants = 7; // полное состояние: upsert перезаписывает варианты, не мерджит
 }
 
 message DeleteFlagRequest {
@@ -76,4 +96,14 @@ message DeleteFlagRequest {
 
 message DeleteFlagResponse {
   bool deleted = 1; // false — флага и не было
+}
+
+message ReportRequest {
+  string key = 1;        // ключ флага-эксперимента
+  string entity_id = 2;  // та же сущность, что у Evaluate (id из JWT)
+}
+
+message ReportResponse {
+  string variant = 1; // вариант, к которому отнесён отчёт ("" = база/on/off)
+  bool   counted = 2; // false — флага нет, счётчики не тронуты
 }
