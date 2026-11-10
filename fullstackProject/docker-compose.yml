@@ -80,6 +80,13 @@ services:
       # Аналитик: HTTP-адрес витрины «Поведение» (недоступность —
       # available:false на /analytics/insights, инжест не страдает)
       ANALYTICS_URL: http://analytics:8092
+      # S3-постеры: адрес шлюза SeaweedFS (SigV4). Бакет создаётся при
+      # старте; недоступность хранилища — деградация: витрина живёт на
+      # градиентных фолбэках, загрузка отдаёт 503, стенд не падает
+      S3_ENDPOINT: http://seaweedfs:8333
+      S3_ACCESS_KEY: cine
+      S3_SECRET_KEY: cine-poster-secret
+      S3_BUCKET: cine-posters
       # OpenTelemetry: OTLP/HTTP-эндпоинт Jaeger; без переменной
       # SDK не поднимается вовсе (CI-e2e без observability)
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
@@ -117,6 +124,8 @@ services:
         condition: service_started
       analytics:
         condition: service_started
+      seaweedfs:
+        condition: service_healthy
 
   worker:
     build: ./services/ticket-worker
@@ -321,6 +330,36 @@ services:
       postgres:
         condition: service_healthy
 
+  # S3-хранилище постеров фильмов: SeaweedFS в режиме server (мастер+филер+
+  # S3-шлюз одним процессом, шлюз на 8333). В меню этапа задумывался MinIO,
+  # но в октябре 2025 он ушёл в «source-only» релизы и стёр образы из
+  # Docker Hub/quay/public ECR (github-репозиторий архивирован в 2026) —
+  # SeaweedFS живой S3-совместимый преемник: та же SigV4-семантика,
+  # API-клиент (npm minio) к смене движка равнодушен, бакет-операции
+  # стандартные. Доступ — по ключам из s3.json (identities), анонимам
+  # отказ; бакет cine-posters создаёт API при старте (ensureBucket).
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.53
+    command:
+      - server
+      - -dir=/data
+      - -master.volumeSizeLimitMB=1024
+      - -s3
+      - -s3.port=8333
+      - -s3.config=/etc/seaweedfs/s3.json
+    volumes:
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+      - seaweeddata:/data
+    ports:
+      - '18333:8333' # S3 API (клиенты стенда: api-сервис, mc/minio)
+      - '19333:9333' # мастер: /cluster/status, UI топологии
+      - '18888:8888' # filer UI: дерево /buckets по-живому
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:9333/cluster/status >/dev/null 2>&1 || exit 1']
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
   web:
     build: ./apps/web
     ports:
@@ -402,3 +441,4 @@ services:
 volumes:
   pgdata:
   lokidata:
+  seaweeddata:

@@ -1,0 +1,18 @@
+{
+  "identities": [
+    {
+      "name": "cine-api",
+      "credentials": [
+        {
+          "accessKey": "cine",
+          "secretKey": "cine-poster-secret"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    },
+    {
+      "name": "anonymous",
+      "actions": []
+    }
+  ]
+}
