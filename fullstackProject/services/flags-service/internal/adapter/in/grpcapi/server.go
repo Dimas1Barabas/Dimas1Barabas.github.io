@@ -121,31 +121,42 @@ func (s *Server) DeleteFlag(ctx context.Context, req *pb.DeleteFlagRequest) (*pb
 // ReportExposure: засчитать показ точки применения. Вариант не присылают —
 // сервис пересчитывает его из бакетинга; not_found — counted=false, не ошибка.
 func (s *Server) ReportExposure(ctx context.Context, req *pb.ReportRequest) (*pb.ReportResponse, error) {
-	return s.report(ctx, req, "exposure", s.svc.ReportExposure)
+	variant, counted, err := s.report(ctx, "exposure", req.GetKey(), req.GetEntityId(), s.svc.ReportExposure)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.ReportResponse{Variant: variant, Counted: counted}, nil
 }
 
 // ReportConversion: засчитать конверсию — та же семантика, что у экспозиции.
-func (s *Server) ReportConversion(ctx context.Context, req *pb.ReportRequest) (*pb.ReportResponse, error) {
-	return s.report(ctx, req, "conversion", s.svc.ReportConversion)
+func (s *Server) ReportConversion(ctx context.Context, req *pb.ReportConversionRequest) (*pb.ReportConversionResponse, error) {
+	variant, counted, err := s.report(ctx, "conversion", req.GetKey(), req.GetEntityId(), s.svc.ReportConversion)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.ReportConversionResponse{Variant: variant, Counted: counted}, nil
 }
 
+// report — общий каркас обоих отчётов: key обязателен, тайминги и метрики
+// (kind: exposure | conversion). Типы запросов/ответов у RPC свои —
+// прото-контракт требует уникальности типа на RPC
+// (RPC_REQUEST_RESPONSE_UNIQUE), поэтому каркас живёт на плоских полях.
 func (s *Server) report(
 	ctx context.Context,
-	req *pb.ReportRequest,
-	kind string,
+	kind, key, entityID string,
 	call func(context.Context, string, string) (string, bool, error),
-) (*pb.ReportResponse, error) {
-	if req.GetKey() == "" {
-		return nil, status.Error(codes.InvalidArgument, "key обязателен")
+) (string, bool, error) {
+	if key == "" {
+		return "", false, status.Error(codes.InvalidArgument, "key обязателен")
 	}
 	startedAt := time.Now()
-	variant, counted, err := call(ctx, req.GetKey(), req.GetEntityId())
+	variant, counted, err := call(ctx, key, entityID)
 	if err != nil {
 		s.metrics.Error("report")
-		return nil, status.Error(codes.Internal, "хранилище флагов недоступно")
+		return "", false, status.Error(codes.Internal, "хранилище флагов недоступно")
 	}
 	s.metrics.Report(kind, time.Since(startedAt).Seconds())
-	return &pb.ReportResponse{Variant: variant, Counted: counted}, nil
+	return variant, counted, nil
 }
 
 func toPb(f domain.Flag) *pb.FlagState {

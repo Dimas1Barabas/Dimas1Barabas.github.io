@@ -39,7 +39,7 @@ service Flags {
   // не ошибка: counted=false, счётчики не тронуты.
   rpc ReportExposure (ReportRequest) returns (ReportResponse);
   // Засчитать конверсию той же семантикой: (флаг, сущность) → вариант.
-  rpc ReportConversion (ReportRequest) returns (ReportResponse);
+  rpc ReportConversion (ReportConversionRequest) returns (ReportConversionResponse);
 }
 
 message EvaluateRequest {
@@ -104,6 +104,22 @@ message ReportRequest {
 }
 
 message ReportResponse {
+  string variant = 1; // вариант, к которому отнесён отчёт ("" = база/on/off)
+  bool   counted = 2; // false — флага нет, счётчики не тронуты
+}
+
+// Точка конверсии — те же (флаг, сущность), что у экспозиции, но тип
+// отдельный: RPC_REQUEST_RESPONSE_UNIQUE — тип запроса/ответа живёт в
+// одном RPC, и контракты точек эволюционируют порознь (у конверсии
+// появятся свои поля — сумма чека и т.п.). Экспозиция остаётся на
+// исторических ReportRequest/ReportResponse: переиспользовать их здесь
+// нельзя, а удалить — ломающее изменение (breaking FILE).
+message ReportConversionRequest {
+  string key = 1;        // ключ флага-эксперимента
+  string entity_id = 2;  // та же сущность, что у Evaluate (id из JWT)
+}
+
+message ReportConversionResponse {
   string variant = 1; // вариант, к которому отнесён отчёт ("" = база/on/off)
   bool   counted = 2; // false — флага нет, счётчики не тронуты
 }

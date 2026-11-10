@@ -166,9 +166,9 @@ func TestExperimentEvaluateAndReports(t *testing.T) {
 	if err != nil || !rep.Counted || rep.Variant != "a" {
 		t.Fatalf("экспозиция user-2 — вариант a: %+v / %v", rep, err)
 	}
-	rep, err = srv.ReportConversion(ctx, &pb.ReportRequest{Key: "checkout.new_flow", EntityId: "user-2"})
-	if err != nil || !rep.Counted || rep.Variant != "a" {
-		t.Fatalf("конверсия user-2 — тот же вариант: %+v / %v", rep, err)
+	conv, err := srv.ReportConversion(ctx, &pb.ReportConversionRequest{Key: "checkout.new_flow", EntityId: "user-2"})
+	if err != nil || !conv.Counted || conv.Variant != "a" {
+		t.Fatalf("конверсия user-2 — тот же вариант: %+v / %v", conv, err)
 	}
 
 	// not_found — counted=false, не ошибка RPC
@@ -181,7 +181,7 @@ func TestExperimentEvaluateAndReports(t *testing.T) {
 	if _, err := srv.ReportExposure(ctx, &pb.ReportRequest{EntityId: "u"}); codeOf(t, err) != codes.InvalidArgument {
 		t.Fatalf("пустой key экспозиции — InvalidArgument: %v", err)
 	}
-	if _, err := srv.ReportConversion(ctx, &pb.ReportRequest{EntityId: "u"}); codeOf(t, err) != codes.InvalidArgument {
+	if _, err := srv.ReportConversion(ctx, &pb.ReportConversionRequest{EntityId: "u"}); codeOf(t, err) != codes.InvalidArgument {
 		t.Fatalf("пустой key конверсии — InvalidArgument: %v", err)
 	}
 }

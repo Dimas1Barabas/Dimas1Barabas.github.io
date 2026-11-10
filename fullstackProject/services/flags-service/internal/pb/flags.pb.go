@@ -667,6 +667,116 @@ func (x *ReportResponse) GetCounted() bool {
 	return false
 }
 
+// Точка конверсии — те же (флаг, сущность), что у экспозиции, но тип
+// отдельный: RPC_REQUEST_RESPONSE_UNIQUE — тип запроса/ответа живёт в
+// одном RPC, и контракты точек эволюционируют порознь (у конверсии
+// появятся свои поля — сумма чека и т.п.). Экспозиция остаётся на
+// исторических ReportRequest/ReportResponse: переиспользовать их здесь
+// нельзя, а удалить — ломающее изменение (breaking FILE).
+type ReportConversionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                           // ключ флага-эксперимента
+	EntityId      string                 `protobuf:"bytes,2,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"` // та же сущность, что у Evaluate (id из JWT)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportConversionRequest) Reset() {
+	*x = ReportConversionRequest{}
+	mi := &file_flags_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportConversionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportConversionRequest) ProtoMessage() {}
+
+func (x *ReportConversionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_flags_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportConversionRequest.ProtoReflect.Descriptor instead.
+func (*ReportConversionRequest) Descriptor() ([]byte, []int) {
+	return file_flags_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ReportConversionRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *ReportConversionRequest) GetEntityId() string {
+	if x != nil {
+		return x.EntityId
+	}
+	return ""
+}
+
+type ReportConversionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Variant       string                 `protobuf:"bytes,1,opt,name=variant,proto3" json:"variant,omitempty"`  // вариант, к которому отнесён отчёт ("" = база/on/off)
+	Counted       bool                   `protobuf:"varint,2,opt,name=counted,proto3" json:"counted,omitempty"` // false — флага нет, счётчики не тронуты
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportConversionResponse) Reset() {
+	*x = ReportConversionResponse{}
+	mi := &file_flags_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportConversionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportConversionResponse) ProtoMessage() {}
+
+func (x *ReportConversionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_flags_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportConversionResponse.ProtoReflect.Descriptor instead.
+func (*ReportConversionResponse) Descriptor() ([]byte, []int) {
+	return file_flags_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ReportConversionResponse) GetVariant() string {
+	if x != nil {
+		return x.Variant
+	}
+	return ""
+}
+
+func (x *ReportConversionResponse) GetCounted() bool {
+	if x != nil {
+		return x.Counted
+	}
+	return false
+}
+
 var File_flags_proto protoreflect.FileDescriptor
 
 const file_flags_proto_rawDesc = "" +
@@ -723,7 +833,13 @@ const file_flags_proto_rawDesc = "" +
 	"\tentity_id\x18\x02 \x01(\tR\bentityId\"D\n" +
 	"\x0eReportResponse\x12\x18\n" +
 	"\avariant\x18\x01 \x01(\tR\avariant\x12\x18\n" +
-	"\acounted\x18\x02 \x01(\bR\acounted2\xe1\x03\n" +
+	"\acounted\x18\x02 \x01(\bR\acounted\"H\n" +
+	"\x17ReportConversionRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x1b\n" +
+	"\tentity_id\x18\x02 \x01(\tR\bentityId\"N\n" +
+	"\x18ReportConversionResponse\x12\x18\n" +
+	"\avariant\x18\x01 \x01(\tR\avariant\x12\x18\n" +
+	"\acounted\x18\x02 \x01(\bR\acounted2\xf5\x03\n" +
 	"\x05Flags\x12K\n" +
 	"\bEvaluate\x12\x1e.cine.flags.v1.EvaluateRequest\x1a\x1f.cine.flags.v1.EvaluateResponse\x12N\n" +
 	"\tListFlags\x12\x1f.cine.flags.v1.ListFlagsRequest\x1a .cine.flags.v1.ListFlagsResponse\x12H\n" +
@@ -731,8 +847,8 @@ const file_flags_proto_rawDesc = "" +
 	"UpsertFlag\x12 .cine.flags.v1.UpsertFlagRequest\x1a\x18.cine.flags.v1.FlagState\x12Q\n" +
 	"\n" +
 	"DeleteFlag\x12 .cine.flags.v1.DeleteFlagRequest\x1a!.cine.flags.v1.DeleteFlagResponse\x12M\n" +
-	"\x0eReportExposure\x12\x1c.cine.flags.v1.ReportRequest\x1a\x1d.cine.flags.v1.ReportResponse\x12O\n" +
-	"\x10ReportConversion\x12\x1c.cine.flags.v1.ReportRequest\x1a\x1d.cine.flags.v1.ReportResponseB\"Z flags-service/internal/pb;cinepbb\x06proto3"
+	"\x0eReportExposure\x12\x1c.cine.flags.v1.ReportRequest\x1a\x1d.cine.flags.v1.ReportResponse\x12c\n" +
+	"\x10ReportConversion\x12&.cine.flags.v1.ReportConversionRequest\x1a'.cine.flags.v1.ReportConversionResponseB\"Z flags-service/internal/pb;cinepbb\x06proto3"
 
 var (
 	file_flags_proto_rawDescOnce sync.Once
@@ -746,19 +862,21 @@ func file_flags_proto_rawDescGZIP() []byte {
 	return file_flags_proto_rawDescData
 }
 
-var file_flags_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_flags_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_flags_proto_goTypes = []any{
-	(*EvaluateRequest)(nil),    // 0: cine.flags.v1.EvaluateRequest
-	(*EvaluateResponse)(nil),   // 1: cine.flags.v1.EvaluateResponse
-	(*Variant)(nil),            // 2: cine.flags.v1.Variant
-	(*FlagState)(nil),          // 3: cine.flags.v1.FlagState
-	(*ListFlagsRequest)(nil),   // 4: cine.flags.v1.ListFlagsRequest
-	(*ListFlagsResponse)(nil),  // 5: cine.flags.v1.ListFlagsResponse
-	(*UpsertFlagRequest)(nil),  // 6: cine.flags.v1.UpsertFlagRequest
-	(*DeleteFlagRequest)(nil),  // 7: cine.flags.v1.DeleteFlagRequest
-	(*DeleteFlagResponse)(nil), // 8: cine.flags.v1.DeleteFlagResponse
-	(*ReportRequest)(nil),      // 9: cine.flags.v1.ReportRequest
-	(*ReportResponse)(nil),     // 10: cine.flags.v1.ReportResponse
+	(*EvaluateRequest)(nil),          // 0: cine.flags.v1.EvaluateRequest
+	(*EvaluateResponse)(nil),         // 1: cine.flags.v1.EvaluateResponse
+	(*Variant)(nil),                  // 2: cine.flags.v1.Variant
+	(*FlagState)(nil),                // 3: cine.flags.v1.FlagState
+	(*ListFlagsRequest)(nil),         // 4: cine.flags.v1.ListFlagsRequest
+	(*ListFlagsResponse)(nil),        // 5: cine.flags.v1.ListFlagsResponse
+	(*UpsertFlagRequest)(nil),        // 6: cine.flags.v1.UpsertFlagRequest
+	(*DeleteFlagRequest)(nil),        // 7: cine.flags.v1.DeleteFlagRequest
+	(*DeleteFlagResponse)(nil),       // 8: cine.flags.v1.DeleteFlagResponse
+	(*ReportRequest)(nil),            // 9: cine.flags.v1.ReportRequest
+	(*ReportResponse)(nil),           // 10: cine.flags.v1.ReportResponse
+	(*ReportConversionRequest)(nil),  // 11: cine.flags.v1.ReportConversionRequest
+	(*ReportConversionResponse)(nil), // 12: cine.flags.v1.ReportConversionResponse
 }
 var file_flags_proto_depIdxs = []int32{
 	2,  // 0: cine.flags.v1.FlagState.variants:type_name -> cine.flags.v1.Variant
@@ -769,13 +887,13 @@ var file_flags_proto_depIdxs = []int32{
 	6,  // 5: cine.flags.v1.Flags.UpsertFlag:input_type -> cine.flags.v1.UpsertFlagRequest
 	7,  // 6: cine.flags.v1.Flags.DeleteFlag:input_type -> cine.flags.v1.DeleteFlagRequest
 	9,  // 7: cine.flags.v1.Flags.ReportExposure:input_type -> cine.flags.v1.ReportRequest
-	9,  // 8: cine.flags.v1.Flags.ReportConversion:input_type -> cine.flags.v1.ReportRequest
+	11, // 8: cine.flags.v1.Flags.ReportConversion:input_type -> cine.flags.v1.ReportConversionRequest
 	1,  // 9: cine.flags.v1.Flags.Evaluate:output_type -> cine.flags.v1.EvaluateResponse
 	5,  // 10: cine.flags.v1.Flags.ListFlags:output_type -> cine.flags.v1.ListFlagsResponse
 	3,  // 11: cine.flags.v1.Flags.UpsertFlag:output_type -> cine.flags.v1.FlagState
 	8,  // 12: cine.flags.v1.Flags.DeleteFlag:output_type -> cine.flags.v1.DeleteFlagResponse
 	10, // 13: cine.flags.v1.Flags.ReportExposure:output_type -> cine.flags.v1.ReportResponse
-	10, // 14: cine.flags.v1.Flags.ReportConversion:output_type -> cine.flags.v1.ReportResponse
+	12, // 14: cine.flags.v1.Flags.ReportConversion:output_type -> cine.flags.v1.ReportConversionResponse
 	9,  // [9:15] is the sub-list for method output_type
 	3,  // [3:9] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
@@ -794,7 +912,7 @@ func file_flags_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_flags_proto_rawDesc), len(file_flags_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

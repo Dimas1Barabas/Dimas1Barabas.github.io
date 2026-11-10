@@ -67,7 +67,7 @@ type FlagsClient interface {
 	// не ошибка: counted=false, счётчики не тронуты.
 	ReportExposure(ctx context.Context, in *ReportRequest, opts ...grpc.CallOption) (*ReportResponse, error)
 	// Засчитать конверсию той же семантикой: (флаг, сущность) → вариант.
-	ReportConversion(ctx context.Context, in *ReportRequest, opts ...grpc.CallOption) (*ReportResponse, error)
+	ReportConversion(ctx context.Context, in *ReportConversionRequest, opts ...grpc.CallOption) (*ReportConversionResponse, error)
 }
 
 type flagsClient struct {
@@ -128,9 +128,9 @@ func (c *flagsClient) ReportExposure(ctx context.Context, in *ReportRequest, opt
 	return out, nil
 }
 
-func (c *flagsClient) ReportConversion(ctx context.Context, in *ReportRequest, opts ...grpc.CallOption) (*ReportResponse, error) {
+func (c *flagsClient) ReportConversion(ctx context.Context, in *ReportConversionRequest, opts ...grpc.CallOption) (*ReportConversionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ReportResponse)
+	out := new(ReportConversionResponse)
 	err := c.cc.Invoke(ctx, Flags_ReportConversion_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -171,7 +171,7 @@ type FlagsServer interface {
 	// не ошибка: counted=false, счётчики не тронуты.
 	ReportExposure(context.Context, *ReportRequest) (*ReportResponse, error)
 	// Засчитать конверсию той же семантикой: (флаг, сущность) → вариант.
-	ReportConversion(context.Context, *ReportRequest) (*ReportResponse, error)
+	ReportConversion(context.Context, *ReportConversionRequest) (*ReportConversionResponse, error)
 	mustEmbedUnimplementedFlagsServer()
 }
 
@@ -197,7 +197,7 @@ func (UnimplementedFlagsServer) DeleteFlag(context.Context, *DeleteFlagRequest) 
 func (UnimplementedFlagsServer) ReportExposure(context.Context, *ReportRequest) (*ReportResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportExposure not implemented")
 }
-func (UnimplementedFlagsServer) ReportConversion(context.Context, *ReportRequest) (*ReportResponse, error) {
+func (UnimplementedFlagsServer) ReportConversion(context.Context, *ReportConversionRequest) (*ReportConversionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportConversion not implemented")
 }
 func (UnimplementedFlagsServer) mustEmbedUnimplementedFlagsServer() {}
@@ -312,7 +312,7 @@ func _Flags_ReportExposure_Handler(srv interface{}, ctx context.Context, dec fun
 }
 
 func _Flags_ReportConversion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ReportRequest)
+	in := new(ReportConversionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -324,7 +324,7 @@ func _Flags_ReportConversion_Handler(srv interface{}, ctx context.Context, dec f
 		FullMethod: Flags_ReportConversion_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FlagsServer).ReportConversion(ctx, req.(*ReportRequest))
+		return srv.(FlagsServer).ReportConversion(ctx, req.(*ReportConversionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
