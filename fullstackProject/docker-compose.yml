@@ -342,6 +342,10 @@ services:
     image: chrislusf/seaweedfs:4.53
     command:
       - server
+      # -ip.bind по умолчанию пуст и «то же, что -ip», а -ip — это
+      # обнаруженный eth0-адрес контейнера: на localhost ничего не
+      # слушает, healthcheck ловит connection refused (run 329e7284)
+      - -ip.bind=0.0.0.0
       - -dir=/data
       - -master.volumeSizeLimitMB=1024
       - -s3
@@ -352,10 +356,12 @@ services:
       - seaweeddata:/data
     ports:
       - '18333:8333' # S3 API (клиенты стенда: api-сервис, mc/minio)
-      - '19333:9333' # мастер: /cluster/status, UI топологии
+      - '19333:9333' # мастер: /readyz, UI топологии
       - '18888:8888' # filer UI: дерево /buckets по-живому
+    # /readyz — готовность мастера (raft-лидер выбран); маршрут
+    # /cluster/status в 4.x убран, его ловит catch-all /{fileId}
     healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- http://localhost:9333/cluster/status >/dev/null 2>&1 || exit 1']
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:9333/readyz >/dev/null 2>&1 || exit 1']
       interval: 5s
       timeout: 3s
       retries: 24
