@@ -38,6 +38,10 @@ data:
   RESET_LINK_BASE: http://localhost:18080/#/reset-password
   # Secure-флаг refresh-cookie: включать только за TLS
   COOKIE_SECURE: 'false'
+  # S3-постеры (этап 29): шлюз SeaweedFS в кластере; ключи доступа —
+  # в секрете cine-secrets. Бакет создаёт API при первой загрузке
+  S3_ENDPOINT: http://seaweedfs:8333
+  S3_BUCKET: cine-posters
 ---
 apiVersion: v1
 kind: ConfigMap

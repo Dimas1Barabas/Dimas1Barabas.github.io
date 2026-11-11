@@ -47,6 +47,11 @@ spec:
         - name: wait-rabbitmq
           image: rabbitmq:3.13-management-alpine
           command: ['sh', '-c', 'until nc rabbitmq 5672 </dev/null >/dev/null 2>&1; do echo ждём rabbitmq; sleep 2; done']
+        # постеры: мастер SeaweedFS согласовал raft (readyz) — значит
+        # шлюз 8333 слушает; образ зависимости, wget внутри (busybox)
+        - name: wait-seaweedfs
+          image: chrislusf/seaweedfs:4.53
+          command: ['sh', '-c', 'until wget -qO- http://seaweedfs:9333/readyz >/dev/null 2>&1; do echo ждём seaweedfs; sleep 2; done']
       containers:
         - name: api
           image: cine-booking-api
