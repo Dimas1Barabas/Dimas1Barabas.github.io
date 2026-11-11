@@ -1,12 +1,15 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { PostersModule } from '../posters/posters.module';
 import { Movie } from './movie.entity';
 import { MoviesController } from './movies.controller';
 import { MoviesService } from './movies.service';
 import { Session } from './session.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Movie, Session])],
+  // PostersModule — постеры фильмов: GET-раздача с кэшем и админские
+  // upload/delete живут в MoviesController (эндпоинты /movies/:id/poster)
+  imports: [TypeOrmModule.forFeature([Movie, Session]), PostersModule],
   controllers: [MoviesController],
   providers: [MoviesService],
   // MoviesService — кандидаты афиши для топа рекомендаций:

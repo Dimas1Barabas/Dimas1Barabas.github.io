@@ -46,6 +46,7 @@ import { Promo } from '../src/promos/promo.entity';
 import { PricingClient } from '../src/pricing/pricing.client';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
+import { PostersService } from '../src/posters/posters.service';
 import { setupHelmet } from '../src/security/helmet';
 import { User } from '../src/users/user.entity';
 import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
@@ -113,6 +114,36 @@ export function flagsEvaluatorFake() {
   };
 }
 
+/** фейк сервиса постеров: in-memory бакет Map<ключ, {байты, тип, etag}> —
+ *  как настоящий стор, но без S3; спеки постеров проверяют вызовы и объекты */
+export function postersServiceFake() {
+  const objects = new Map<
+    string,
+    { buffer: Buffer; contentType: string; etag: string }
+  >();
+  return {
+    enabled: true,
+    upload: jest.fn(
+      async (movieId: string, body: Buffer, contentType: string) => {
+        const key = `posters/${movieId}`;
+        objects.set(key, {
+          buffer: body,
+          contentType,
+          etag: `"${body.length.toString(16)}"`,
+        });
+        return { key, size: body.length };
+      },
+    ),
+    poster: jest.fn(
+      async (movieId: string) => objects.get(`posters/${movieId}`) ?? null,
+    ),
+    remove: jest.fn(async (movieId: string) =>
+      objects.delete(`posters/${movieId}`),
+    ),
+    objects,
+  };
+}
+
 /** каталог из /api/movies (DTO с sessions[]) */
 export type MovieDtoJson = {
   id: string;
@@ -174,6 +205,13 @@ export class FakeMovieRepo {
     const found = this.rows.find((r) => r.id === where.id);
     if (!found) throw new NotFoundException('Фильм не найден');
     return found;
+  }
+
+  /** findOneOrFail с relations — как настоящий репозиторий: фейковые
+   *  строки уже несут sessions (save раздувает их), фильтруем только по id.
+   *  Poster-эндпоинты MoviesController зовут MoviesService.findOne → сюда */
+  async findOneOrFail(opts: { where: { id: string } }): Promise<Movie> {
+    return this.findOneByOrFail(opts.where);
   }
 }
 
@@ -333,6 +371,8 @@ export interface IntAppContext {
   bookingsService: BookingsService;
   /** вердикты флагов для @FeatureFlag-маршрутов (по умолчанию выключены) */
   flagsEvaluator: ReturnType<typeof flagsEvaluatorFake>;
+  /** постеры: in-memory бакет + моки upload/poster/remove */
+  posters: ReturnType<typeof postersServiceFake>;
   /** Authorization: владелец брони, чужак и администратор */
   bearer: string;
   bearerB: string;
@@ -359,6 +399,8 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
   const rabbitPublish = jest.fn();
   // вердикты флагов: по умолчанию всё скрыто (0% раскатки)
   const flagsEvaluator = flagsEvaluatorFake();
+  // постеры: in-memory бакет (S3 — уровень live-int/e2e)
+  const posters = postersServiceFake();
   // outbox-записи create/pay: enqueueOutbox пишет через em-транзакцию
   const outboxRows: { routingKey: string; payload: object }[] = [];
 
@@ -541,6 +583,8 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
       // gRPC; FeatureFlagGuard инжектит Reflector (ядро) + этот эвалюатор
       { provide: FlagsEvaluator, useValue: flagsEvaluator },
       FeatureFlagGuard,
+      // постеры фильмов: контроллер /movies/:id/poster ходит в мок-бакет
+      { provide: PostersService, useValue: posters },
       // как в AppModule: все эндпоинты за JWT, витрина — @Public(),
       // следом RolesGuard сверяет @Roles(...) с ролью из токена
       { provide: APP_GUARD, useClass: JwtAuthGuard },
@@ -577,6 +621,7 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
     outboxRows,
     bookingsService: moduleRef.get(BookingsService),
     flagsEvaluator,
+    posters,
     bearer: `Bearer ${await sign('user-a', 'Анна Тест', 'user')}`,
     bearerB: `Bearer ${await sign('user-b', 'Борис Чужой', 'user')}`,
     bearerAdmin: `Bearer ${await sign('admin-1', 'Админ Тестов', 'admin')}`,

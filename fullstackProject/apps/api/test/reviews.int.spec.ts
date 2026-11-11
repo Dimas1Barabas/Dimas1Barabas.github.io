@@ -15,6 +15,7 @@ import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { Movie } from '../src/movies/movie.entity';
 import { MoviesController } from '../src/movies/movies.controller';
 import { MoviesService } from '../src/movies/movies.service';
+import { PostersService } from '../src/posters/posters.service';
 import { RedisService } from '../src/redis/redis.service';
 import { REDIS_CLIENT } from '../src/redis/redis.tokens';
 import { Review } from '../src/reviews/review.entity';
@@ -210,6 +211,9 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
       controllers: [MoviesController, ReviewsController],
       providers: [
         MoviesService,
+        // poster-эндпоинты MoviesController: спека отзывов их не зовёт —
+        // пустышка, лишь бы DI собрал контроллер
+        { provide: PostersService, useValue: {} },
         ReviewsService,
         RedisService,
         { provide: REDIS_CLIENT, useValue: redisFake(redisStore) },

@@ -23,6 +23,7 @@ import { SeatsController } from '../src/bookings/seats.controller';
 import { HealthController } from '../src/health/health.controller';
 import { MoviesController } from '../src/movies/movies.controller';
 import { MoviesService } from '../src/movies/movies.service';
+import { PostersService } from '../src/posters/posters.service';
 import { PromosController } from '../src/promos/promos.controller';
 import { PromosService } from '../src/promos/promos.service';
 import { RedisService } from '../src/redis/redis.service';
@@ -62,6 +63,9 @@ describe('Swagger UI /api/docs (integration)', () => {
       providers: [
         { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
         { provide: MoviesService, useValue: {} },
+        // POST/DELETE /movies/:id/poster в MoviesController инжектят
+        // сервис постеров — спеке достаточно пустышки (маршруты не зовутся)
+        { provide: PostersService, useValue: {} },
         { provide: AdminStatsService, useValue: {} },
         { provide: BookingsService, useValue: {} },
         { provide: BookingStream, useValue: {} },
