@@ -1,6 +1,7 @@
 /**
  * Live-int harness: приложение целиком — как в проде — против одноразовых
- * контейнеров testcontainers (PostgreSQL + Redis + RabbitMQ). Зеркало
+ * контейнеров testcontainers (PostgreSQL + Redis + RabbitMQ + SeaweedFS —
+ * S3-постеры этапа 29). Зеркало
  * Go-паттерна из 15-A: TESTCONTAINERS=1 (CI) — контейнеры поднимаются,
  * локально переменную не ставим — спеки честно скипаются (describeLive),
  * машина разработчика контейнеры не трогает.
@@ -49,6 +50,8 @@ export interface LiveInfra {
   redisUrl: string;
   /** amqp://… контейнера — уже присвоен в process.env.RABBITMQ_URL */
   amqpUrl: string;
+  /** http://host:mapped-port S3-шлюза SeaweedFS — в S3_ENDPOINT (этап 29) */
+  s3Endpoint: string;
 }
 
 declare global {
@@ -66,24 +69,60 @@ async function startInfra(): Promise<LiveInfra> {
   const { PostgreSqlContainer } = await import('@testcontainers/postgresql');
   const { RedisContainer } = await import('@testcontainers/redis');
   const { RabbitMQContainer } = await import('@testcontainers/rabbitmq');
+  const { GenericContainer } = await import('testcontainers');
+  const { Wait } = await import('testcontainers');
+  const { readFileSync } = await import('node:fs');
+  const { resolve } = await import('node:path');
 
-  // образы — как в docker-compose стенда, чтобы CI валидиров то, что летит в прод
-  const [pg, redis, rabbit] = await Promise.all([
+  // образы — как в docker-compose стенда, чтобы CI валидиров то, что летит в прод.
+  // SeaweedFS — зеркало compose-сервиса: тот же образ, команда и s3.json
+  // с identity cine (путь — от test/ вверх до seaweedfs/ репозитория)
+  const seaweedfs = new GenericContainer('chrislusf/seaweedfs:4.53')
+    .withCommand([
+      'server',
+      '-ip.bind=0.0.0.0',
+      '-dir=/data',
+      '-master.volumeSizeLimitMB=1024',
+      '-s3',
+      '-s3.port=8333',
+      '-s3.config=/etc/seaweedfs/s3.json',
+    ])
+    .withCopyContentToContainer([
+      {
+        content: readFileSync(
+          resolve(__dirname, '../../../seaweedfs/s3.json'),
+          'utf8',
+        ),
+        target: '/etc/seaweedfs/s3.json',
+      },
+    ])
+    // 9333 — мастер (готовность /readyz), 8333 — сам S3-шлюз
+    .withExposedPorts(8333, 9333)
+    .withWaitStrategy(Wait.forHttp('/readyz', 9333));
+
+  const [pg, redis, rabbit, s3] = await Promise.all([
     new PostgreSqlContainer('postgres:16-alpine').withDatabase('cine').start(),
     new RedisContainer('redis:7-alpine').start(),
     new RabbitMQContainer('rabbitmq:3.13-alpine').start(),
+    seaweedfs.start(),
   ]);
 
   const infra: LiveInfra = {
     pgUri: pg.getConnectionUri(),
     redisUrl: redis.getConnectionUrl(),
     amqpUrl: rabbit.getAmqpUrl(),
+    s3Endpoint: `http://${s3.getHost()}:${s3.getMappedPort(8333)}`,
   };
   // ДО динамического импорта AppModule: uri-константы фиксируются при
-  // загрузке модулей (см. комментарий в шапке)
+  // загрузке модулей (см. комментарий в шапке). S3-переменные читает
+  // PostersModule на сборке DI — тоже до импорта
   process.env.DATABASE_URL = infra.pgUri;
   process.env.REDIS_URL = infra.redisUrl;
   process.env.RABBITMQ_URL = infra.amqpUrl;
+  process.env.S3_ENDPOINT = infra.s3Endpoint;
+  process.env.S3_ACCESS_KEY = 'cine';
+  process.env.S3_SECRET_KEY = 'cine-poster-secret';
+  process.env.S3_BUCKET = 'cine-posters';
   return infra;
 }
 
