@@ -1,4 +1,4 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { PostersStore, StoredPoster, posterKey } from './posters.store';
 
 /**
@@ -11,7 +11,10 @@ import { PostersStore, StoredPoster, posterKey } from './posters.store';
 export class PostersService {
   private readonly logger = new Logger(PostersService.name);
 
-  constructor(private readonly store: PostersStore | null) {}
+  // токен задан явно: тип-юнион «PostersStore | null» не попадает в
+  // design:paramtypes (TS не сериализует юнионы) — без @Inject Nest
+  // видел undefined и падал на буту приложения (краш стендов fc19c4f0)
+  constructor(@Inject(PostersStore) private readonly store: PostersStore | null) {}
 
   /** настроено ли хранилище (для свагера и самопроверок) */
   get enabled(): boolean {
