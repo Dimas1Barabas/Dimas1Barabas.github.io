@@ -21,7 +21,7 @@ describeLive('CineBooking API: постеры на живом SeaweedFS (testcon
   }, 240_000);
 
   afterAll(async () => {
-    h?.stopOutboxRelay();
+    await h?.stopOutboxRelay();
     await h?.app.close();
   });
 

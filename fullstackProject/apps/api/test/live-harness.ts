@@ -139,8 +139,8 @@ export interface LiveAppContext {
   app: INestApplication;
   /** живой DataSource приложения — прямые SELECT для проверок строк */
   db: DataSource;
-  /** остановить мини-релей outbox (вызывать в afterAll рядом с app.close) */
-  stopOutboxRelay: () => void;
+  /** остановить мини-релей outbox (await в afterAll ДО app.close) */
+  stopOutboxRelay: () => Promise<void>;
   /** Authorization: владелец брони, чужак и администратор (живые JWT) */
   bearer: string;
   bearerB: string;
@@ -242,7 +242,16 @@ export async function buildLiveApp(): Promise<LiveAppContext> {
   const relayTimer = setInterval(() => {
     void relayTick();
   }, 100);
-  const stopOutboxRelay = () => clearInterval(relayTimer);
+  // НЕ просто clearInterval: тик в полёте продолжает публиковать, и
+  // app.close() закрывает канал под его publish'ами — ChannelWrapper.
+  // close() ждёт их подтверждения и падает «Channel closed» (run
+  // 13ff20eb: bookings.live-int после зелёных тестов). Ждём дренаж
+  const stopOutboxRelay = async (): Promise<void> => {
+    clearInterval(relayTimer);
+    while (relayBusy) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
 
   const moviesService = app.get(MoviesService);
   const usersService = app.get(UsersService);

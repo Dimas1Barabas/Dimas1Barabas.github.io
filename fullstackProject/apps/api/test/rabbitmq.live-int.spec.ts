@@ -26,7 +26,7 @@ describeLive('CineBooking API: события через живой RabbitMQ (te
 
   afterAll(async () => {
     await conn?.close();
-    h?.stopOutboxRelay();
+    await h?.stopOutboxRelay();
     await h?.app.close();
   });
 
