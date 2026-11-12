@@ -11,23 +11,26 @@ import { useAppStore } from '@/shared/api/app-mode';
 import { posterUrl } from '@/shared/api/client';
 import type { Movie } from '@/shared/api/types';
 
-const props = defineProps<{ movie: Movie }>();
+const props = defineProps<{ movie: Movie; version?: number }>();
 
 const app = useAppStore();
 const failed = ref(false);
 const loaded = ref(false);
 
 // демо-режим: /api/* на Pages отдаёт 404-HTML — запрос не делаем,
-// карточке сразу достаточно градиентного фолбэка
+// карточке сразу достаточно градиентного фолбэка. version — бустер
+// кэша (?v=): админка после upload/delete видит постер сразу, не
+// дожидаясь max-age браузера
 const src = computed(() =>
   app.mode === 'live' && !failed.value
-    ? posterUrl(props.movie.id)
+    ? posterUrl(props.movie.id) + (props.version ? `?v=${props.version}` : '')
     : undefined,
 );
 
-// карточка переиспользована под другой фильм — пробуем картинку заново
+// карточка переиспользована под другой фильм (или постер заменили) —
+// пробуем картинку заново
 watch(
-  () => props.movie.id,
+  () => [props.movie.id, props.version],
   () => {
     failed.value = false;
     loaded.value = false;

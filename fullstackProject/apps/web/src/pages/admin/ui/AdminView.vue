@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { ApiError } from '@/shared/api/client';
+import { ApiError, api } from '@/shared/api/client';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
 import { usePromosStore } from '@/entities/promo/model/promos.store';
-import type { Promo } from '@/shared/api/types';
+import MoviePoster from '@/entities/movie/ui/MoviePoster.vue';
+import type { Movie, Promo } from '@/shared/api/types';
 import type { PromoKind } from '@/shared/lib/promo';
 
 const appStore = useAppStore();
@@ -114,6 +115,100 @@ function addSession(): void {
 /** последнюю строку не убираем — фильм без сеансов не имеет смысла */
 function dropSession(index: number): void {
   if (sessions.value.length > 1) sessions.value.splice(index, 1);
+}
+
+// ── Постеры фильмов (этап 29) ───────────────────────────────────────
+// S3 за POST/DELETE /movies/:id/poster. Лимиты дублируем на клиенте
+// для мгновенной подсказки — честную проверку делает API (413/415).
+
+const POSTER_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const POSTER_MAX_BYTES = 2 * 1024 * 1024;
+
+/** выбранный файл по id фильма (label показывает имя) */
+const picked = ref<Record<string, File | null>>({});
+/** версия постера по id: bump после upload/delete ломает браузерный
+ *  кэш (?v=) — админка видит результат сразу, витрина — по max-age */
+const posterVersion = ref<Record<string, number>>({});
+const posterBusyId = ref<string | null>(null);
+const posterError = ref<string | null>(null);
+const posterSuccess = ref<string | null>(null);
+
+// список фильмов для постеров: грузим, когда раздел стал виден
+watch(
+  allowed,
+  (ok) => {
+    if (ok && !moviesStore.movies.length) void moviesStore.load();
+  },
+  { immediate: true },
+);
+
+function pickPoster(movieId: string, ev: Event): void {
+  const input = ev.target as HTMLInputElement;
+  picked.value = { ...picked.value, [movieId]: input.files?.[0] ?? null };
+  posterError.value = null;
+}
+
+/** текст ошибки из тела ApiError (валидация/лимиты) или общий */
+function posterFailText(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    try {
+      const body = JSON.parse(err.body) as { message?: string };
+      if (body.message) return String(body.message);
+    } catch {
+      /* ниже общий текст */
+    }
+  }
+  return err instanceof Error ? err.message : fallback;
+}
+
+async function uploadPoster(movie: Movie): Promise<void> {
+  const file = picked.value[movie.id];
+  if (!file || posterBusyId.value) return;
+  if (!POSTER_TYPES.includes(file.type)) {
+    posterError.value = 'Постер: JPEG, PNG или WebP';
+    return;
+  }
+  if (file.size > POSTER_MAX_BYTES) {
+    posterError.value = 'Постер: не больше 2 МБ';
+    return;
+  }
+  posterBusyId.value = movie.id;
+  posterError.value = null;
+  posterSuccess.value = null;
+  try {
+    const res = await api.uploadPoster(movie.id, file);
+    posterSuccess.value = `Постер «${movie.title}» в S3 (${res.size} байт)`;
+    picked.value = { ...picked.value, [movie.id]: null };
+    bumpPoster(movie.id);
+  } catch (err) {
+    posterError.value = posterFailText(err, 'Не удалось загрузить постер');
+  } finally {
+    posterBusyId.value = null;
+  }
+}
+
+async function removePoster(movie: Movie): Promise<void> {
+  if (posterBusyId.value) return;
+  posterBusyId.value = movie.id;
+  posterError.value = null;
+  posterSuccess.value = null;
+  try {
+    await api.deletePoster(movie.id);
+    posterSuccess.value = `Постер «${movie.title}» снят — витрина на градиенте`;
+    picked.value = { ...picked.value, [movie.id]: null };
+    bumpPoster(movie.id);
+  } catch (err) {
+    posterError.value = posterFailText(err, 'Не удалось снять постер');
+  } finally {
+    posterBusyId.value = null;
+  }
+}
+
+function bumpPoster(movieId: string): void {
+  posterVersion.value = {
+    ...posterVersion.value,
+    [movieId]: (posterVersion.value[movieId] ?? 0) + 1,
+  };
 }
 
 async function submit(): Promise<void> {
@@ -410,6 +505,80 @@ async function submit(): Promise<void> {
         добавления покидает Redis-кэш и обновляется сразу.
       </p>
     </form>
+
+    <!-- постеры: S3-объекты по ключу posters/<id фильма> (этап 29) -->
+    <section v-if="allowed" class="admin-posters">
+      <h2 class="admin-movies-title">Постеры фильмов</h2>
+
+      <p v-if="moviesStore.loading" class="admin-note">Загружаем афишу…</p>
+      <p v-else-if="moviesStore.error" class="admin-error">
+        {{ moviesStore.error }}
+      </p>
+      <p v-else-if="!moviesStore.movies.length" class="admin-note">
+        Афиша пуста — сначала добавьте фильм.
+      </p>
+      <ul v-else class="admin-poster-list">
+        <li v-for="m in moviesStore.movies" :key="m.id" class="admin-poster">
+          <MoviePoster
+            :movie="m"
+            :version="posterVersion[m.id] ?? 0"
+            class="admin-poster__frame"
+          >
+            <span class="admin-poster__name" :title="m.title">
+              {{ m.title }}
+            </span>
+          </MoviePoster>
+
+          <div class="admin-poster__controls">
+            <label class="btn btn--ghost btn--sm admin-poster__file">
+              <span class="admin-poster__file-name">
+                {{ picked[m.id]?.name ?? 'Выбрать файл…' }}
+              </span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                hidden
+                @change="pickPoster(m.id, $event)"
+              >
+            </label>
+
+            <div class="admin-poster__actions">
+              <button
+                class="btn btn--sm"
+                type="button"
+                :disabled="posterBusyId !== null || !picked[m.id]"
+                @click="uploadPoster(m)"
+              >
+                {{ posterBusyId === m.id ? 'Грузим…' : 'Загрузить' }}
+              </button>
+              <button
+                class="btn btn--ghost btn--sm"
+                type="button"
+                :disabled="posterBusyId !== null"
+                @click="removePoster(m)"
+              >
+                Удалить
+              </button>
+              <span
+                v-if="picked[m.id]"
+                class="admin-poster__size"
+              >
+                {{ Math.max(1, Math.round(picked[m.id]!.size / 1024)) }} КБ
+              </span>
+            </div>
+          </div>
+        </li>
+      </ul>
+
+      <p v-if="posterError" class="admin-error">{{ posterError }}</p>
+      <p v-if="posterSuccess" class="admin-success">{{ posterSuccess }}</p>
+
+      <p class="admin-note">
+        POST/DELETE /api/movies/:id/poster — multipart-поле poster,
+        JPEG/PNG/WebP до 2 МБ; ключ posters/&lt;id&gt;. Витрина обновляется
+        по кэшу браузера (≤5 минут), здесь — сразу.
+      </p>
+    </section>
   </section>
 </template>
 
@@ -535,6 +704,86 @@ async function submit(): Promise<void> {
 .admin-error {
   color: #ff8080;
   margin: 0;
+}
+
+/* ── Постеры (этап 29): мини-постер + управление ─────────────────── */
+
+.admin-posters {
+  margin-top: 8px;
+}
+
+.admin-poster-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.admin-poster {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* рамка MoviePoster: без .movie-card__poster — свои размеры */
+.admin-poster__frame {
+  position: relative;
+  width: 96px;
+  height: 144px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.admin-poster__name {
+  position: absolute;
+  inset: auto 6px 6px;
+  font-size: 11px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-poster__controls {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.admin-poster__file {
+  max-width: 260px;
+  overflow: hidden;
+}
+
+.admin-poster__file-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-poster__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.admin-poster__size {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 560px) {
+  .admin-poster {
+    align-items: flex-start;
+  }
 }
 
 .admin-success {

@@ -280,6 +280,22 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
+  /** загрузить/заменить постер фильма (админ): multipart-поле poster,
+   *  JPEG/PNG/WebP до 2 МБ — Content-Type ставит браузер (boundary) */
+  uploadPoster: (movieId: string, file: File) => {
+    const form = new FormData();
+    form.append('poster', file, file.name);
+    return request<{ key: string; size: number }>(
+      `/movies/${encodeURIComponent(movieId)}/poster`,
+      { method: 'POST', body: form },
+      20_000,
+    );
+  },
+  /** снять постер (админ): 204 без тела, идемпотентно — несуществующего тоже «нет» */
+  deletePoster: (movieId: string) =>
+    request<void>(`/movies/${encodeURIComponent(movieId)}/poster`, {
+      method: 'DELETE',
+    }),
   /** отзывы фильма — публичный список, свежие сверху */
   movieReviews: (movieId: string) =>
     request<Review[]>(`/movies/${movieId}/reviews`),
