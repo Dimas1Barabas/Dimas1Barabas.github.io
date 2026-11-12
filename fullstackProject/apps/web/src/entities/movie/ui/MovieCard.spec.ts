@@ -1,6 +1,8 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { Movie } from '@/shared/api/types';
+import { useAppStore } from '@/shared/api/app-mode';
 import MovieCard from '@/entities/movie/ui/MovieCard.vue';
 
 const movie: Movie = {
@@ -20,6 +22,13 @@ const movie: Movie = {
     { id: 's-2', hall: 'Красный', startsAt: new Date(2030, 0, 6, 15, 0).toISOString() },
   ],
 };
+
+// MoviePoster внутри спрашивает режим приложения — демо, как на Pages:
+// без сети, только градиент, спека не зависит от картинок
+beforeEach(() => {
+  setActivePinia(createPinia());
+  useAppStore().mode = 'demo';
+});
 
 describe('MovieCard', () => {
   it('показывает название, жанр, длительность и цену', () => {

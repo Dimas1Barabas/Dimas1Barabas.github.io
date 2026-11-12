@@ -419,8 +419,25 @@ main.container {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* зерно в ::after уходит за край — клипим, чтобы не задело тело карточки */
+  /* зерно в ::after уходит за край — клипим, чтобы не задето тело карточки */
   overflow: hidden;
+}
+
+/* постер из S3 (этап 29): картинка поверх градиента-фолбэка и под
+   виньеткой/зерном/бейджами (img — первый ребёнок, остальные абсолюты
+   красятся позже). Прозрачна до @load — подложка не мигает */
+.movie-poster__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.movie-poster__img--loaded {
+  opacity: 1;
 }
 
 /* киноплёночная виньетка: притемняет края постера */

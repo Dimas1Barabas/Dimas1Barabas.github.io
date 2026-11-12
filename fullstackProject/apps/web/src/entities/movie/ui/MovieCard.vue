@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Movie } from '@/shared/api/types';
+import MoviePoster from '@/entities/movie/ui/MoviePoster.vue';
 import {
   formatDuration,
   formatPrice,
@@ -17,18 +18,17 @@ defineEmits<{ book: [movie: Movie]; reviews: [movie: Movie] }>();
     class="movie-card"
     :style="{ '--card-i': index }"
   >
-    <div
+    <!-- постер из S3, пока нет — градиент по hue (этап 29) -->
+    <MoviePoster
+      :movie="movie"
       class="movie-card__poster"
-      :style="{
-        background: `linear-gradient(140deg, hsl(${movie.hue} 70% 55%), hsl(${movie.hue + 55} 65% 30%))`,
-      }"
     >
       <span class="movie-card__genre">{{ movie.genre }}</span>
       <span class="movie-card__icon">{{ movie.genreIcon }}</span>
       <span class="movie-card__duration">
         {{ formatDuration(movie.durationMin) }}
       </span>
-    </div>
+    </MoviePoster>
 
     <div class="movie-card__body">
       <h3 class="movie-card__title" :title="movie.title">

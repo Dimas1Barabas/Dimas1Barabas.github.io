@@ -49,6 +49,12 @@ export function wsUrl(path: string): string {
   return `${proto}://${location.host}${BASE}${path}`;
 }
 
+/** URL постера фильма (S3 за API) — для <img src>: байты, кэш и ETag
+ *  отдаёт эндпоинт; 404 значит «постера нет» → градиентный фолбэк */
+export function posterUrl(movieId: string): string {
+  return apiUrl(`/movies/${encodeURIComponent(movieId)}/poster`);
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
