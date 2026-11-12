@@ -47,7 +47,15 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     'Content-Type': 'application/json',
   };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${BASE}${path}`, { headers, ...init });
+  // заголовки вызывающего ДОПОЛНЯЮТ дефолты, а не затирают: спред
+  // «{ headers, ...init }» отдавал приоритет init.headers целиком, и
+  // api('/movies', { headers: { Authorization } }) уходил БЕЗ Content-Type
+  // — сервер не парсил JSON, валидация видела пустое тело (run 8938e506:
+  // 400 «Название пустое» на создании фильма в posters.e2e)
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: { ...headers, ...(init?.headers as Record<string, string>) },
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
   return (await res.json()) as T;
 }
