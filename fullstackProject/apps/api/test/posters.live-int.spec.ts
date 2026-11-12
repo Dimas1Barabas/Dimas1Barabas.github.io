@@ -10,6 +10,11 @@
 import request from 'supertest';
 import { describeLive, buildLiveApp, type LiveAppContext } from './live-harness';
 
+// Первая S3-запись на свежем SeaweedFS холодная: ensure-бакет + первый
+// putObject будят шлюз/мастера — дефолтных 5 c на тест мало (run 0c5d5d52:
+// таймаут на «бакет создаётся сам», вторая загрузка тем же путём — уже ОК)
+jest.setTimeout(30_000);
+
 describeLive('CineBooking API: постеры на живом SeaweedFS (testcontainers)', () => {
   let h: LiveAppContext;
   let movieId: string;
