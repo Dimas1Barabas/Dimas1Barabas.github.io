@@ -39,7 +39,8 @@
 | `services/ratelimiter-service` | Go, gRPC | «Привратник»: лимиты запросов (token bucket) |
 | `services/analytics-service` | Go, amqp091 | «Аналитик»: агрегаты поведения и броней, витрина insights |
 | `services/outbox-relay` | Go, gRPC + amqp091 + Postgres | «Курьер»: доставка транзакционного outbox в RabbitMQ |
-| Инфраструктура | PostgreSQL 16, Redis 7, RabbitMQ 3.13, nginx | docker compose стенд |
+| `services/flags-service` | Go, gRPC + Postgres | «Суфлёр»: тумблеры фич, процентная раскатка, A/B-эксперименты, аудит |
+| Инфраструктура | PostgreSQL 16, Redis 7, RabbitMQ 3.13, SeaweedFS 4.53 (S3-постеры), nginx | docker compose стенд |
 
 Ключевые бизнес-потоки:
 
