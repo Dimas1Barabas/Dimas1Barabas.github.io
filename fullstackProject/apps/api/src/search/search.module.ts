@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Movie } from '../movies/movie.entity';
 import { MeiliStore } from './meili.store';
 import { searchConfigFromEnv } from './search.config';
+import { SearchController } from './search.controller';
 import { SearchService } from './search.service';
 
 /**
@@ -15,6 +16,7 @@ import { SearchService } from './search.service';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([Movie])],
+  controllers: [SearchController],
   providers: [
     {
       provide: MeiliStore,

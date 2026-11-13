@@ -3,6 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Movie, MovieDto } from '../movies/movie.entity';
 import { MeiliStore, MovieDoc } from './meili.store';
+import { SearchSuggestionDto, docToSuggestion } from './suggestion.dto';
+
+/** откуда посчитаны подсказки: живой движок или фолбэк-запрос в базе */
+export type SearchSource = 'meilisearch' | 'db';
+
+/** % и _ — метасимволы ILIKE: прячем, чтобы искались буквально */
+function escapeLike(q: string): string {
+  return q.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
 
 /** документ подсказки из строки каталога */
 function toMovieDoc(movie: Movie): MovieDoc {
@@ -93,5 +102,58 @@ export class SearchService {
     } catch (err) {
       this.logger.warn(`Переиндексация фильма ${id} не удалась: ${String(err)}`);
     }
+  }
+
+  /**
+   * Подсказки витрины. Живой движок — полнотекстовый поиск Meilisearch
+   * (опечатки, словоформы, ранжирование по названию); его нет или он
+   * молчит — ILIKE-фолбэк в Postgres: витрина поиск не теряет.
+   */
+  async suggest(
+    q: string,
+    limit = 8,
+  ): Promise<{ source: SearchSource; data: SearchSuggestionDto[] }> {
+    const query = q.trim();
+    if (!query) {
+      // пустое — движок не беспокоим, но источник честный
+      return { source: this.store ? 'meilisearch' : 'db', data: [] };
+    }
+    if (this.store) {
+      try {
+        const docs = await this.store.search(query, limit);
+        return { source: 'meilisearch', data: docs.map(docToSuggestion) };
+      } catch (err) {
+        this.logger.warn(
+          `Поиск в движке не удался: ${String(err)} — подсказки на фолбэке`,
+        );
+      }
+    }
+    return { source: 'db', data: await this.searchInDb(query, limit) };
+  }
+
+  /** фолбэк: подстрока в названии/описании/жанре, сверху — с высоким
+   *  рейтингом; тот же контракт подсказок, что у движка */
+  private async searchInDb(
+    q: string,
+    limit: number,
+  ): Promise<SearchSuggestionDto[]> {
+    const rows = await this.movies
+      .createQueryBuilder('movie')
+      .where(
+        'movie.title ILIKE :q OR movie.description ILIKE :q OR movie.genre ILIKE :q',
+        { q: `%${escapeLike(q)}%` },
+      )
+      .orderBy('movie.rating_avg', 'DESC')
+      .addOrderBy('movie.title', 'ASC')
+      .take(limit)
+      .getMany();
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      genre: row.genre,
+      genreIcon: row.genreIcon,
+      hue: row.hue,
+      ratingAvg: row.ratingAvg ?? 0,
+    }));
   }
 }
