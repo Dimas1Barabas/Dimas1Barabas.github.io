@@ -4,8 +4,9 @@ import { useRoute, useRouter } from 'vue-router';
 import BookingModal from '@/features/booking-flow/ui/BookingModal.vue';
 import MovieCard from '@/entities/movie/ui/MovieCard.vue';
 import RecommendedRow from '@/entities/recommendations/ui/RecommendedRow.vue';
+import SearchBar from '@/entities/movie/ui/SearchBar.vue';
 import ReviewModal from '@/features/review/ui/ReviewModal.vue';
-import type { Booking, Movie } from '@/shared/api/types';
+import type { Booking, Movie, SearchSuggestion } from '@/shared/api/types';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
 import { useRecommendationsStore } from '@/entities/recommendations/model/store';
@@ -114,6 +115,17 @@ function onCreated(booking: Booking): void {
 function openReco(movie: Movie): void {
   selectedMovie.value = movie;
 }
+
+/** выбор подсказки поиска: открываем бронирование найденного фильма.
+ *  Фильма может не быть в загруженной афише (админ добавил только что,
+ *  а каталог тянули при заходе) — перечитываем и ищем снова */
+async function onSearchPick(s: SearchSuggestion): Promise<void> {
+  const find = (): Movie | undefined =>
+    moviesStore.movies.find((m) => m.id === s.id);
+  if (!find() && !moviesStore.loading) await moviesStore.load();
+  const movie = find();
+  if (movie) selectedMovie.value = movie;
+}
 </script>
 
 <template>
@@ -136,6 +148,9 @@ function openReco(movie: Movie): void {
       </div>
       <RecommendedRow :entries="recoEntries" @pick="openReco" />
     </section>
+
+    <!-- поиск по афише: подсказки с постер-чипами, выбор — в бронирование -->
+    <SearchBar @pick="onSearchPick" />
 
     <div class="page-head">
       <h2 class="page-title">Сеансы на неделю</h2>

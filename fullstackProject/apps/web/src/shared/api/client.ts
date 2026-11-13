@@ -20,6 +20,7 @@ import type {
   RegisterPayload,
   ResetPasswordPayload,
   Review,
+  SearchEnvelope,
   SeatMap,
   SessionQuote,
   Ticket,
@@ -193,6 +194,13 @@ export const api = {
   health: () => request<HealthResponse>('/health', undefined, 3500),
   movies: () =>
     request<{ source: 'cache' | 'db'; data: Movie[] }>('/movies'),
+  /** подсказки поиска афиши (этап 30): Meilisearch за API; движка нет
+   *  или он молчит — источник в ответе становится db (подстрока в
+   *  Postgres), витрина поиск не теряет */
+  searchMovies: (q: string, limit = 8) =>
+    request<SearchEnvelope>(
+      `/search/movies?q=${encodeURIComponent(q)}&limit=${limit}`,
+    ),
   bookings: () => request<Booking[]>('/bookings'),
   stats: () => request<BookingStats>('/bookings/stats'),
   /** личный кабинет: свои брони по Bearer-токену */

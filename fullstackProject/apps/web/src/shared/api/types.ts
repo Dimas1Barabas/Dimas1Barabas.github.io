@@ -24,6 +24,24 @@ export interface Movie {
   sessions: MovieSession[];
 }
 
+/** подсказка поиска: карточка-миниатюра из GET /search/movies (этап 30) */
+export interface SearchSuggestion {
+  id: string;
+  title: string;
+  genre: string;
+  genreIcon: string;
+  /** оттенок градиентного чипа (HSL hue) */
+  hue: number;
+  ratingAvg: number;
+}
+
+/** ответ поиска: источник честно виден, как у каталога (cache|db);
+ *  db — движка нет или молчит, подсказки посчитаны подстрокой в базе */
+export interface SearchEnvelope {
+  source: 'meilisearch' | 'db';
+  data: SearchSuggestion[];
+}
+
 export type BookingStatus =
   | 'PENDING_PAYMENT'
   | 'PENDING'

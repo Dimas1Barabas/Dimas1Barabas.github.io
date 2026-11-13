@@ -10,6 +10,7 @@ import { useMoviesStore } from '@/entities/movie/model/movies.store';
 import { useRecommendationsStore } from '@/entities/recommendations/model/store';
 import BookingModal from '@/features/booking-flow/ui/BookingModal.vue';
 import ReviewModal from '@/features/review/ui/ReviewModal.vue';
+import SearchBar from '@/entities/movie/ui/SearchBar.vue';
 import HomeView from '@/pages/home/ui/HomeView.vue';
 
 const movie: Movie = {
@@ -313,6 +314,52 @@ describe('HomeView', () => {
 
       expect(wrapper.findAll('.movie-card')).toHaveLength(0);
       expect(wrapper.text()).toContain('В этот день сеансов нет');
+    });
+  });
+
+  describe('поиск афиши (этап 30)', () => {
+    it('выбор подсказки открывает модалку бронирования', async () => {
+      const { pinia, moviesStore } = setup();
+      moviesStore.movies = [movie];
+      moviesStore.search = vi.fn(); // в этом кейсе бар не ищет сам
+
+      const wrapper = mountHome(pinia);
+      expect(wrapper.findComponent(BookingModal).props('movie')).toBeNull();
+
+      wrapper.findComponent(SearchBar).vm.$emit('pick', {
+        id: movie.id,
+        title: movie.title,
+        genre: movie.genre,
+        genreIcon: movie.genreIcon,
+        hue: movie.hue,
+        ratingAvg: movie.ratingAvg,
+      });
+      await nextTick();
+
+      expect(wrapper.findComponent(BookingModal).props('movie')).toEqual(movie);
+    });
+
+    it('подсказка фильма вне загруженной афиши — каталог перечитывается', async () => {
+      const { pinia, moviesStore } = setup();
+      moviesStore.movies = [];
+      const fresh: Movie = { ...movie, id: 'm-fresh', title: 'Только что добавленный' };
+      moviesStore.load = vi.fn(async () => {
+        moviesStore.movies = [fresh];
+      });
+
+      const wrapper = mountHome(pinia);
+      wrapper.findComponent(SearchBar).vm.$emit('pick', {
+        id: fresh.id,
+        title: fresh.title,
+        genre: fresh.genre,
+        genreIcon: fresh.genreIcon,
+        hue: fresh.hue,
+        ratingAvg: fresh.ratingAvg,
+      });
+      await flushPromises();
+
+      expect(moviesStore.load).toHaveBeenCalled();
+      expect(wrapper.findComponent(BookingModal).props('movie')).toEqual(fresh);
     });
   });
 });

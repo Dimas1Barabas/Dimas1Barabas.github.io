@@ -4,6 +4,7 @@ import { DEMO_TEST_BUILD, demoEngine } from '@/shared/api/demo-engine';
 import type {
   CreateMoviePayload,
   Movie,
+  SearchEnvelope,
   SeatFrame,
   SeatMap,
   SessionQuote,
@@ -61,6 +62,13 @@ export const useMoviesStore = defineStore('movies', {
       } finally {
         this.loading = false;
       }
+    },
+
+    /** подсказки поиска афиши (этап 30): live — Meilisearch за API;
+     *  движка нет или молчит — источник в ответе db, подсказки из
+     *  подстроки в Postgres, витрина поиск не теряет */
+    async search(q: string, limit = 8): Promise<SearchEnvelope> {
+      return api.searchMovies(q, limit);
     },
 
     /** Занятость мест не кэшируется — гонка за место решается на бэкенде */
