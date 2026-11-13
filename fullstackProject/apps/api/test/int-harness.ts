@@ -47,6 +47,7 @@ import { PricingClient } from '../src/pricing/pricing.client';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
 import { PostersService } from '../src/posters/posters.service';
+import { SearchService } from '../src/search/search.service';
 import { setupHelmet } from '../src/security/helmet';
 import { User } from '../src/users/user.entity';
 import { WaitlistEntry } from '../src/waitlist/waitlist.entity';
@@ -585,6 +586,12 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
       FeatureFlagGuard,
       // постеры фильмов: контроллер /movies/:id/poster ходит в мок-бакет
       { provide: PostersService, useValue: posters },
+      // поиск (этап 30): MoviesService после create дергает индексацию
+      // подсказок — мок, int-стенд без движка
+      {
+        provide: SearchService,
+        useValue: { indexMovie: jest.fn(async () => undefined) },
+      },
       // как в AppModule: все эндпоинты за JWT, витрина — @Public(),
       // следом RolesGuard сверяет @Roles(...) с ролью из токена
       { provide: APP_GUARD, useClass: JwtAuthGuard },

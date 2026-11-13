@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Booking } from '../bookings/booking.entity';
 import { Movie } from '../movies/movie.entity';
 import { OutboxModule } from '../outbox/outbox.module';
+import { SearchModule } from '../search/search.module';
 import { Review } from './review.entity';
 import { ReviewsController } from './reviews.controller';
 import { ReviewsService } from './reviews.service';
@@ -14,6 +15,9 @@ import { ReviewsService } from './reviews.service';
     TypeOrmModule.forFeature([Review, Movie, Booking]),
     // OutboxModule — будильник Курьера после коммита отзыва
     OutboxModule,
+    // SearchModule — рейтинг в подсказках поиска меняется вместе
+    // с отзывом (этап 30)
+    SearchModule,
   ],
   controllers: [ReviewsController],
   providers: [ReviewsService],

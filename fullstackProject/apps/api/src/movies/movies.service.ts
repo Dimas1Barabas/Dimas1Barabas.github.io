@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RedisService } from '../redis/redis.service';
+import { SearchService } from '../search/search.service';
 import { Movie, MovieDto, toMovieDto } from './movie.entity';
 import { MOVIE_SEEDS } from './movie.seeds';
 
@@ -18,6 +19,9 @@ export class MoviesService implements OnModuleInit {
   constructor(
     @InjectRepository(Movie) private readonly movies: Repository<Movie>,
     private readonly redis: RedisService,
+    // поиск (этап 30): новый фильм уходит в индекс подсказок сразу;
+    // движок молчит — SearchService глотает ворнингом, афиша не страдает
+    private readonly search: SearchService,
   ) {}
 
   /** При первом старте с пустой БД — сеем стартовые фильмы (с сеансами) */
@@ -90,6 +94,9 @@ export class MoviesService implements OnModuleInit {
       }),
     );
     await this.invalidate(movie.id);
+    // подсказки поиска узнают о фильме в тот же запрос — поиск Meilisearch
+    // идёт до ответа, но его неудача не роняет создание (деградация)
+    await this.search.indexMovie(toMovieDto(movie));
     return toMovieDto(movie);
   }
 

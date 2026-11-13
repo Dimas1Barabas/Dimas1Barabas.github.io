@@ -12,6 +12,7 @@ import { OutboxMessage } from '../outbox/outbox-message.entity';
 import { OutboxRelayClient } from '../outbox/outbox-relay.client';
 import { Movie } from '../movies/movie.entity';
 import { MOVIES_KEY, movieKey } from '../movies/movies.service';
+import { SearchService } from '../search/search.service';
 import { RedisService } from '../redis/redis.service';
 import { REDIS_CLIENT } from '../redis/redis.tokens';
 import { CreateReviewDto } from './dto/create-review.dto';
@@ -126,6 +127,8 @@ describe('ReviewsService (unit)', () => {
         { provide: getRepositoryToken(Movie), useValue: moviesRepo },
         { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
         { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
+        // поиск (этап 30): отзыв меняет рейтинг — переиндексация моком
+        { provide: SearchService, useValue: { reindexMovie: jest.fn() } },
       ],
     }).compile();
 

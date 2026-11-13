@@ -14,6 +14,7 @@ import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { Movie } from '../src/movies/movie.entity';
 import { MoviesController } from '../src/movies/movies.controller';
+import { SearchService } from '../src/search/search.service';
 import { MoviesService } from '../src/movies/movies.service';
 import { PostersService } from '../src/posters/posters.service';
 import { RedisService } from '../src/redis/redis.service';
@@ -214,6 +215,11 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
         // poster-эндпоинты MoviesController: спека отзывов их не зовёт —
         // пустышка, лишь бы DI собрал контроллер
         { provide: PostersService, useValue: {} },
+        // поиск (этап 30): индексация после create/отзыва — мок
+        {
+          provide: SearchService,
+          useValue: { indexMovie: jest.fn(), reindexMovie: jest.fn() },
+        },
         ReviewsService,
         RedisService,
         { provide: REDIS_CLIENT, useValue: redisFake(redisStore) },

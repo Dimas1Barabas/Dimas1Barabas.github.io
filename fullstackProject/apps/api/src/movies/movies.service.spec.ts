@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { RedisService } from '../redis/redis.service';
 import { REDIS_CLIENT } from '../redis/redis.tokens';
+import { SearchService } from '../search/search.service';
 import { Movie } from './movie.entity';
 import { MoviesService } from './movies.service';
 import { Session, toSessionDtos } from './session.entity';
@@ -66,11 +67,15 @@ function makeProviders(
       },
     },
     { provide: getRepositoryToken(Movie), useValue: repo },
+    // поиск (этап 30): create дергает индексацию подсказок — шпион
+    { provide: SearchService, useValue: { indexMovie: jest.fn(async () => undefined) } },
   ];
 }
 
 describe('MoviesService (unit)', () => {
   let service: MoviesService;
+  /** нужен и тестам: create-кейс проверяет шпион индексации поиска */
+  let moduleRef: import('@nestjs/testing').TestingModule;
   let repo: {
     count: jest.Mock;
     find: jest.Mock;
@@ -107,7 +112,7 @@ describe('MoviesService (unit)', () => {
     redisStore = new Map();
     redisGet = jest.fn(async (key: string) => redisStore.get(key) ?? null);
 
-    const moduleRef = await Test.createTestingModule({
+    moduleRef = await Test.createTestingModule({
       providers: makeProviders(repo, redisStore, redisGet),
     }).compile();
 
@@ -215,6 +220,15 @@ describe('MoviesService (unit)', () => {
       hall: 'IMAX',
     });
     expect(redisStore.has('movies:all:v3')).toBe(false);
+    // новый фильм уходит в индекс подсказок тем же вызовом (этап 30)
+    const search = moduleRef.get(SearchService) as unknown as {
+      indexMovie: jest.Mock;
+    };
+    expect(search.indexMovie).toHaveBeenCalledTimes(1);
+    expect(search.indexMovie.mock.calls[0][0]).toMatchObject({
+      title: 'Новый',
+      genre: 'тест',
+    });
   });
 });
 

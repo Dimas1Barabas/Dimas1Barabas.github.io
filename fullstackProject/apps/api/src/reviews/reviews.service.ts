@@ -16,6 +16,7 @@ import {
   RecommendationReviewEvent,
 } from '../recommendations/recommendation-events';
 import { RedisService } from '../redis/redis.service';
+import { SearchService } from '../search/search.service';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { Review, ReviewDto, toReviewDto } from './review.entity';
 
@@ -44,6 +45,9 @@ export class ReviewsService {
     private readonly redis: RedisService,
     // будильник Курьера: сигнал отзыва закоммичен — доставка без тика
     private readonly outboxRelay: OutboxRelayClient,
+    // поиск (этап 30): рейтинг в подсказках меняется вместе с отзывом;
+    // движок молчит — SearchService глотает ворнингом, отзыв не страдает
+    private readonly search: SearchService,
   ) {}
 
   /** отзывы фильма, свежие сверху; автор нужен для имени в DTO */
@@ -123,6 +127,8 @@ export class ReviewsService {
     });
 
     await this.invalidate(movieId);
+    // подсказки поиска: рейтинг фильма только что изменился
+    await this.search.reindexMovie(movieId);
     // отзыв и сигнал КиноСоветнику закоммичены — будим Курьера
     this.outboxRelay.poke();
 
@@ -149,6 +155,8 @@ export class ReviewsService {
     });
 
     await this.invalidate(movieId);
+    // рейтинг пересчитан — обновляем документ подсказки
+    await this.search.reindexMovie(movieId);
     this.logger.log(
       `Удалён отзыв ${id} (фильм ${movieId}, ${user.email}${user.role === 'admin' ? ', админ' : ''})`,
     );
