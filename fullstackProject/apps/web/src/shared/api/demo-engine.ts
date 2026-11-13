@@ -16,6 +16,7 @@ import type {
   FlagVerdict,
   LoginResult,
   Movie,
+  SearchEnvelope,
   MovieSession,
   Promo,
   PromoPreview,
@@ -794,6 +795,29 @@ class DemoEngine {
     // свежие идентичности заставляют карточки увидеть новый рейтинг
     // (сеансы не мутируются, ими можно делиться)
     return { source, data: DEMO_MOVIES.map((m) => ({ ...m })) };
+  }
+
+  /** подсказки поиска афиши (этап 30): зеркало suggest API — подстрока
+   *  в названии/описании/жанре без учёта регистра, сверху высокий
+   *  рейтинг. Источник притворяется живым движком: бейджа «по подстроке»
+   *  в демо нет, как нет и деградаций Meilisearch */
+  searchMovies(q: string, limit = 8): SearchEnvelope {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return { source: 'meilisearch', data: [] };
+    const data = DEMO_MOVIES.filter((m) =>
+      `${m.title} ${m.description} ${m.genre}`.toLowerCase().includes(needle),
+    )
+      .sort((a, b) => b.ratingAvg - a.ratingAvg || a.title.localeCompare(b.title))
+      .slice(0, limit)
+      .map((m) => ({
+        id: m.id,
+        title: m.title,
+        genre: m.genre,
+        genreIcon: m.genreIcon,
+        hue: m.hue,
+        ratingAvg: m.ratingAvg,
+      }));
+    return { source: 'meilisearch', data };
   }
 
   /** сеанс по id: {фильм, сеанс} или null */

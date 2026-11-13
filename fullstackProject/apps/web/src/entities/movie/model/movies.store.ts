@@ -64,10 +64,15 @@ export const useMoviesStore = defineStore('movies', {
       }
     },
 
-    /** подсказки поиска афиши (этап 30): live — Meilisearch за API;
-     *  движка нет или молчит — источник в ответе db, подсказки из
-     *  подстроки в Postgres, витрина поиск не теряет */
+    /** подсказки поиска афиши (этап 30): live — Meilisearch за API
+     *  (движка нет/молчит — источник в ответе db, подсказки из подстроки
+     *  в Postgres, витрина поиск не теряет), демо — зеркало движка
+     *  по локальному каталогу */
     async search(q: string, limit = 8): Promise<SearchEnvelope> {
+      const app = useAppStore();
+      if (app.mode === 'demo') {
+        return demoEngine.searchMovies(q, limit);
+      }
       return api.searchMovies(q, limit);
     },
 
