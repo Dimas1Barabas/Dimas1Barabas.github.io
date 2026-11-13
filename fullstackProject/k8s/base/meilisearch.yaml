@@ -1,0 +1,76 @@
+# Полнотекстовый поиск афиши (этап 30): Meilisearch — зеркало
+# compose-сервиса (тот же образ, production-режим, мастер-ключ).
+# Индекс movies_v1 пересобирает API при старте; ключи стенда —
+# dev-значения в открытом виде, как у seaweedfs/s3.json (prod-overlay
+# подменит). Данные индекса — PVC StatefulSet: стабильное имя пода,
+# переживает пересоздание (как postgres).
+apiVersion: v1
+kind: Service
+metadata:
+  # имя = DNS-имя в кластере: meilisearch:7700 — MEILI_HOST для API
+  name: meilisearch
+spec:
+  selector:
+    app: meilisearch
+  ports:
+    - name: http
+      port: 7700
+      targetPort: 7700
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: meilisearch
+spec:
+  serviceName: meilisearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app: meilisearch
+  template:
+    metadata:
+      labels:
+        app: meilisearch
+    spec:
+      containers:
+        - name: meilisearch
+          image: getmeili/meilisearch:v1.56.2
+          env:
+            # production требует мастер-ключ от 16 байт; /health
+            # остаётся публичным — его и трогают пробы/ожидатели
+            - name: MEILI_ENV
+              value: production
+            - name: MEILI_MASTER_KEY
+              value: cine-meili-master-secret
+            - name: MEILI_NO_ANALYTICS
+              value: 'true'
+          ports:
+            - containerPort: 7700
+          # готовность движка: /health публичный и в production-режиме;
+          # wget внутри alpine-образа есть (busybox)
+          readinessProbe:
+            exec:
+              command: ['sh', '-c', 'wget -qO- http://localhost:7700/health >/dev/null 2>&1']
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: meilidata
+              mountPath: /meili_data
+  volumeClaimTemplates:
+    - metadata:
+        name: meilidata
+      spec:
+        accessModes: ['ReadWriteOnce']
+        # дефолтный класс kind (hostPath на ноде); в облаке подменится
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 1Gi

@@ -21,6 +21,7 @@ resources:
   - redis.yaml
   - rabbitmq.yaml
   - seaweedfs.yaml
+  - meilisearch.yaml
   - api.yaml
   - worker.yaml
   - notification.yaml
@@ -43,3 +44,6 @@ secretGenerator:
       # S3-постеры (этап 29): ключи identity из ConfigMap seaweedfs
       - S3_ACCESS_KEY=cine
       - S3_SECRET_KEY=cine-poster-secret
+      # Полнотекстовый поиск (этап 30): тот же мастер-ключ, что у
+      # StatefulSet meilisearch (MEILI_MASTER_KEY в его манифесте)
+      - MEILI_API_KEY=cine-meili-master-secret

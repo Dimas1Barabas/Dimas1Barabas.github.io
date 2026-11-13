@@ -564,7 +564,7 @@ jobs:
       # список) и перекладываем в ноду вместе с прикладными
       - name: docker pull (инфра-образы)
         run: |
-          for image in postgres:16-alpine redis:7-alpine rabbitmq:3.13-management-alpine chrislusf/seaweedfs:4.53; do
+          for image in postgres:16-alpine redis:7-alpine rabbitmq:3.13-management-alpine chrislusf/seaweedfs:4.53 getmeili/meilisearch:v1.56.2; do
             docker pull "$image"
           done
 
@@ -591,7 +591,7 @@ jobs:
               cine-booking-pricing:kind-ci cine-booking-ratelimiter:kind-ci \
               cine-booking-outbox-relay:kind-ci \
               postgres:16-alpine redis:7-alpine rabbitmq:3.13-management-alpine \
-              chrislusf/seaweedfs:4.53 \
+              chrislusf/seaweedfs:4.53 getmeili/meilisearch:v1.56.2 \
               --name cine; then
               echo "kind load — ok (попытка $attempt)"
               exit 0

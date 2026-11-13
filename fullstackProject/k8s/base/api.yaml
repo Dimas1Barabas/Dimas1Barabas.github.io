@@ -52,6 +52,11 @@ spec:
         - name: wait-seaweedfs
           image: chrislusf/seaweedfs:4.53
           command: ['sh', '-c', 'until wget -qO- http://seaweedfs:9333/readyz >/dev/null 2>&1; do echo ждём seaweedfs; sleep 2; done']
+        # поиск: движок отвечает /health — можно индексировать афишу;
+        # образ зависимости (alpine, wget внутри)
+        - name: wait-meilisearch
+          image: getmeili/meilisearch:v1.56.2
+          command: ['sh', '-c', 'until wget -qO- http://meilisearch:7700/health >/dev/null 2>&1; do echo ждём meilisearch; sleep 2; done']
       containers:
         - name: api
           image: cine-booking-api
