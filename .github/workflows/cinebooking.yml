@@ -365,7 +365,7 @@ jobs:
           docker compose up --build --wait --wait-timeout 300 -d \
             postgres redis rabbitmq \
             worker notification recommendation reminder pricing ratelimiter flags analytics \
-            outbox-relay api
+            outbox-relay meilisearch api
         working-directory: fullstackProject
 
       # страховка на случай, если --wait пропустил (healthcheck-флейк):
