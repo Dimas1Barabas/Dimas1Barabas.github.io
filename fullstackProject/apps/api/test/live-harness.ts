@@ -1,7 +1,7 @@
 /**
  * Live-int harness: приложение целиком — как в проде — против одноразовых
  * контейнеров testcontainers (PostgreSQL + Redis + RabbitMQ + SeaweedFS —
- * S3-постеры этапа 29). Зеркало
+ * S3-постеры этапа 29; Meilisearch — поиск этапа 30). Зеркало
  * Go-паттерна из 15-A: TESTCONTAINERS=1 (CI) — контейнеры поднимаются,
  * локально переменную не ставим — спеки честно скипаются (describeLive),
  * машина разработчика контейнеры не трогает.
@@ -38,6 +38,7 @@ import { RecommendationsClient } from '../src/recommendations/recommendations.cl
 import { RemindersClient } from '../src/reminders/reminders.client';
 import { MoviesService } from '../src/movies/movies.service';
 import { UsersService } from '../src/users/users.service';
+import { SearchService } from '../src/search/search.service';
 
 /** гейт по образцу Go: живой прогон делает CI-робот, локально — скип */
 export const liveEnabled = process.env.TESTCONTAINERS === '1';
@@ -52,6 +53,8 @@ export interface LiveInfra {
   amqpUrl: string;
   /** http://host:mapped-port S3-шлюза SeaweedFS — в S3_ENDPOINT (этап 29) */
   s3Endpoint: string;
+  /** http://host:mapped-port Meilisearch — в MEILI_HOST (этап 30) */
+  meiliUrl: string;
 }
 
 declare global {
@@ -100,11 +103,23 @@ async function startInfra(): Promise<LiveInfra> {
     .withExposedPorts(8333, 9333)
     .withWaitStrategy(Wait.forHttp('/readyz', 9333));
 
-  const [pg, redis, rabbit, s3] = await Promise.all([
+  // Meilisearch — зеркало compose-сервиса: тот же образ, production-режим
+  // с мастер-ключом (этап 30); готовность — публичный /health без ключа
+  const meilisearch = new GenericContainer('getmeili/meilisearch:v1.56.2')
+    .withEnvironment({
+      MEILI_ENV: 'production',
+      MEILI_MASTER_KEY: 'cine-meili-master-secret',
+      MEILI_NO_ANALYTICS: 'true',
+    })
+    .withExposedPorts(7700)
+    .withWaitStrategy(Wait.forHttp('/health', 7700));
+
+  const [pg, redis, rabbit, s3, meili] = await Promise.all([
     new PostgreSqlContainer('postgres:16-alpine').withDatabase('cine').start(),
     new RedisContainer('redis:7-alpine').start(),
     new RabbitMQContainer('rabbitmq:3.13-alpine').start(),
     seaweedfs.start(),
+    meilisearch.start(),
   ]);
 
   const infra: LiveInfra = {
@@ -112,10 +127,11 @@ async function startInfra(): Promise<LiveInfra> {
     redisUrl: redis.getConnectionUrl(),
     amqpUrl: rabbit.getAmqpUrl(),
     s3Endpoint: `http://${s3.getHost()}:${s3.getMappedPort(8333)}`,
+    meiliUrl: `http://${meili.getHost()}:${meili.getMappedPort(7700)}`,
   };
   // ДО динамического импорта AppModule: uri-константы фиксируются при
   // загрузке модулей (см. комментарий в шапке). S3-переменные читает
-  // PostersModule на сборке DI — тоже до импорта
+  // PostersModule на сборке DI — тоже до импорта; MEILI_* — SearchModule
   process.env.DATABASE_URL = infra.pgUri;
   process.env.REDIS_URL = infra.redisUrl;
   process.env.RABBITMQ_URL = infra.amqpUrl;
@@ -123,6 +139,8 @@ async function startInfra(): Promise<LiveInfra> {
   process.env.S3_ACCESS_KEY = 'cine';
   process.env.S3_SECRET_KEY = 'cine-poster-secret';
   process.env.S3_BUCKET = 'cine-posters';
+  process.env.MEILI_HOST = infra.meiliUrl;
+  process.env.MEILI_API_KEY = 'cine-meili-master-secret';
   return infra;
 }
 
@@ -257,6 +275,10 @@ export async function buildLiveApp(): Promise<LiveAppContext> {
   const usersService = app.get(UsersService);
   await moviesService.onModuleInit(); // свежий каталог для этого файла
   await usersService.onModuleInit(); // свежий админ для этого файла
+  // TRUNCATE стёр индексированный на app.init() каталог, пересев создал
+  // фильмы с новыми uuid — пересобираем индекс (идемпотент: delete-all+add,
+  // призраков не остаётся). Без движка (null-стор) — тихий no-op
+  await app.get(SearchService).onApplicationBootstrap();
 
   const bearer = await registerAndLogin(app, 'a@live.test', 'Анна Живая');
   const bearerB = await registerAndLogin(app, 'b@live.test', 'Борис Чужой');

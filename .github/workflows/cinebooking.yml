@@ -157,7 +157,7 @@ jobs:
   # --runInBand зашит в скрипте: одна тройка контейнеров на все
   # спек-файлы (singleton в globalThis).
   api-containers:
-    name: api — live-int (testcontainers PG+Rabbit+Redis)
+    name: api — live-int (testcontainers PG+Rabbit+Redis+S3+Meili)
     # ubuntu-latest с 19.10.2026 = Ubuntu 26 (новый docker/containerd);
     # testcontainers на нём падал (run 294) — держим 24.04
     runs-on: ubuntu-24.04
