@@ -408,10 +408,30 @@ jobs:
           fi
         working-directory: fullstackProject/apps/api
 
-      # посмертные логи стенда: на упавшей спеке видно, что делали сервисы
+      # посмертные логи стенда: на упавшей спеке видно, что делали сервисы.
+      # Meilisearch — подозреваемый №1 красных прогонов этапа 30: его
+      # диагноз (пробы адресов внутри контейнера, Health.Log со stderr
+      # wget, хвост логов движка) уходит workflow-аннотацией — она видна
+      # на странице прогона анонимно, логи шага требуют входа
       - name: compose logs (только при падении)
         if: failure()
-        run: docker compose logs --tail 300 api worker notification recommendation reminder pricing ratelimiter flags outbox-relay
+        run: |
+          if docker ps -a --format '{{.Names}}' | grep -q '^cine-booking-meilisearch-1$'; then
+            msg="$(
+              echo 'СТАТУС:'
+              docker ps -a --filter name=cine-booking-meilisearch-1 --format '{{.Status}}'
+              echo 'ПРОБЫ ВНУТРИ КОНТЕЙНЕРА (0 = прошёл):'
+              docker exec cine-booking-meilisearch-1 sh -c \
+                'wget -T 3 -qO- http://127.0.0.1:7700/health >/dev/null 2>&1; echo "127.0.0.1:$?"; wget -T 3 -qO- http://localhost:7700/health >/dev/null 2>&1; echo "localhost:$?"; wget -T 3 -qO- http://[::1]:7700/health >/dev/null 2>&1; echo "[::1]:$?"' || true
+              echo 'HEALTH.LOG (последние пробы, там stderr wget):'
+              docker inspect --format '{{json .State.Health.Log}}' cine-booking-meilisearch-1 | tail -c 1200 || true
+              echo 'ЛОГИ ДВИЖКА:'
+              docker compose logs --tail 20 meilisearch || true
+            )"
+            encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' | head -c 3500)
+            echo "::error::title=meilisearch diagnose (compose-e2e)::$encoded"
+          fi
+          docker compose logs --tail 300 api worker notification recommendation reminder pricing ratelimiter flags outbox-relay meilisearch
         working-directory: fullstackProject
 
   # Хаос-уровень (этап 24): событийный контур стенда, но между клиентами
@@ -460,6 +480,13 @@ jobs:
             msg="$(
               echo 'COMPOSE PS:'
               docker compose --file docker-compose.yml --file docker-compose.chaos.yml ps -a || true
+              echo 'MEILI HEALTH.LOG (последние пробы, там stderr wget):'
+              docker inspect --format '{{json .State.Health.Log}}' cine-booking-meilisearch-1 | tail -c 1000 || true
+              echo 'ПРОБЫ ВНУТРИ КОНТЕЙНЕРА (0 = прошёл):'
+              docker exec cine-booking-meilisearch-1 sh -c \
+                'wget -T 3 -qO- http://127.0.0.1:7700/health >/dev/null 2>&1; echo "127.0.0.1:$?"; wget -T 3 -qO- http://localhost:7700/health >/dev/null 2>&1; echo "localhost:$?"' || true
+              echo '--- LOGS meilisearch ---'
+              docker compose --file docker-compose.yml --file docker-compose.chaos.yml logs --tail 20 meilisearch || true
               echo '--- LOGS toxiproxy ---'
               docker compose --file docker-compose.yml --file docker-compose.chaos.yml logs --tail 40 toxiproxy || true
               echo '--- LOGS api ---'
@@ -515,7 +542,7 @@ jobs:
         if: failure()
         run: |
           docker compose --file docker-compose.yml --file docker-compose.chaos.yml \
-            logs --tail 300 api worker outbox-relay notification toxiproxy
+            logs --tail 300 api worker outbox-relay notification toxiproxy meilisearch
         working-directory: fullstackProject
 
   # Kubernetes-уровень (этап 21): тот же стенд, что в compose-e2e, но
@@ -846,6 +873,18 @@ jobs:
             kubectl -n cine-booking get pvc || true
             echo '```'
             echo
+            # meilisearch-0 — подозреваемый №1 этапа 30: readinessProbe
+            # не даёт поду стать ready, api висит в PodInitializing.
+            # Логи движка + пробы адресов внутри пода: /health публичный,
+            # exec работает и по not-ready поду
+            echo "### meilisearch-0"
+            echo '```'
+            kubectl -n cine-booking logs meilisearch-0 --tail=40 || true
+            echo '--- пробы внутри пода (0 = прошёл) ---'
+            kubectl -n cine-booking exec meilisearch-0 -- sh -c \
+              'wget -T 3 -qO- http://127.0.0.1:7700/health >/dev/null 2>&1; echo 127.0.0.1:$?; wget -T 3 -qO- http://localhost:7700/health >/dev/null 2>&1; echo localhost:$?' 2>/dev/null || true
+            echo '```'
+            echo
             echo "### gateway"
             echo '```'
             kubectl -n cine-booking describe gateway cine || true
@@ -865,6 +904,13 @@ jobs:
           # прогона анонимно (summary и логи — только владельцу). Переводы
           # строк в аннотации кодируются %0A
           snap="$(
+            # meili — первым: при переполнении лимита аннотации (4000)
+            # хвост обрезается, а подозреваемый №1 должен уцелеть
+            echo 'MEILI PROBE (0 = прошёл):'
+            kubectl -n cine-booking exec meilisearch-0 -- sh -c \
+              'wget -T 3 -qO- http://127.0.0.1:7700/health >/dev/null 2>&1; echo 127.0.0.1:$?; wget -T 3 -qO- http://localhost:7700/health >/dev/null 2>&1; echo localhost:$?' 2>/dev/null || true
+            echo 'MEILI LOGS:'
+            kubectl -n cine-booking logs meilisearch-0 --tail=15 2>/dev/null || true
             echo 'PODS:'
             kubectl -n cine-booking get pods --no-headers -o custom-columns='NAME:.metadata.name,READY:.status.containerStatuses[*].ready,RESTARTS:.status.containerStatuses[*].restartCount,REASON:.status.containerStatuses[*].state.waiting.reason' 2>/dev/null
             echo 'PVC:'
@@ -880,7 +926,7 @@ jobs:
           kubectl -n cine-booking get events --sort-by=.lastTimestamp | tail -40 || true
           # инфраструктура: при упавшей e2e-спеке контекст часто в логах
           # брокера/базы (TTL-очередь, блокировки), а не в приложениях
-          for inf in sts/postgres deploy/redis deploy/rabbitmq; do
+          for inf in sts/postgres deploy/redis deploy/rabbitmq sts/seaweedfs sts/meilisearch; do
             echo "--- logs $inf ---"
             kubectl -n cine-booking logs "$inf" --tail=50 || true
           done
