@@ -31,11 +31,17 @@ async function insights(): Promise<Insights | null> {
   return body.available ? (body.data ?? null) : null;
 }
 
-/** ждём появления наших следов: консьюмер асинхронный, стенд общий */
-async function waitFor<T>(probe: () => T | undefined, ms = 20_000): Promise<T> {
+/** ждём появления наших следов: консьюмер асинхронный, стенд общий.
+ *  probe может быть и синхронным, и асинхронным — await перед проверкой:
+ *  без него промис «найден» всегда (объект же) и waitFor вырождался
+ *  в один опрос без ретраев — 20-секундного окна не существовало */
+async function waitFor<T>(
+  probe: () => T | undefined | Promise<T | undefined>,
+  ms = 20_000,
+): Promise<T> {
   const deadline = Date.now() + ms;
   for (;;) {
-    const found = probe();
+    const found = await probe();
     if (found !== undefined) return found;
     if (Date.now() > deadline) throw new Error('Аналитик не отразил события за 20 с');
     await new Promise((resolve) => setTimeout(resolve, 1000));
