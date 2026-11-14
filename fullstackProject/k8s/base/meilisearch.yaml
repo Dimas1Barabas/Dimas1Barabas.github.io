@@ -47,10 +47,13 @@ spec:
           ports:
             - containerPort: 7700
           # готовность движка: /health публичный и в production-режиме;
-          # wget внутри alpine-образа есть (busybox)
+          # адрес 127.0.0.1, не localhost — meili слушает только IPv4,
+          # а ::1 резолвится первым и busybox-wget без фолбэка падает
+          # (зеркало compose-healthcheck). stderr не глушим: реальная
+          # причина отказа уйдёт в события пода (describe их покажет)
           readinessProbe:
             exec:
-              command: ['sh', '-c', 'wget -qO- http://localhost:7700/health >/dev/null 2>&1']
+              command: ['sh', '-c', 'wget -qO- http://127.0.0.1:7700/health']
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 12

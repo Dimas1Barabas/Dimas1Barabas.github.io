@@ -389,10 +389,15 @@ services:
       - meilidata:/meili_data
     ports:
       - '17700:7700' # HTTP API: поиск/документы; / — мини-дашборд
-    # /health публичный и в production-режиме; curl в alpine-образе есть
-    # (ставится Dockerfile'ом meilisearch, busybox-wget тоже есть)
+    # /health публичный и в production-режиме; busybox-wget в образе есть.
+    # Адрес — строго 127.0.0.1, не localhost: meili слушает 0.0.0.0 (только
+    # IPv4), а localhost в alpine резолвится в ::1 первым — busybox-wget
+    # не фолбэчит на следующий адрес, проба падает с первой попытки
+    # (Node/Go-сервисы биндят dual-stack, им localhost не мешает).
+    # Вывод пробы не глушим: stderr wget остаётся в Health.Log — его
+    # читает диагностика CI, если стенд всё-таки покраснеет
     healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- http://localhost:7700/health >/dev/null 2>&1 || exit 1']
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:7700/health']
       interval: 5s
       timeout: 3s
       retries: 24
