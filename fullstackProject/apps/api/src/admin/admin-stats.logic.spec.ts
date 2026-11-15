@@ -5,6 +5,7 @@ import {
   countByStatus,
   dayKey,
   ratingAgg,
+  referralStats,
   revenueByDay,
   topMovies,
   totals,
@@ -254,4 +255,38 @@ it('BookingStatus принимает все значения статусной 
     'CANCELLED',
   ];
   expect(countByStatus(statuses.map((status) => fact({ status })))).toBeTruthy();
+});
+
+describe('referralStats', () => {
+  it('конверсия приглашений в первую оплату и сумма начислений', () => {
+    expect(
+      referralStats(
+        [{ referralRewardedAt: new Date() }, { referralRewardedAt: null }],
+        [300, 100],
+      ),
+    ).toEqual({ invited: 2, paid: 1, paidPct: 50, paidBonuses: 400 });
+  });
+
+  it('без приглашённых — нули, без деления на ноль', () => {
+    expect(referralStats([], [])).toEqual({
+      invited: 0,
+      paid: 0,
+      paidPct: 0,
+      paidBonuses: 0,
+    });
+  });
+
+  it('процент округляется до целого', () => {
+    // 1 из 3 — 33.33… → 33
+    expect(
+      referralStats(
+        [
+          { referralRewardedAt: new Date() },
+          { referralRewardedAt: null },
+          { referralRewardedAt: null },
+        ],
+        [],
+      ).paidPct,
+    ).toBe(33);
+  });
 });

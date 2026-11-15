@@ -116,6 +116,30 @@ export class AdminDayRevenueDto {
   revenueRub!: number;
 }
 
+/** реферальный срез: как программа приглашений превращается в оплаты */
+export class AdminReferralsDto {
+  @ApiProperty({ example: 14, description: 'юзеров, пришедших по чужому коду' })
+  invited!: number;
+
+  @ApiProperty({
+    example: 6,
+    description: 'из них оплатили первую бронь — бонус начислен',
+  })
+  paid!: number;
+
+  @ApiProperty({
+    example: 43,
+    description: 'конверсия приглашений в первую оплату, % (0 без приглашённых)',
+  })
+  paidPct!: number;
+
+  @ApiProperty({
+    example: 2400,
+    description: 'реферальных бонусов начислено (обе стороны, до гашений)',
+  })
+  paidBonuses!: number;
+}
+
 export class AdminStatsDto {
   @ApiProperty({ type: AdminTotalsDto })
   totals!: AdminTotalsDto;
@@ -137,6 +161,9 @@ export class AdminStatsDto {
     description: 'выручка по дням: 14 дней включая сегодня (пустые — нули)',
   })
   revenueByDay!: AdminDayRevenueDto[];
+
+  @ApiProperty({ type: AdminReferralsDto, description: 'реферальный срез (этап 31)' })
+  referrals!: AdminReferralsDto;
 }
 
 /** конверт как у каталога: источник ответа виден фронту бейджем «из кэша» */

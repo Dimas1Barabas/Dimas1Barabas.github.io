@@ -1,25 +1,29 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThanOrEqual, Repository } from 'typeorm';
+import { In, IsNull, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import { Booking } from '../bookings/booking.entity';
 import { SeatOccupancy } from '../bookings/seat-occupancy.entity';
+import { BonusTransaction } from '../bonus/bonus-transaction.entity';
 import { Movie } from '../movies/movie.entity';
 import { Session } from '../movies/session.entity';
 import { Review } from '../reviews/review.entity';
 import { RedisService } from '../redis/redis.service';
+import { User } from '../users/user.entity';
 import type { AdminStatsDto, AdminStatsResultDto } from './dto/admin-stats.dto';
 import {
   countByStatus,
   ratingAgg,
+  referralStats,
   revenueByDay,
   topMovies,
   totals,
   upcomingOccupancy,
 } from './admin-stats.logic';
 
-// v1: первая форма ответа аналитики. При смене формы — бампнуть суффикс,
-// чтобы старые значения не доживали свой TTL в новом коде (как movies:all)
-export const ADMIN_STATS_KEY = 'admin:stats:v1';
+// v2: к v1 добавлен реферальный срез (этап 31). При смене формы —
+// бампнуть суффикс, чтобы старые значения не доживали свой TTL
+// в новом коде (как movies:all)
+export const ADMIN_STATS_KEY = 'admin:stats:v2';
 const ADMIN_STATS_TTL_SEC = 30;
 
 /**
@@ -37,6 +41,9 @@ export class AdminStatsService {
     @InjectRepository(Session) private readonly sessions: Repository<Session>,
     @InjectRepository(Movie) private readonly movies: Repository<Movie>,
     @InjectRepository(Review) private readonly reviews: Repository<Review>,
+    @InjectRepository(User) private readonly users: Repository<User>,
+    @InjectRepository(BonusTransaction)
+    private readonly bonusLedger: Repository<BonusTransaction>,
     private readonly redis: RedisService,
   ) {}
 
@@ -50,18 +57,30 @@ export class AdminStatsService {
   }
 
   private async load(): Promise<AdminStatsDto> {
-    const [bookingRows, occupancyRows, sessionRows, movieRows, reviewRows] =
-      await Promise.all([
-        this.bookings.find(),
-        this.occupancy.find(),
-        this.sessions.find({
-          where: { startsAt: MoreThanOrEqual(new Date()) },
-          relations: { movie: true },
-          order: { startsAt: 'ASC' },
-        }),
-        this.movies.find(),
-        this.reviews.find(),
-      ]);
+    const [
+      bookingRows,
+      occupancyRows,
+      sessionRows,
+      movieRows,
+      reviewRows,
+      invitedRows,
+      referralBonusRows,
+    ] = await Promise.all([
+      this.bookings.find(),
+      this.occupancy.find(),
+      this.sessions.find({
+        where: { startsAt: MoreThanOrEqual(new Date()) },
+        relations: { movie: true },
+        order: { startsAt: 'ASC' },
+      }),
+      this.movies.find(),
+      this.reviews.find(),
+      // реферальный срез: приглашённые + начисления обеим сторонам
+      this.users.find({ where: { referredBy: Not(IsNull()) } }),
+      this.bonusLedger.find({
+        where: { kind: 'accrual', reason: In(['referral', 'referral_welcome']) },
+      }),
+    ]);
 
     const occupiedBySession = new Map<string, number>();
     for (const row of occupancyRows) {
@@ -93,6 +112,10 @@ export class AdminStatsService {
       topMovies: topMovies(bookingRows, titleById),
       upcomingSessions: upcoming.list,
       revenueByDay: revenueByDay(bookingRows),
+      referrals: referralStats(
+        invitedRows,
+        referralBonusRows.map((r) => r.amount),
+      ),
     };
   }
 }

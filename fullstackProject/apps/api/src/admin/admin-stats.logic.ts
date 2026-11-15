@@ -2,6 +2,7 @@ import { BOOKING_STATUSES, BookingStatus } from '../bookings/booking.entity';
 import { HALL_CAPACITY } from '../bookings/hall';
 import type {
   AdminDayRevenueDto,
+  AdminReferralsDto,
   AdminSessionOccupancyDto,
   AdminStatusCountsDto,
   AdminTopMovieDto,
@@ -173,5 +174,25 @@ export function totals(
     moviesCount: extra.moviesCount,
     reviewsCount: extra.reviewsCount,
     avgRating: extra.avgRating,
+  };
+}
+
+/**
+ * Реферальный срез: сколько пришло по кодам, сколько дошло до первой
+ * оплаты (метка referral_rewarded_at) и сколько бонусов обеим сторонам
+ * начислено. Конверсия — округлённый процент, 0 без приглашённых.
+ */
+export function referralStats(
+  invited: { referralRewardedAt: Date | null }[],
+  bonusAmounts: number[],
+): AdminReferralsDto {
+  const paid = invited.filter((u) => u.referralRewardedAt !== null).length;
+  return {
+    invited: invited.length,
+    paid,
+    paidPct: invited.length
+      ? Math.round((paid / invited.length) * 100)
+      : 0,
+    paidBonuses: bonusAmounts.reduce((acc, n) => acc + n, 0),
   };
 }

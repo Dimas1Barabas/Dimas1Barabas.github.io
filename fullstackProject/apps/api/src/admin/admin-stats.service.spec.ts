@@ -2,11 +2,13 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Booking } from '../bookings/booking.entity';
 import { SeatOccupancy } from '../bookings/seat-occupancy.entity';
+import { BonusTransaction } from '../bonus/bonus-transaction.entity';
 import { Movie } from '../movies/movie.entity';
 import { Session } from '../movies/session.entity';
 import { Review } from '../reviews/review.entity';
 import { RedisService } from '../redis/redis.service';
 import { REDIS_CLIENT } from '../redis/redis.tokens';
+import { User } from '../users/user.entity';
 import { AdminStatsService, ADMIN_STATS_KEY } from './admin-stats.service';
 
 /**
@@ -32,6 +34,8 @@ describe('AdminStatsService', () => {
     bookings?: Partial<Booking>[];
     movies?: Partial<Movie>[];
     occupancy?: Partial<SeatOccupancy>[];
+    users?: Partial<User>[];
+    referralBonuses?: Partial<BonusTransaction>[];
   }) {
     store = new Map();
     bookingsFind = jest.fn(async () =>
@@ -61,6 +65,13 @@ describe('AdminStatsService', () => {
     const reviewsFind = jest.fn(async () =>
       [{ rating: 5 }, { rating: 4 }].map((r) => r as Review),
     );
+    // реферальный срез: приглашённые и их реферальные начисления
+    const usersFind = jest.fn(async () =>
+      (rows.users ?? []).map((u) => u as User),
+    );
+    const bonusFind = jest.fn(async () =>
+      (rows.referralBonuses ?? []).map((b) => b as BonusTransaction),
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -88,6 +99,11 @@ describe('AdminStatsService', () => {
         { provide: getRepositoryToken(Session), useValue: { find: sessionsFind } },
         { provide: getRepositoryToken(Movie), useValue: { find: moviesFind } },
         { provide: getRepositoryToken(Review), useValue: { find: reviewsFind } },
+        { provide: getRepositoryToken(User), useValue: { find: usersFind } },
+        {
+          provide: getRepositoryToken(BonusTransaction),
+          useValue: { find: bonusFind },
+        },
       ],
     }).compile();
 
@@ -157,6 +173,41 @@ describe('AdminStatsService', () => {
     expect(yesterdayBucket).toMatchObject({ bookings: 1, revenueRub: 1200 });
     const totalRevenue = data.revenueByDay.reduce((acc, d) => acc + d.revenueRub, 0);
     expect(totalRevenue).toBe(1200); // PENDING_PAYMENT и EXPIRED не в графике
+    // реферального ещё нет — нулевой срез без NaN
+    expect(data.referrals).toEqual({
+      invited: 0,
+      paid: 0,
+      paidPct: 0,
+      paidBonuses: 0,
+    });
+  });
+
+  it('реферальный срез: приглашённые, конверсия в первую оплату, бонусы', async () => {
+    const paid1 = new Date();
+    await setup({
+      bookings: [],
+      users: [
+        { referralRewardedAt: paid1 },
+        { referralRewardedAt: null },
+        { referralRewardedAt: null },
+        { referralRewardedAt: new Date() },
+      ],
+      referralBonuses: [
+        { amount: 300 },
+        { amount: 100 },
+        { amount: 300 },
+        { amount: 100 },
+      ],
+    });
+
+    const { data } = await service.getStats();
+
+    expect(data.referrals).toEqual({
+      invited: 4,
+      paid: 2,
+      paidPct: 50,
+      paidBonuses: 800,
+    });
   });
 
   it('кэш: второй ответ из Redis, репозитории не выгружаются повторно', async () => {
