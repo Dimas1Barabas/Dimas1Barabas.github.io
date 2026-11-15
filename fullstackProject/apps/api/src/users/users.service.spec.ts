@@ -31,12 +31,17 @@ class FakeUserRepo {
     return user;
   }
 
-  async findOneBy(where: { email?: string; id?: string }): Promise<User | null> {
+  async findOneBy(where: {
+    email?: string;
+    id?: string;
+    referralCode?: string;
+  }): Promise<User | null> {
     return (
       this.rows.find(
         (r) =>
           (!where.email || r.email === where.email) &&
-          (!where.id || r.id === where.id),
+          (!where.id || r.id === where.id) &&
+          (!where.referralCode || r.referralCode === where.referralCode),
       ) ?? null
     );
   }
@@ -106,6 +111,79 @@ describe('UsersService', () => {
       expect((caught as ConflictException).getStatus()).toBe(409);
       expect((caught as ConflictException).getResponse()).toMatchObject({
         code: 'emailTaken',
+      });
+    });
+
+    it('генерирует собственный код приглашения — разный у разных юзеров', async () => {
+      const alice = await service.register({
+        email: 'alice@example.com',
+        password: 'secret123',
+        name: 'Алиса',
+      });
+      const bob = await service.register({
+        email: 'bob@example.com',
+        password: 'secret123',
+        name: 'Боб',
+      });
+
+      expect(alice.referralCode).toMatch(/^[0-9A-HJKMNP-TV-Z]{8}$/);
+      expect(bob.referralCode).not.toBe(alice.referralCode);
+      expect(alice.referredBy).toBeNull();
+      expect(bob.referredBy).toBeNull();
+    });
+  });
+
+  describe('register: код приглашения', () => {
+    async function inviter(): Promise<User> {
+      return service.register({
+        email: 'inviter@example.com',
+        password: 'secret123',
+        name: 'Приглашающий',
+      });
+    }
+
+    it('валидный код (любой регистр, обводки пробелами) → referredBy = пригласивший', async () => {
+      const host = await inviter();
+      const friend = await service.register({
+        email: 'friend@example.com',
+        password: 'secret123',
+        name: 'Друг',
+        referralCode: ` ${host.referralCode!.toLowerCase()} `,
+      });
+
+      expect(friend.referredBy).toBe(host.id);
+    });
+
+    it('без кода → без привязки', async () => {
+      await inviter();
+      const friend = await service.register({
+        email: 'friend@example.com',
+        password: 'secret123',
+        name: 'Друг',
+      });
+
+      expect(friend.referredBy).toBeNull();
+    });
+
+    it('несуществующий код → 400 referralCodeUnknown (опечатка не теряет привязку молча)', async () => {
+      await inviter();
+
+      let caught: unknown;
+      try {
+        await service.register({
+          email: 'friend@example.com',
+          password: 'secret123',
+          name: 'Друг',
+          referralCode: 'NOPE1234',
+        });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(BadRequestException);
+      expect((caught as BadRequestException).getStatus()).toBe(400);
+      expect((caught as BadRequestException).getResponse()).toMatchObject({
+        code: 'referralCodeUnknown',
       });
     });
   });

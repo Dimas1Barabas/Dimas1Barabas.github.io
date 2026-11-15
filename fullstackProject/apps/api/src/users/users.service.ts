@@ -12,7 +12,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
 import { Repository } from 'typeorm';
 import { User } from './user.entity';
-import { generateReferralCode } from './referral-code';
+import { generateReferralCode, normalizeReferralCode } from './referral-code';
 
 /** стоимость bcrypt: демо-компромисс скорость/надёжность */
 const BCRYPT_ROUNDS = 10;
@@ -57,10 +57,28 @@ export class UsersService implements OnModuleInit {
     email: string;
     password: string;
     name: string;
+    referralCode?: string;
   }): Promise<User> {
     const email = input.email.toLowerCase();
     const existing = await this.users.findOneBy({ email });
     if (existing) throw this.emailTaken();
+
+    // код приглашения: нашли пригласившего — привязка насовсем; опечатка
+    // в коде не должна молча терять привязку — честный 400
+    let referredBy: string | null = null;
+    const code = input.referralCode && normalizeReferralCode(input.referralCode);
+    if (code) {
+      const inviter = await this.users.findOneBy({ referralCode: code });
+      if (!inviter) {
+        throw new BadRequestException({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Код приглашения не найден',
+          code: 'referralCodeUnknown',
+        });
+      }
+      referredBy = inviter.id;
+    }
 
     const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
     // код приглашения уникален; коллизия 32^8 маловероятна, но если
@@ -73,6 +91,7 @@ export class UsersService implements OnModuleInit {
         // дефолт колонки в БД продублирован явно — не полагаемся на него в тестах
         role: 'user',
         referralCode: generateReferralCode(),
+        referredBy,
       });
       try {
         const saved = await this.users.save(user);

@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsEmail,
+  IsOptional,
   IsString,
   MaxLength,
   MinLength,
@@ -23,4 +24,15 @@ export class RegisterDto {
   @MinLength(2, { message: 'Имя слишком короткое' })
   @MaxLength(60)
   name!: string;
+
+  /** код приглашения друга: опционален, регистр не важен */
+  @ApiProperty({
+    example: 'AB2CD3EF',
+    required: false,
+    description: 'код пригласившего — привязка referred_by, бонус обеим сторонам после первой оплаты',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(12)
+  referralCode?: string;
 }
