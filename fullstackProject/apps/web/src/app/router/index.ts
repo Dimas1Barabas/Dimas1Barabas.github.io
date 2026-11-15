@@ -52,6 +52,12 @@ const router = createRouter({
       component: () => import('@/pages/profile/ui/ProfileView.vue'),
     },
     {
+      // реферальная программа: код приглашения и статистика (этап 31)
+      path: '/invite',
+      name: 'invite',
+      component: () => import('@/pages/invite/ui/InviteView.vue'),
+    },
+    {
       path: '/admin',
       name: 'admin',
       component: () => import('@/pages/admin/ui/AdminView.vue'),

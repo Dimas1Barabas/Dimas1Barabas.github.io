@@ -178,6 +178,14 @@ async function changePassword(): Promise<void> {
           {{ changingPassword ? 'Меняем…' : 'Сменить пароль' }}
         </button>
       </form>
+      <section class="profile-referral">
+        <h2 class="profile-subtitle">Реферальная программа</h2>
+        <p class="auth-note">
+          Приглашайте друзей по ссылке: другу +100 бонусов к первой оплате,
+          вам +300 — код и статистика на отдельной странице.
+        </p>
+        <RouterLink class="btn" to="/invite">Пригласить друга</RouterLink>
+      </section>
     </template>
   </section>
 </template>
@@ -200,6 +208,13 @@ async function changePassword(): Promise<void> {
 .profile-subtitle {
   font-size: 1.05rem;
   margin: 0;
+}
+
+.profile-referral {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  margin-top: 28px;
 }
 
 .auth-error {

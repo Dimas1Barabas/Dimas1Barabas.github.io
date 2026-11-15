@@ -4,6 +4,7 @@ import type {
   Booking,
   BookingStats,
   BonusAccount,
+  ReferralMy,
   ChangePasswordPayload,
   CheckoutPayload,
   CreateBookingPayload,
@@ -265,6 +266,8 @@ export const api = {
   myWaitlist: () => request<MyWaitlistEntry[]>('/waitlist/my'),
   /** бонусный счёт: баланс (SUM от источника) + история движений */
   myBonuses: () => request<BonusAccount>('/bonuses/my'),
+  /** реферальный счёт: код приглашения + статистика приглашений */
+  myReferrals: () => request<ReferralMy>('/referrals/my'),
   /** персональный топ «Вам понравится» (КиноСоветник за gRPC) */
   recommendations: () => request<RecommendationsDto>('/recommendations/my'),
   /** регистрация: пароль хэшируется на бэкенде, вернётся UserDto */

@@ -21,6 +21,7 @@ import type {
   Promo,
   PromoPreview,
   RecommendationsDto,
+  ReferralMy,
   RegisterPayload,
   ReminderStreamEvent,
   Review,
@@ -113,6 +114,25 @@ const REFUND_MAX_MS = 1600;
 export const DEMO_PAYMENT_TIMEOUT_MS = 120_000;
 /** кэшбэк демо — как дефолт BONUS_CASHBACK_PERCENT у API */
 const DEMO_CASHBACK_PERCENT = 5;
+/** реферальное зеркало: системный код демо и размеры бонусов (как API) */
+const DEMO_REFERRAL_CODE = 'DEM0C0DE';
+const DEMO_REFERRAL_BONUS_INVITER = 300;
+const DEMO_REFERRAL_BONUS_FRIEND = 100;
+/** витрина «кого я пригласил» — фиксированные демо-друзья */
+const DEMO_REFERRAL_FRIENDS: ReferralMy['invited'] = [
+  {
+    name: 'Мария',
+    email: 'm***@example.com',
+    registeredAt: new Date(Date.now() - 9 * 86_400_000).toISOString(),
+    paid: true,
+  },
+  {
+    name: 'Пётр',
+    email: 'p***@example.com',
+    registeredAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+    paid: false,
+  },
+];
 /** окно напоминания демо — паритет с REMINDER_LEAD_MINUTES стенда (2 мин) */
 const DEMO_REMINDER_LEAD_MS = 120_000;
 /** …но задержку зажимаем в 3–60 с: сид-сеансы через часы и дни,
@@ -519,7 +539,15 @@ class DemoEngine {
   private statsCache: AdminStats | null = null;
   private statsAt = 0;
   /** демо-аккаунт (регистрация/вход) и открытая сессия — только в памяти */
-  private account: { email: string; name: string; password: string } | null = null;
+  private account: {
+    email: string;
+    name: string;
+    password: string;
+    /** пришёл по системному коду — welcome после первой оплаты */
+    invitedByReferral?: boolean;
+  } | null = null;
+  /** метка «первенца»: welcome-бонус одноразовый, как referral_rewarded_at */
+  private referralRewarded = false;
   private session: User | null = null;
   /** промокоды демо: сиды + созданные в админке демо */
   private promos: Promo[] = seedPromos();
@@ -630,6 +658,7 @@ class DemoEngine {
     this.reviews = seedReviews();
     this.account = null;
     this.session = null;
+    this.referralRewarded = false;
     this.promos = seedPromos();
     this.waitlist = [];
     this.bonusLedger = seedBonusLedger();
@@ -680,11 +709,26 @@ class DemoEngine {
         }),
       );
     }
+    // код приглашения: системный демо-код принимает, опечатка — 400
+    // (как UsersService.register: опечатка не теряет привязку молча)
+    const code = payload.referralCode?.trim().toUpperCase();
+    if (code && code !== DEMO_REFERRAL_CODE) {
+      throw new ApiError(
+        'HTTP 400',
+        400,
+        JSON.stringify({
+          message: 'Код приглашения не найден',
+          code: 'referralCodeUnknown',
+        }),
+      );
+    }
     this.account = {
       email,
       name: payload.name.trim(),
       password: payload.password,
+      invitedByReferral: Boolean(code),
     };
+    this.referralRewarded = false;
     return this.userOf();
   }
 
@@ -1319,6 +1363,18 @@ class DemoEngine {
             bookingId: booking.id,
           });
         }
+        // welcome по приглашению: первая оплаченная бронь — как захват
+        // referral_rewarded_at в API; 300 пригласившему в демо некому
+        // показать (счёт один), своя половина награды — вот она
+        if (this.account?.invitedByReferral && !this.referralRewarded) {
+          this.referralRewarded = true;
+          this.pushBonus({
+            kind: 'accrual',
+            reason: 'referral_welcome',
+            amount: DEMO_REFERRAL_BONUS_FRIEND,
+            bookingId: booking.id,
+          });
+        }
         // КиноСоветник: «сходил на фильм» — сигнал профиля рекомендаций
         const movie = DEMO_MOVIES.find((m) => m.id === booking.movieId);
         if (movie) {
@@ -1494,6 +1550,22 @@ class DemoEngine {
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
         .slice(0, limit)
         .map((t) => ({ ...t })),
+    };
+  }
+
+  /** реферальная витрина: код + фиксированные демо-друзья */
+  myReferrals(): ReferralMy {
+    const paid = DEMO_REFERRAL_FRIENDS.filter((f) => f.paid).length;
+    return {
+      code: DEMO_REFERRAL_CODE,
+      bonusInviter: DEMO_REFERRAL_BONUS_INVITER,
+      bonusFriend: DEMO_REFERRAL_BONUS_FRIEND,
+      totals: {
+        invited: DEMO_REFERRAL_FRIENDS.length,
+        paid,
+        earned: paid * DEMO_REFERRAL_BONUS_INVITER,
+      },
+      invited: DEMO_REFERRAL_FRIENDS.map((f) => ({ ...f })),
     };
   }
 

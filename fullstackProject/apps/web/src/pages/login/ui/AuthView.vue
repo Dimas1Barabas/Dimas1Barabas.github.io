@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { ApiError, retryAfterFrom } from '@/shared/api/client';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useCooldown } from '@/shared/lib/use-cooldown';
 
 const router = useRouter();
+const route = useRoute();
 const appStore = useAppStore();
 const authStore = useAuthStore();
 
@@ -14,6 +15,10 @@ const mode = ref<'login' | 'register'>('login');
 const email = ref('');
 const password = ref('');
 const name = ref('');
+/** код пригласившего из ссылки ?ref= — виден и редактируем в регистрации */
+const refCode = ref(
+  typeof route.query.ref === 'string' ? route.query.ref.trim() : '',
+);
 const submitting = ref(false);
 const error = ref<string | null>(null);
 /** кулдаун после 429 Привратника: корзина входа (5/мин на email) пуста */
@@ -45,6 +50,7 @@ async function submit(): Promise<void> {
         email: email.value.trim(),
         password: password.value,
         name: name.value.trim(),
+        ...(refCode.value.trim() ? { referralCode: refCode.value.trim() } : {}),
       });
       await authStore.login(email.value.trim(), password.value);
     }
@@ -102,6 +108,18 @@ async function submit(): Promise<void> {
           minlength="2"
           maxlength="60"
           placeholder="Как вас зовут?"
+        />
+      </label>
+
+      <label v-if="mode === 'register'" class="field">
+        <span class="field__label">Код приглашения</span>
+        <input
+          v-model="refCode"
+          class="field__input"
+          type="text"
+          maxlength="12"
+          placeholder="От друга (необязательно)"
+          autocomplete="off"
         />
       </label>
 

@@ -209,6 +209,8 @@ export interface RegisterPayload {
   email: string;
   password: string;
   name: string;
+  /** код пригласившего — опционален, привязка насовсем */
+  referralCode?: string;
 }
 
 /** PATCH /users/me — оба поля опциональны, но хотя бы одно нужно */
@@ -506,7 +508,9 @@ export type BonusReason =
   | 'payment'
   | 'payment_failed'
   | 'refund'
-  | 'clawback';
+  | 'clawback'
+  | 'referral'
+  | 'referral_welcome';
 
 /** движение счёта — элемент истории GET /api/bonuses/my */
 export interface BonusTransaction {
@@ -524,6 +528,24 @@ export interface BonusTransaction {
 export interface BonusAccount {
   balance: number;
   transactions: BonusTransaction[];
+}
+
+/** строка списка «Пригласить»: email замаскирован на бэкенде */
+export interface ReferralInvited {
+  name: string;
+  email: string;
+  registeredAt: string;
+  /** первая бронь оплачена — бонусы обеим сторонам начислены */
+  paid: boolean;
+}
+
+/** реферальный счёт — GET /api/referrals/my */
+export interface ReferralMy {
+  code: string;
+  bonusInviter: number;
+  bonusFriend: number;
+  totals: { invited: number; paid: number; earned: number };
+  invited: ReferralInvited[];
 }
 
 /** позиция топа «Вам понравится» — GET /api/recommendations/my */

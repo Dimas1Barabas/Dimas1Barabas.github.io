@@ -32,6 +32,8 @@ const BONUS_REASONS: Record<BonusReason, string> = {
   payment_failed: 'возврат — платёж не прошёл',
   refund: 'возврат при отмене брони',
   clawback: 'гашение кэшбэка при возврате',
+  referral: 'друг оплатил первую бронь',
+  referral_welcome: 'welcome-бонус по приглашению',
 };
 
 onMounted(() => {
