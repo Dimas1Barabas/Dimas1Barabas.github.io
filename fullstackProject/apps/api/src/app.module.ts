@@ -20,6 +20,7 @@ import { RecommendationsModule } from './recommendations/recommendations.module'
 import { RemindersModule } from './reminders/reminders.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { RedisModule } from './redis/redis.module';
+import { ReferralsModule } from './referrals/referrals.module';
 import { SearchModule } from './search/search.module';
 import { UsersModule } from './users/users.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
@@ -55,6 +56,8 @@ import { FlagsModule } from './flags/flags.module';
     ReviewsModule,
     // полнотекстовый поиск афиши: Meilisearch с ILIKE-фолбэком (этап 30)
     SearchModule,
+    // реферальная программа: код приглашения + статистика (этап 31)
+    ReferralsModule,
     AdminModule,
     PromosModule,
     WaitlistModule,
