@@ -80,6 +80,9 @@ describe('TokensService', () => {
       name: 'Аня',
       role: 'user',
       passwordHash: 'не-важен-здесь',
+      referralCode: 'AB2CD3EF',
+      referredBy: null,
+      referralRewardedAt: null,
       createdAt: new Date(),
     };
   });

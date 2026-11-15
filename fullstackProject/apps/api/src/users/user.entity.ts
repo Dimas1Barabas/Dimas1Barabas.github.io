@@ -3,6 +3,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
@@ -41,6 +42,7 @@ export function toUserDto(user: User): UserDto {
 
 @Entity('users')
 @Unique('uq_users_email', ['email'])
+@Unique('uq_users_referral_code', ['referralCode'])
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -59,6 +61,26 @@ export class User {
 
   @Column({ length: 10, default: 'user' })
   role: UserRole;
+
+  /**
+   * Код приглашения: генерируется при регистрации (посевной админ и
+   * юзеры до рефералки получают его лениво при первом заходе на
+   * «Пригласить»). null допускается только до ленивой догенерации.
+   */
+  @Column({ name: 'referral_code', length: 12, nullable: true })
+  referralCode: string | null;
+
+  /** кем приглашён — фиксируется один раз при регистрации по коду */
+  @Index('ix_users_referred_by')
+  @Column({ name: 'referred_by', type: 'uuid', nullable: true })
+  referredBy: string | null;
+
+  /**
+   * Когда первая оплаченная бронь приглашённого награждена бонусами —
+   * атомарный захват «первенца» в BookingsService.handleProcessed.
+   */
+  @Column({ name: 'referral_rewarded_at', type: 'timestamp', nullable: true })
+  referralRewardedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

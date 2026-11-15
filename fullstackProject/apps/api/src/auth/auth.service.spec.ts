@@ -89,6 +89,9 @@ describe('AuthService', () => {
       name: 'Аня',
       role: 'user',
       passwordHash: await bcrypt.hash('secret123', TEST_ROUNDS),
+      referralCode: 'AB2CD3EF',
+      referredBy: null,
+      referralRewardedAt: null,
       createdAt: new Date(),
     };
   });
