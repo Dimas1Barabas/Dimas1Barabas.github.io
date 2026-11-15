@@ -17,9 +17,12 @@ export const BONUS_KINDS = ['accrual', 'spend'] as const;
 export type BonusKind = (typeof BONUS_KINDS)[number];
 
 /**
- * Причины движений — почему изменился баланс. Пара (booking_id, reason)
- * уникальна: одна операция одного типа по бронь не задваивается,
- * ределивери событий воркера упирается в констрейнт.
+ * Причины движений — почему изменился баланс. Тройка
+ * (booking_id, reason, user_id) уникальна: одна операция одного типа
+ * по бронь для конкретного счёта не задваивается, ределивери событий
+ * воркера упирается в констрейнт. Реферальная программа завела по одной
+ * брони записи двух счётов (другу и пригласившему) — поэтому уника
+ * расширена с пары (booking_id, reason) тройкой с user_id.
  */
 export const BONUS_REASONS = [
   /** accrual: кэшбэк по CONFIRMED-брони */
@@ -32,6 +35,10 @@ export const BONUS_REASONS = [
   'refund',
   /** spend: гашение кэшбэка при отмене брони — но не в минус */
   'clawback',
+  /** accrual: награда пригласившему за первую оплаченную бронь друга */
+  'referral',
+  /** accrual: welcome-бонус другу за ту же первую оплату */
+  'referral_welcome',
 ] as const;
 export type BonusReason = (typeof BONUS_REASONS)[number];
 
@@ -41,7 +48,7 @@ export type BonusReason = (typeof BONUS_REASONS)[number];
  * (SUM(accrual) − SUM(spend) по user_id). Курс 1 бонус = 1 ₽.
  */
 @Entity('bonus_transactions')
-@Unique('uq_bonus_booking_reason', ['bookingId', 'reason'])
+@Unique('uq_bonus_booking_reason_user', ['bookingId', 'reason', 'userId'])
 export class BonusTransaction {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -87,7 +94,8 @@ export class BonusTransactionDto {
 
   @ApiProperty({
     enum: BONUS_REASONS,
-    description: 'почему: cashback / payment / payment_failed / refund / clawback',
+    description:
+      'почему: cashback / payment / payment_failed / refund / clawback / referral / referral_welcome',
   })
   reason!: BonusReason;
 

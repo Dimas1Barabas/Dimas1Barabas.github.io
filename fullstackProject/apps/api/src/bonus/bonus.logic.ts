@@ -36,6 +36,7 @@ export const BONUS_BALANCE_SQL = `
   SELECT COALESCE(SUM(CASE kind WHEN 'accrual' THEN amount ELSE -amount END), 0) AS balance
     FROM bonus_transactions WHERE user_id = $1`;
 
-/** строки брони — источник разворота бонусов при отмене */
+/** строки брони — источник разворота бонусов при отмене; user_id —
+ *  чей счёт (реферальные записи по одной брони лежат двум юзерам) */
 export const BONUS_BOOKING_ROWS_SQL = `
-  SELECT reason, amount FROM bonus_transactions WHERE booking_id = $1`;
+  SELECT user_id, reason, amount FROM bonus_transactions WHERE booking_id = $1`;

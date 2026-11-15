@@ -18,6 +18,10 @@ import {
 } from '../bonus/bonus.logic';
 import { cashbackPercent } from '../bonus/cashback-percent';
 import {
+  referralBonusFriend,
+  referralBonusInviter,
+} from '../referrals/referral-bonuses';
+import {
   BonusKind,
   BonusReason,
   BonusTransaction,
@@ -919,6 +923,37 @@ export class BookingsService {
             amount,
           });
         }
+      }
+
+      if (event.status === 'CONFIRMED') {
+        // реферальный бонус: первая оплаченная бронь приглашённого.
+        // Захват «первенца» атомарный — UPDATE метки на строке друга:
+        // при гонке двух одновременных оплат RETURNING вернёт строку
+        // ровно одной транзакции, повторные вердикты увидят метку.
+        // Гостевые брони отсечены веткой !booking.userId выше.
+        const invited = await em.query<{ referred_by: string }[]>(
+          `UPDATE users SET referral_rewarded_at = now()
+            WHERE id = $1 AND referred_by IS NOT NULL
+              AND referral_rewarded_at IS NULL
+            RETURNING referred_by`,
+          [booking.userId],
+        );
+        if (invited.length > 0) {
+          await this.insertBonus(em, {
+            userId: invited[0].referred_by,
+            bookingId: booking.id,
+            kind: 'accrual',
+            reason: 'referral',
+            amount: referralBonusInviter(),
+          });
+          await this.insertBonus(em, {
+            userId: booking.userId,
+            bookingId: booking.id,
+            kind: 'accrual',
+            reason: 'referral_welcome',
+            amount: referralBonusFriend(),
+          });
+        }
       } else if (event.status === 'FAILED' && booking.bonusSpent) {
         // оплата не прошла — списанные при оплате бонусы возвращаются
         await this.insertBonus(em, {
@@ -1123,16 +1158,20 @@ export class BookingsService {
    * Разворот бонусов отменённой брони: списанное при оплате возвращается
    * (accrual refund), начисленный кэшбэк гасится (spend clawback) — но
    * не в минус: потраченный кэшбэк гасим сколько есть, остаток прощаем.
+   * Реферальные — та же судьба: welcome возвращается вместе с кэшбэком
+   * (одной clawback-строкой — уника тройки не даёт два spend одной
+   * причины), награду пригласившему гасим его же строкой. Метка
+   * referral_rewarded_at остаётся: отменённая первая бронь сжигает
+   * реферальную награду, повторного начисления не будет.
    */
   private async reverseBookingBonuses(
     em: EntityManager,
     userId: string,
     bookingId: string,
   ): Promise<void> {
-    const rows = await em.query<{ reason: BonusReason; amount: number }[]>(
-      BONUS_BOOKING_ROWS_SQL,
-      [bookingId],
-    );
+    const rows = await em.query<
+      { user_id: string; reason: BonusReason; amount: number }[]
+    >(BONUS_BOOKING_ROWS_SQL, [bookingId]);
     const spent = rows.find((r) => r.reason === 'payment')?.amount;
     if (spent) {
       await this.insertBonus(em, {
@@ -1143,15 +1182,33 @@ export class BookingsService {
         amount: spent,
       });
     }
-    const cashback = rows.find((r) => r.reason === 'cashback')?.amount;
-    if (cashback) {
+    const cashback = rows.find((r) => r.reason === 'cashback')?.amount ?? 0;
+    const welcome =
+      rows.find(
+        (r) => r.reason === 'referral_welcome' && r.user_id === userId,
+      )?.amount ?? 0;
+    if (cashback + welcome > 0) {
       // баланс — уже с учётом возврата списанного: если зритель успел
       // потратить кэшбэк, гасим сколько есть
       const balance = await this.bonusBalance(em, userId);
-      const amount = Math.min(cashback, Math.max(balance, 0));
+      const amount = Math.min(cashback + welcome, Math.max(balance, 0));
       if (amount > 0) {
         await this.insertBonus(em, {
           userId,
+          bookingId,
+          kind: 'spend',
+          reason: 'clawback',
+          amount,
+        });
+      }
+    }
+    const referral = rows.find((r) => r.reason === 'referral');
+    if (referral) {
+      const balance = await this.bonusBalance(em, referral.user_id);
+      const amount = Math.min(referral.amount, Math.max(balance, 0));
+      if (amount > 0) {
+        await this.insertBonus(em, {
+          userId: referral.user_id,
           bookingId,
           kind: 'spend',
           reason: 'clawback',

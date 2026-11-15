@@ -130,6 +130,16 @@ export interface BookingsHarness {
     reason: string;
     amount: number;
   }>;
+  /**
+   * Фейковая таблица users для реферального захвата: атомарный
+   * UPDATE referral_rewarded_at ... RETURNING по этим строкам.
+   * Пусто по умолчанию — реферальные кейсы наполняют точечно.
+   */
+  usersRows: Array<{
+    id: string;
+    referredBy: string | null;
+    referralRewardedAt: Date | null;
+  }>;
 }
 
 export async function buildBookingsHarness(): Promise<BookingsHarness> {
@@ -204,6 +214,7 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
   // условный UPDATE по умолчанию проходит (affected = 1)
   const emUpdate = jest.fn(async () => ({ affected: 1 }));
   const bonusRows: BookingsHarness['bonusRows'] = [];
+  const usersRows: BookingsHarness['usersRows'] = [];
   // сырой SQL по содержимому: баланс/строки ledger'а считаются от
   // фейковых bonusRows (SUM в pg — bigint, драйвер отдаёт строкой),
   // UPDATE … RETURNING промокода — кортеж [строки, число затронутых]
@@ -214,10 +225,27 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
         .reduce((s, r) => s + (r.kind === 'accrual' ? r.amount : -r.amount), 0);
       return [{ balance: String(balance) }];
     }
-    if (/SELECT reason, amount FROM bonus_transactions/.test(sql)) {
+    if (/FROM bonus_transactions WHERE booking_id/.test(sql)) {
       return bonusRows
         .filter((r) => r.bookingId === params[0])
-        .map((r) => ({ reason: r.reason, amount: r.amount }));
+        .map((r) => ({
+          user_id: r.userId,
+          reason: r.reason,
+          amount: r.amount,
+        }));
+    }
+    // реферальный захват «первенца»: метка на строке друга, RETURNING —
+    // ровно один вызов из гонки, повторные видят метку и получают []
+    if (/UPDATE users SET referral_rewarded_at/.test(sql)) {
+      const friend = usersRows.find(
+        (r) =>
+          r.id === params[0] &&
+          r.referredBy !== null &&
+          r.referralRewardedAt === null,
+      );
+      if (!friend) return [];
+      friend.referralRewardedAt = new Date();
+      return [{ referred_by: friend.referredBy }];
     }
     return [[], 0];
   });
@@ -339,5 +367,6 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
     emUpdate,
     emQuery,
     bonusRows,
+    usersRows,
   };
 }
