@@ -67,7 +67,10 @@ export class User {
    * юзеры до рефералки получают его лениво при первом заходе на
    * «Пригласить»). null допускается только до ленивой догенерации.
    */
-  @Column({ name: 'referral_code', length: 12, nullable: true })
+  // type обязателен: union string|null в reflect-metadata неотличим, без
+  // явного типа TypeORM видит «Object» и валит DataSource.initialize
+  // (DataTypeNotSupportedError — все live-стенды, run 9158dd74)
+  @Column({ name: 'referral_code', type: 'varchar', length: 12, nullable: true })
   referralCode: string | null;
 
   /** кем приглашён — фиксируется один раз при регистрации по коду */
