@@ -931,16 +931,20 @@ export class BookingsService {
         // при гонке двух одновременных оплат RETURNING вернёт строку
         // ровно одной транзакции, повторные вердикты увидят метку.
         // Гостевые брони отсечены веткой !booking.userId выше.
-        const invited = await em.query<{ referred_by: string }[]>(
+        // PostgresQueryRunner для UPDATE возвращает кортеж [rows, affected]
+        // (даже при нуле строк длина 2) — распаковываем строки из [0],
+        // иначе «первенец» находится в каждой оплате (run a1f2c83b:
+        // INSERT с user_id DEFAULT → 23502, вердикты откатывались вечно)
+        const [invitedRows] = await em.query<[{ referred_by: string }[], number]>(
           `UPDATE users SET referral_rewarded_at = now()
             WHERE id = $1 AND referred_by IS NOT NULL
               AND referral_rewarded_at IS NULL
             RETURNING referred_by`,
           [booking.userId],
         );
-        if (invited.length > 0) {
+        if (invitedRows.length > 0) {
           await this.insertBonus(em, {
-            userId: invited[0].referred_by,
+            userId: invitedRows[0].referred_by,
             bookingId: booking.id,
             kind: 'accrual',
             reason: 'referral',

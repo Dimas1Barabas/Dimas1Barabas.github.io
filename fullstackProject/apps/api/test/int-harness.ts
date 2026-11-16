@@ -469,10 +469,10 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
           }));
       }
       // реферальный захват «первенца» при CONFIRMED: int-стенд без
-      // users-таблицы — пустой RETURNING, referral-бонусы не начисляются
-      // (дефолт [[], 0] имел length 2 — «первенец» находился бы всегда)
+      // users-таблицы — пустой RETURNING в формате драйвера [rows, 0],
+      // referral-бонусы не начисляются
       if (sql.includes('UPDATE users SET referral_rewarded_at')) {
-        return [];
+        return [[], 0];
       }
       return [[], 0];
     }),

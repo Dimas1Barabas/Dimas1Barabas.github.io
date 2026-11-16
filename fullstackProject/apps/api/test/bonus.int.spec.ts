@@ -282,11 +282,10 @@ describe('Бонусы: HTTP-интеграция (фейковые зависи
           );
         }
         // реферальный захват «первенца» при CONFIRMED: в этом спеке нет
-        // приглашённых юзеров — честный пустой RETURNING, без фантомных
-        // referral-начислений (дефолт [[], 0] имел length 2 — «первенец»
-        // находился бы в каждой оплате)
+        // приглашённых юзеров — пустой RETURNING в формате драйвера
+        // [rows, 0], фантомных referral-начислений нет
         if (sql.includes('UPDATE users SET referral_rewarded_at')) {
-          return Promise.resolve([]);
+          return Promise.resolve([[], 0]);
         }
         return Promise.resolve([[], 0]);
       },

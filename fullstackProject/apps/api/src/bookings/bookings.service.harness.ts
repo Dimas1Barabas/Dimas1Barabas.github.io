@@ -235,7 +235,9 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
         }));
     }
     // реферальный захват «первенца»: метка на строке друга, RETURNING —
-    // ровно один вызов из гонки, повторные видят метку и получают []
+    // ровно один вызов из гонки, повторные видят метку и получают пусто.
+    // Формат как у PostgresQueryRunner: UPDATE возвращает [rows, affected]
+    // (не массив строк — фейк с [{referred_by}] прятал граблю run a1f2c83b)
     if (/UPDATE users SET referral_rewarded_at/.test(sql)) {
       const friend = usersRows.find(
         (r) =>
@@ -243,9 +245,9 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
           r.referredBy !== null &&
           r.referralRewardedAt === null,
       );
-      if (!friend) return [];
+      if (!friend) return [[], 0];
       friend.referralRewardedAt = new Date();
-      return [{ referred_by: friend.referredBy }];
+      return [[{ referred_by: friend.referredBy }], 1];
     }
     return [[], 0];
   });
