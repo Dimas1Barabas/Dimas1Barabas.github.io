@@ -457,10 +457,22 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
           );
         return [{ balance: String(balance) }];
       }
-      if (sql.includes('SELECT reason, amount FROM bonus_transactions')) {
+      if (
+        sql.includes('SELECT user_id, reason, amount FROM bonus_transactions')
+      ) {
         return bonusRows
           .filter((r) => r.bookingId === params[0])
-          .map((r) => ({ reason: r.reason, amount: r.amount }));
+          .map((r) => ({
+            user_id: r.userId,
+            reason: r.reason,
+            amount: r.amount,
+          }));
+      }
+      // реферальный захват «первенца» при CONFIRMED: int-стенд без
+      // users-таблицы — пустой RETURNING, referral-бонусы не начисляются
+      // (дефолт [[], 0] имел length 2 — «первенец» находился бы всегда)
+      if (sql.includes('UPDATE users SET referral_rewarded_at')) {
+        return [];
       }
       return [[], 0];
     }),

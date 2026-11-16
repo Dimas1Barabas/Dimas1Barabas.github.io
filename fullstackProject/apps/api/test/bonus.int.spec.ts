@@ -266,12 +266,27 @@ describe('Бонусы: HTTP-интеграция (фейковые зависи
             { balance: String(ledgerRepo.balanceOf(params[0])) },
           ]);
         }
-        if (sql.includes('SELECT reason, amount FROM bonus_transactions')) {
+        if (
+          sql.includes(
+            'SELECT user_id, reason, amount FROM bonus_transactions',
+          )
+        ) {
           return Promise.resolve(
             ledgerRepo.rows
               .filter((r) => r.bookingId === params[0])
-              .map((r) => ({ reason: r.reason, amount: r.amount })),
+              .map((r) => ({
+                user_id: r.userId,
+                reason: r.reason,
+                amount: r.amount,
+              })),
           );
+        }
+        // реферальный захват «первенца» при CONFIRMED: в этом спеке нет
+        // приглашённых юзеров — честный пустой RETURNING, без фантомных
+        // referral-начислений (дефолт [[], 0] имел length 2 — «первенец»
+        // находился бы в каждой оплате)
+        if (sql.includes('UPDATE users SET referral_rewarded_at')) {
+          return Promise.resolve([]);
         }
         return Promise.resolve([[], 0]);
       },

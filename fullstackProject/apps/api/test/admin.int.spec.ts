@@ -13,9 +13,11 @@ import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { Booking } from '../src/bookings/booking.entity';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
+import { BonusTransaction } from '../src/bonus/bonus-transaction.entity';
 import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Review } from '../src/reviews/review.entity';
+import { User } from '../src/users/user.entity';
 import { RedisService } from '../src/redis/redis.service';
 import { REDIS_CLIENT } from '../src/redis/redis.tokens';
 
@@ -70,6 +72,25 @@ describe('GET /api/admin/stats (integration)', () => {
       { rating: 4 },
     ] as unknown as Review[];
 
+    // реферальный срез: Анна пригласила троих, двое оплатили первую
+    // бронь — по каждой оплате награждены обе стороны (300 + 100)
+    const paidAt = new Date(now - 3600_000);
+    const invitedUser = (name: string, rewarded: Date | null): User =>
+      ({ id: `u-${name}`, name, referralRewardedAt: rewarded }) as unknown as User;
+    const userRows: User[] = [
+      // пригласивший Анна — как и все без referred_by, в срез не попадает
+      { ...invitedUser('Анна', null), referredBy: null },
+      { ...invitedUser('Боб', paidAt), referredBy: 'u-Анна' },
+      { ...invitedUser('Галя', paidAt), referredBy: 'u-Анна' },
+      { ...invitedUser('Вера', null), referredBy: 'u-Анна' },
+    ] as User[];
+    const bonusRows = [
+      { kind: 'accrual', reason: 'referral', amount: 300 },
+      { kind: 'accrual', reason: 'referral_welcome', amount: 100 },
+      { kind: 'accrual', reason: 'referral', amount: 300 },
+      { kind: 'accrual', reason: 'referral_welcome', amount: 100 },
+    ] as unknown as BonusTransaction[];
+
     redisStore = new Map();
 
     const moduleRef = await Test.createTestingModule({
@@ -114,6 +135,18 @@ describe('GET /api/admin/stats (integration)', () => {
         },
         { provide: getRepositoryToken(Movie), useValue: { find: async () => movieRows } },
         { provide: getRepositoryToken(Review), useValue: { find: async () => reviewRows } },
+        // реферальный срез (этап 31): сервис зовёт find с where
+        // referredBy Not(IsNull()) — фейк уважает фильтр, как PG
+        {
+          provide: getRepositoryToken(User),
+          useValue: {
+            find: async () => userRows.filter((u) => u.referredBy !== null),
+          },
+        },
+        {
+          provide: getRepositoryToken(BonusTransaction),
+          useValue: { find: async () => bonusRows },
+        },
         { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },
         JwtStrategy,
         { provide: APP_GUARD, useClass: JwtAuthGuard },
@@ -221,6 +254,15 @@ describe('GET /api/admin/stats (integration)', () => {
       day: localDay(new Date(Date.now() - 24 * 3600_000)),
       bookings: 1,
       revenueRub: 1200,
+    });
+
+    // реферальный срез: трое пришло, двое оплатили, обеим сторонам
+    // начислено (2×300 пригласившему + 2×100 друзьям)
+    expect(res.body.data.referrals).toEqual({
+      invited: 3,
+      paid: 2,
+      paidPct: 67,
+      paidBonuses: 800,
     });
   });
 
