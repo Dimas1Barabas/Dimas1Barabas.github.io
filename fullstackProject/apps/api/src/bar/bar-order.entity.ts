@@ -6,6 +6,7 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
   Unique,
   UpdateDateColumn,
@@ -80,6 +81,7 @@ export class BarOrder {
   updatedAt: Date;
 
   /** позиции заказа (снимки имени/цены на момент оформления) */
+  @OneToMany(() => BarOrderItem, (i) => i.order)
   items?: BarOrderItem[];
 }
 
@@ -153,6 +155,22 @@ export class BarOrderDto {
   @ApiProperty({ format: 'uuid', nullable: true, type: String })
   sessionId!: string | null;
 
+  @ApiProperty({
+    example: 'IMAX',
+    nullable: true,
+    type: String,
+    description: 'зал сеанса, к которому заказ; null — без сеанса',
+  })
+  hall!: string | null;
+
+  @ApiProperty({
+    format: 'date-time',
+    nullable: true,
+    type: String,
+    description: 'время сеанса, к которому заказ; null — без сеанса',
+  })
+  sessionAt!: string | null;
+
   @ApiProperty({ example: 1180, description: 'сумма позиций, ₽' })
   totalRub!: number;
 
@@ -171,6 +189,8 @@ export function toBarOrderDto(
     id: order.id,
     status: order.status,
     sessionId: order.sessionId,
+    hall: order.session?.hall ?? null,
+    sessionAt: order.session?.startsAt?.toISOString() ?? null,
     totalRub: order.totalRub,
     items: items.map((i) => ({
       itemId: i.itemId,

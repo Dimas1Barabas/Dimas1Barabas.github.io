@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   OnModuleInit,
@@ -18,9 +19,13 @@ import {
   BarOrder,
   BarOrderItem,
   BarOrderDto,
+  BAR_CANCELLABLE,
   toBarOrderDto,
 } from './bar-order.entity';
-import { BarOrderCreatedEvent } from './bar-events';
+import {
+  BarOrderCancelledEvent,
+  BarOrderCreatedEvent,
+} from './bar-events';
 import { BarOutOfStockError, barTotal, validateBarOrder } from './bar.logic';
 import { CreateBarOrderDto } from './dto/create-bar-order.dto';
 
@@ -38,6 +43,9 @@ export class BarService implements OnModuleInit {
 
   constructor(
     @InjectRepository(BarItem) private readonly items: Repository<BarItem>,
+    @InjectRepository(BarOrder) private readonly orders: Repository<BarOrder>,
+    @InjectRepository(BarOrderItem)
+    private readonly orderItems: Repository<BarOrderItem>,
     private readonly dataSource: DataSource,
     private readonly outboxRelay: OutboxRelayClient,
   ) {}
@@ -129,6 +137,8 @@ export class BarService implements OnModuleInit {
           totalRub: barTotal(positions),
         });
         const saved = await em.save(BarOrder, order);
+        // relation для DTO (hall/sessionAt) — сеанс уже проверен выше
+        saved.session = session;
         await em.insert(
           BarOrderItem,
           positions.map((p) => ({
@@ -181,5 +191,70 @@ export class BarService implements OnModuleInit {
       }
       throw err;
     }
+  }
+
+  /** «Мои заказы»: свежие сверху, с позициями и контекстом сеанса */
+  async my(user: AuthUser): Promise<BarOrderDto[]> {
+    const orders = await this.orders.find({
+      where: { userId: user.id },
+      relations: { items: true, session: true },
+      order: { createdAt: 'DESC' },
+      take: 50,
+    });
+    return orders.map((o) => toBarOrderDto(o, o.items ?? []));
+  }
+
+  /**
+   * Отмена заказа: только владелец и только пока еду не выдали
+   * (NEW/PREPARING). В той же транзакции порции возвращаются на склад,
+   * Бармену уходит bar.order.cancelled — он молча убирает заказ из
+   * очереди, ничего не готовя.
+   */
+  async cancel(orderId: string, user: AuthUser): Promise<BarOrderDto> {
+    const result = await this.dataSource.transaction(async (em) => {
+      const order = await em.findOneByOrFail(BarOrder, { id: orderId });
+      if (order.userId !== user.id) {
+        throw new ForbiddenException('Это не ваш заказ кинобара');
+      }
+      if (!BAR_CANCELLABLE.includes(order.status)) {
+        throw new ConflictException(
+          order.status === 'CANCELLED'
+            ? 'Заказ уже отменён'
+            : 'Заказ уже выдан — отменить нельзя',
+        );
+      }
+
+      // порции возвращаются на склад: даже снятая с продажи позиция
+      // копит остаток, вернётся на витрину вместе с active
+      const lines = await em.find(BarOrderItem, { where: { orderId } });
+      for (const line of lines) {
+        await em.query(
+          `UPDATE bar_items SET stock = stock + $1, updated_at = now()
+           WHERE id = $2`,
+          [line.qty, line.itemId],
+        );
+      }
+
+      order.status = 'CANCELLED';
+      const saved = await em.save(BarOrder, order);
+      await enqueueOutbox(em, 'bar.order.cancelled', {
+        orderId: saved.id,
+        cancelledAt: new Date().toISOString(),
+      } satisfies BarOrderCancelledEvent);
+      return saved.id;
+    });
+
+    this.outboxRelay.poke();
+    this.logger.log(`Заказ кинобара ${result} отменён, порции вернулись на склад`);
+    return this.orderWithItems(result);
+  }
+
+  /** заказ с позициями и контекстом сеанса — форма ответа my/cancel */
+  private async orderWithItems(orderId: string): Promise<BarOrderDto> {
+    const order = await this.orders.findOneOrFail({
+      where: { id: orderId },
+      relations: { items: true, session: true },
+    });
+    return toBarOrderDto(order, order.items ?? []);
   }
 }
