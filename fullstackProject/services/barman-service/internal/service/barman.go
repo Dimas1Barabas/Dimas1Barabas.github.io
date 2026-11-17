@@ -42,7 +42,7 @@ func (systemClock) Now() time.Time { return time.Now() }
 // ределивери не сбрасывает прогресс и не плодит записей).
 func (b *Barman) Accept(ctx context.Context, o domain.Order) error {
 	if o.OrderID == "" {
-		return errors.New("заказ без orderId")
+		return fmt.Errorf("bar.order.created: %w", domain.ErrInvalidOrderEvent)
 	}
 	o.Status = domain.StatusNew
 	if o.CreatedAt.IsZero() {
