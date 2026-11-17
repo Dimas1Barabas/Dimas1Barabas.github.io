@@ -463,6 +463,66 @@ describe('Кинобар: HTTP-интеграция каталога и зака
     expect(again.body.message).toContain('уже отменён');
   });
 
+  it('статусы Бармена монотонны: опоздавшее «готово» не оживит отмену', async () => {
+    const barService = app.get(BarService);
+    const created = await request(app.getHttpServer())
+      .post('/api/bar/orders')
+      .set('Authorization', bearer)
+      .send({ items: [line(ITEM.popcorn, 1)] });
+    const id = created.body.id;
+
+    // PREPARING — применяется
+    await barService.handleStatus({
+      orderId: id,
+      status: 'PREPARING',
+      email: 'anna@test.local',
+      customerName: 'Анна',
+      changedAt: new Date().toISOString(),
+    });
+    // ределивери того же статуса — пропускается (ранг не вырос);
+    // «даунгрейд» ниже NEW контрактом исключён: Бармен NEW не шлёт
+    await barService.handleStatus({
+      orderId: id,
+      status: 'PREPARING',
+      email: 'anna@test.local',
+      customerName: 'Анна',
+      changedAt: new Date().toISOString(),
+    });
+    let res = await request(app.getHttpServer())
+      .get('/api/bar/orders/my')
+      .set('Authorization', bearer);
+    expect(res.body[0].status).toBe('PREPARING');
+
+    // владелец отменил — терминальный статус
+    await request(app.getHttpServer())
+      .post(`/api/bar/orders/${id}/cancel`)
+      .set('Authorization', bearer);
+
+    // опоздавшее READY из очереди Бармена отмену не перебьёт
+    await barService.handleStatus({
+      orderId: id,
+      status: 'READY',
+      email: 'anna@test.local',
+      customerName: 'Анна',
+      changedAt: new Date().toISOString(),
+    });
+    res = await request(app.getHttpServer())
+      .get('/api/bar/orders/my')
+      .set('Authorization', bearer);
+    expect(res.body[0].status).toBe('CANCELLED');
+
+    // неизвестный заказ — не poison: тихий ack
+    await expect(
+      barService.handleStatus({
+        orderId: '00000000-0000-4000-8000-00000000dead',
+        status: 'READY',
+        email: 'x@test.local',
+        customerName: 'Никто',
+        changedAt: new Date().toISOString(),
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it('мои заказы: только свои, свежие сверху, с составом', async () => {
     await request(app.getHttpServer())
       .post('/api/bar/orders')

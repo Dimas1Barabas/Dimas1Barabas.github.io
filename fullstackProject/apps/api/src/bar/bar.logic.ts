@@ -1,7 +1,26 @@
 import { BadRequestException } from '@nestjs/common';
+import { BarOrderStatus } from './bar-order.entity';
 
 /** порций одной позиции в заказе — потолок валидации (зеркалит DTO) */
 export const MAX_QTY_PER_ITEM = 10;
+
+/**
+ * Ранг статуса: жизненный цикл заказа монотонен NEW → PREPARING →
+ * READY → PICKED_UP; CANCELLED — терминальный внеплановый. Ранги
+ * сравнивает handleStatus: опоздавшее «готово» не оживит отменённый
+ * заказ, ределивери того же статуса — пустой звук.
+ */
+const RANKS: Record<BarOrderStatus, number> = {
+  NEW: 0,
+  PREPARING: 1,
+  READY: 2,
+  PICKED_UP: 3,
+  CANCELLED: 4,
+};
+
+export function statusRank(status: BarOrderStatus): number {
+  return RANKS[status];
+}
 
 /**
  * Проверка строк заказа до транзакции: дубль itemId запрещён 400-м —

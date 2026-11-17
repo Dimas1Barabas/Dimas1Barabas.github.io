@@ -3,6 +3,7 @@ import {
   barTotal,
   BarOutOfStockError,
   MAX_QTY_PER_ITEM,
+  statusRank,
   validateBarOrder,
 } from './bar.logic';
 
@@ -58,5 +59,17 @@ describe('BarOutOfStockError', () => {
     expect(err.left).toBe(0);
     expect(err.message).toContain('Вода газированная 0,5 л');
     expect(err.message).toContain('0 порц.');
+  });
+});
+
+describe('statusRank', () => {
+  it('жизненный цикл монотонен: NEW → PREPARING → READY → PICKED_UP', () => {
+    expect(statusRank('NEW')).toBeLessThan(statusRank('PREPARING'));
+    expect(statusRank('PREPARING')).toBeLessThan(statusRank('READY'));
+    expect(statusRank('READY')).toBeLessThan(statusRank('PICKED_UP'));
+  });
+
+  it('отмена терминальна: опоздавшее «готово» не оживит её', () => {
+    expect(statusRank('CANCELLED')).toBeGreaterThan(statusRank('READY'));
   });
 });

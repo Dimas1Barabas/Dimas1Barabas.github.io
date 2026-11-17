@@ -25,8 +25,9 @@ import {
 import {
   BarOrderCancelledEvent,
   BarOrderCreatedEvent,
+  BarOrderStatusEvent,
 } from './bar-events';
-import { BarOutOfStockError, barTotal, validateBarOrder } from './bar.logic';
+import { BarOutOfStockError, barTotal, statusRank, validateBarOrder } from './bar.logic';
 import { CreateBarOrderDto } from './dto/create-bar-order.dto';
 
 /** строка UPDATE … RETURNING атомарного списания */
@@ -256,5 +257,40 @@ export class BarService implements OnModuleInit {
       relations: { items: true, session: true },
     });
     return toBarOrderDto(order, order.items ?? []);
+  }
+
+  /**
+   * Статусный переход от Бармена (bar.order.status): PREPARING / READY /
+   * PICKED_UP. Монотонность бережёт от гонки с отменой — если владелец
+   * уже отменил заказ (остатки вернулись), опоздавшее «готово» его не
+   * оживит; повторный ределивери того же статуса тоже пропускается.
+   */
+  async handleStatus(event: BarOrderStatusEvent): Promise<void> {
+    await this.dataSource.transaction(async (em) => {
+      let order: BarOrder;
+      try {
+        order = await em.findOneByOrFail(BarOrder, { id: event.orderId });
+      } catch {
+        // заказа нет (например, БД пересобрана) — poison'ом не считаем,
+        // ack: событие больше некому ждать
+        this.logger.warn(
+          `Статус ${event.status} для неизвестного заказа ${event.orderId} — пропущен`,
+        );
+        return;
+      }
+      if (statusRank(event.status) <= statusRank(order.status)) {
+        this.logger.log(
+          `Статус ${event.status} заказа ${event.orderId} не новее текущего ` +
+            `${order.status} — пропущен (гонка с отменой или ределивери)`,
+        );
+        return;
+      }
+      order.status = event.status;
+      await em.save(BarOrder, order);
+      this.logger.log(
+        `Заказ кинобара ${event.orderId}: ${event.status} ` +
+          `(Бармен, ${event.customerName})`,
+      );
+    });
   }
 }
