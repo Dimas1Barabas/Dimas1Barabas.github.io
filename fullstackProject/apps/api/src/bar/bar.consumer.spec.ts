@@ -51,23 +51,29 @@ describe('BarConsumer (трейсинг)', () => {
     span.end();
 
     await consumer.onStatus(event, {
+      fields: { routingKey: 'bar.order.ready' },
       properties: { headers },
     } as ConsumeMessage);
 
     expect(handleStatus).toHaveBeenCalledWith(event);
     const finished = exporter.getFinishedSpans();
-    const consumerSpan = finished.find((s) => s.name === 'api.bar.status');
+    // спан зовётся по routing key доставки — очередь слушает три потока
+    const consumerSpan = finished.find(
+      (s) => s.name === 'rabbit.consume bar.order.ready',
+    );
     expect(consumerSpan).toBeDefined();
     expect(consumerSpan!.parentSpanContext?.spanId).toBe(spanId);
   });
 
   it('без traceparent спан становится корнем — событие не теряется', async () => {
-    await consumer.onStatus(event);
+    await consumer.onStatus(event, {
+      fields: { routingKey: 'bar.order.preparing' },
+    } as ConsumeMessage);
 
     expect(handleStatus).toHaveBeenCalledWith(event);
     const consumerSpan = exporter
       .getFinishedSpans()
-      .find((s) => s.name === 'api.bar.status');
+      .find((s) => s.name === 'rabbit.consume bar.order.preparing');
     expect(consumerSpan).toBeDefined();
   });
 });
