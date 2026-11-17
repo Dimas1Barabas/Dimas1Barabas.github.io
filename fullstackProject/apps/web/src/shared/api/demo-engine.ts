@@ -3,9 +3,12 @@ import type {
   AdminStatsEnvelope,
   BehaviorInsights,
   BehaviorInsightsEnvelope,
+  BarMenuItem,
+  BarOrder,
   Booking,
   BookingStats,
   BonusAccount,
+  CreateBarOrderPayload,
   BonusKind,
   BonusReason,
   BonusTransaction,
@@ -139,6 +142,25 @@ const DEMO_REMINDER_LEAD_MS = 120_000;
  *  а письмо должно прийти за один визит в демо */
 const REMINDER_DELAY_MIN_MS = 3_000;
 const REMINDER_DELAY_MAX_MS = 60_000;
+
+/**
+ * Каталог кинобара демо — зеркало BAR_CATALOG сидов API (те же позиции,
+ * цены и остатки: у воды нарочно 3 порции — дефицит виден и в демо).
+ */
+const DEMO_BAR_ITEMS: BarMenuItem[] = [
+  { id: 'demo-bar-popcorn-salted', slug: 'popcorn-salted', name: 'Попкорн солёный', category: 'popcorn', priceRub: 320, stock: 40, soldOut: false },
+  { id: 'demo-bar-popcorn-caramel', slug: 'popcorn-caramel', name: 'Попкорн карамельный', category: 'popcorn', priceRub: 340, stock: 35, soldOut: false },
+  { id: 'demo-bar-popcorn-cheese', slug: 'popcorn-cheese', name: 'Попкорн сырный', category: 'popcorn', priceRub: 350, stock: 20, soldOut: false },
+  { id: 'demo-bar-cola-05', slug: 'cola-05', name: 'Кола 0,5 л', category: 'drinks', priceRub: 220, stock: 30, soldOut: false },
+  { id: 'demo-bar-cola-1', slug: 'cola-1', name: 'Кола 1 л', category: 'drinks', priceRub: 330, stock: 12, soldOut: false },
+  { id: 'demo-bar-water', slug: 'water-sparkling', name: 'Вода газированная 0,5 л', category: 'drinks', priceRub: 150, stock: 3, soldOut: false },
+  { id: 'demo-bar-nachos', slug: 'nachos-cheese', name: 'Начос с сырным соусом', category: 'snacks', priceRub: 380, stock: 18, soldOut: false },
+  { id: 'demo-bar-combo-classic', slug: 'combo-classic', name: 'Комбо: попкорн солёный + кола 0,5', category: 'combo', priceRub: 490, stock: 25, soldOut: false },
+  { id: 'demo-bar-combo-family', slug: 'combo-family', name: 'Комбо семейное: 2 попкорна + 2 колы', category: 'combo', priceRub: 890, stock: 8, soldOut: false },
+];
+/** темп «Бармена» демо: шаг статуса за 4 с — NEW виден, готовность
+ *  успевает прилететь за один визит (в живом стенде жмут руками) */
+const BARMAN_STEP_MS = 4_000;
 
 /**
  * Тестовая сборка демо (vite build --mode demo-test, .env.demo-test) для
@@ -565,6 +587,14 @@ class DemoEngine {
   private remindersSent: ReminderStreamEvent[] = [];
   /** bookingId → таймер напоминания (как SCHEDULED-записи Go-сервиса) */
   private reminderTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** кинобар: каталог с остатками (копии — витрина не мутирует движок) */
+  private barItems: BarMenuItem[] = DEMO_BAR_ITEMS.map((i) => ({ ...i }));
+  /** заказы кинобара демо, свежими сверху */
+  private barOrders: BarOrder[] = [];
+  /** счётчик id заказов бара — детерминированные «demo-bar-N» */
+  private barSeq = 0;
+  /** orderId → цепочка таймеров «Бармена» (NEW → PREPARING → READY → PICKED_UP) */
+  private barTimers = new Map<string, ReturnType<typeof setTimeout>[]>();
 
   /** «access-токен» демо-сессии — не JWT, просто маркер для стора */
   static readonly SESSION_TOKEN = 'demo-session';
@@ -1567,6 +1597,162 @@ class DemoEngine {
       },
       invited: DEMO_REFERRAL_FRIENDS.map((f) => ({ ...f })),
     };
+  }
+
+  /** витрина кинобара: все позиции с остатками — проданное остаётся
+   *  с soldOut: true (как GET /bar/menu API — «продано», не исчезло) */
+  barMenu(): BarMenuItem[] {
+    return this.barItems.map((i) => ({ ...i }));
+  }
+
+  /**
+   * Оформить заказ кинобара — зеркало BarService.create: дубль позиции и
+   * пустая корзина — 400, нехватка остатка — 409 с честным сообщением;
+   * списание атомарно по строке (в демо один поток, семантика та же).
+   * Дальше «Бармен» ведёт заказ таймерами: PREPARING → READY → PICKED_UP
+   * (ready демонстрирует «письмо» notification в живом стенде; здесь —
+   * статус в «Моих заказах»).
+   */
+  createBarOrder(payload: CreateBarOrderPayload): BarOrder {
+    if (payload.items.length === 0) {
+      throw new ApiError('HTTP 400', 400, '{"message":"Корзина пуста"}');
+    }
+    const seen = new Set<string>();
+    for (const line of payload.items) {
+      if (seen.has(line.itemId)) {
+        throw new ApiError(
+          'HTTP 400',
+          400,
+          '{"message":"Позиция заказа продублирована — укажите количество в qty одной строкой"}',
+        );
+      }
+      seen.add(line.itemId);
+      if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 10) {
+        throw new ApiError(
+          'HTTP 400',
+          400,
+          '{"message":"Количество позиции должно быть целым от 1 до 10"}',
+        );
+      }
+    }
+
+    // валидация остатков до списания: отказ ничего не меняет (как откат tx)
+    for (const line of payload.items) {
+      const item = this.barItems.find((i) => i.id === line.itemId);
+      if (!item) {
+        throw new ApiError('HTTP 404', 404, '{"message":"Позиция не найдена"}');
+      }
+      if (item.stock < line.qty) {
+        throw new ApiError(
+          'HTTP 409',
+          409,
+          JSON.stringify({
+            statusCode: 409,
+            error: 'Conflict',
+            message: `«${item.name}»: осталось ${item.stock} порц.`,
+          }),
+        );
+      }
+    }
+
+    let sessionId: string | null = null;
+    let hall: string | null = null;
+    let sessionAt: string | null = null;
+    if (payload.sessionId) {
+      const session = DEMO_MOVIES.flatMap((m) =>
+        m.sessions.map((s) => ({ movie: m, session: s })),
+      ).find(({ session }) => session.id === payload.sessionId);
+      if (!session) {
+        throw new ApiError('HTTP 404', 404, '{"message":"Сеанс не найден"}');
+      }
+      sessionId = session.session.id;
+      hall = session.session.hall;
+      sessionAt = session.session.startsAt;
+    }
+
+    const items = payload.items.map((line) => {
+      const item = this.barItems.find((i) => i.id === line.itemId)!;
+      item.stock -= line.qty; // списание — сразу, компенсация при отмене
+      item.soldOut = item.stock <= 0;
+      return { itemId: item.id, name: item.name, priceRub: item.priceRub, qty: line.qty };
+    });
+
+    const order: BarOrder = {
+      id: `demo-bar-${++this.barSeq}`,
+      status: 'NEW',
+      sessionId,
+      hall,
+      sessionAt,
+      totalRub: items.reduce((s, i) => s + i.priceRub * i.qty, 0),
+      items,
+      createdAt: new Date().toISOString(),
+    };
+    this.barOrders.unshift(order);
+    this.notify();
+
+    this.scheduleBarman(order);
+    return { ...order };
+  }
+
+  /** «мои заказы» бара: свежие сверху, копии — как myWaitlist */
+  myBarOrders(): BarOrder[] {
+    return this.barOrders.map((o) => ({ ...o, items: o.items.map((i) => ({ ...i })) }));
+  }
+
+  /**
+   * Отмена заказа — зеркало BarService.cancel: только NEW/PREPARING,
+   * порции возвращаются на склад, таймеры Бармена гасятся. Выданный и
+   * повторно отменяемый — 409, чужого в демо не бывает (счёт один).
+   */
+  cancelBarOrder(orderId: string): BarOrder {
+    const order = this.barOrders.find((o) => o.id === orderId);
+    if (!order) throw new ApiError('HTTP 404', 404, '{"message":"Заказ не найден"}');
+    if (order.status === 'CANCELLED') {
+      throw new ApiError('HTTP 409', 409, '{"message":"Заказ уже отменён"}');
+    }
+    if (order.status !== 'NEW' && order.status !== 'PREPARING') {
+      throw new ApiError(
+        'HTTP 409',
+        409,
+        '{"message":"Заказ уже выдан — отменить нельзя"}',
+      );
+    }
+
+    this.clearBarTimers(orderId);
+    for (const line of order.items) {
+      const item = this.barItems.find((i) => i.id === line.itemId);
+      if (item) {
+        item.stock += line.qty;
+        item.soldOut = false;
+      }
+    }
+    order.status = 'CANCELLED';
+    this.notify();
+    return { ...order };
+  }
+
+  /** цепочка статусов «Бармена»: в работа → готов → выдан */
+  private scheduleBarman(order: BarOrder): void {
+    const steps: BarOrder['status'][] = ['PREPARING', 'READY', 'PICKED_UP'];
+    let elapsed = 0;
+    const timers = steps.map((status, i) => {
+      elapsed += BARMAN_STEP_MS;
+      return setTimeout(() => {
+        if (order.status === 'CANCELLED') return; // отмена обогнала кнопку
+        order.status = status;
+        this.notify();
+        if (i === steps.length - 1) this.barTimers.delete(order.id);
+      }, elapsed);
+    });
+    this.barTimers.set(order.id, timers);
+  }
+
+  /** гасим цепочку таймеров заказа (отмена) */
+  private clearBarTimers(orderId: string): void {
+    const timers = this.barTimers.get(orderId);
+    if (!timers) return;
+    timers.forEach((t) => clearTimeout(t));
+    this.barTimers.delete(orderId);
   }
 
   /** баланс: SUM(accrual) − SUM(spend) от источника-ledger */

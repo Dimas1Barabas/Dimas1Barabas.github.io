@@ -575,3 +575,56 @@ export interface RecommendationsDto {
   items: RecommendationItem[];
   basis: RecommendationsBasis;
 }
+
+/** категории витрины кинобара — порядок как в GET /api/bar/menu */
+export type BarCategory = 'popcorn' | 'drinks' | 'snacks' | 'combo';
+
+/** позиция каталога кинобара — элемент GET /api/bar/menu */
+export interface BarMenuItem {
+  id: string;
+  slug: string;
+  name: string;
+  category: BarCategory;
+  priceRub: number;
+  /** порций на складе; 0 — продано */
+  stock: number;
+  soldOut: boolean;
+}
+
+/**
+ * Статусы заказа кинобара. NEW создаёт API, дальше переходы гоняет
+ * Бармен (экран бара); CANCELLED — владелец отменил, пока не выдали.
+ */
+export type BarOrderStatus =
+  | 'NEW'
+  | 'PREPARING'
+  | 'READY'
+  | 'PICKED_UP'
+  | 'CANCELLED';
+
+/** позиция заказа — снимок имени/цены на момент оформления */
+export interface BarOrderItem {
+  itemId: string;
+  name: string;
+  priceRub: number;
+  qty: number;
+}
+
+/** заказ кинобара — POST /api/bar/orders и элемент GET /api/bar/orders/my */
+export interface BarOrder {
+  id: string;
+  status: BarOrderStatus;
+  /** сеанс, к которому приготовить; null — забрать на стойке */
+  sessionId: string | null;
+  hall: string | null;
+  sessionAt: string | null;
+  totalRub: number;
+  items: BarOrderItem[];
+  createdAt: string;
+}
+
+/** оформление предзаказа — POST /api/bar/orders */
+export interface CreateBarOrderPayload {
+  items: { itemId: string; qty: number }[];
+  sessionId?: string;
+}

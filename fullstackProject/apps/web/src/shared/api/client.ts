@@ -1,12 +1,15 @@
 import type {
   AdminStatsEnvelope,
   BehaviorInsightsEnvelope,
+  BarMenuItem,
+  BarOrder,
   Booking,
   BookingStats,
   BonusAccount,
   ReferralMy,
   ChangePasswordPayload,
   CheckoutPayload,
+  CreateBarOrderPayload,
   CreateBookingPayload,
   CreateMoviePayload,
   CreatePromoPayload,
@@ -268,6 +271,22 @@ export const api = {
   myBonuses: () => request<BonusAccount>('/bonuses/my'),
   /** реферальный счёт: код приглашения + статистика приглашений */
   myReferrals: () => request<ReferralMy>('/referrals/my'),
+  /** кинобар: каталог с остатками (публичная витрина) */
+  barMenu: () => request<BarMenuItem[]>('/bar/menu'),
+  /** оформить предзаказ кинобара (409 — остатка не хватило, message честный) */
+  createBarOrder: (payload: CreateBarOrderPayload) =>
+    request<BarOrder>('/bar/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  /** мои заказы кинобара: статусы приготовления приходят от Бармена */
+  myBarOrders: () => request<BarOrder[]>('/bar/orders/my'),
+  /** отменить заказ NEW/PREPARING — порции вернутся на склад (409 выдан) */
+  cancelBarOrder: (id: string) =>
+    request<BarOrder>(`/bar/orders/${id}/cancel`, {
+      method: 'POST',
+    }),
   /** персональный топ «Вам понравится» (КиноСоветник за gRPC) */
   recommendations: () => request<RecommendationsDto>('/recommendations/my'),
   /** регистрация: пароль хэшируется на бэкенде, вернётся UserDto */

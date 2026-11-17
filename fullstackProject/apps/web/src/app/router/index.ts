@@ -58,6 +58,12 @@ const router = createRouter({
       component: () => import('@/pages/invite/ui/InviteView.vue'),
     },
     {
+      // кинобар: предзаказ попкорна и напитков к сеансу (этап 32)
+      path: '/bar',
+      name: 'bar',
+      component: () => import('@/pages/bar/ui/BarView.vue'),
+    },
+    {
       path: '/admin',
       name: 'admin',
       component: () => import('@/pages/admin/ui/AdminView.vue'),
