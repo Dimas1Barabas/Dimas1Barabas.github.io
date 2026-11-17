@@ -165,7 +165,7 @@ export class BarOrderDto {
 
 export function toBarOrderDto(
   order: BarOrder,
-  items: BarOrderItem[],
+  items: Array<Pick<BarOrderItem, 'itemId' | 'name' | 'priceRub' | 'qty'>>,
 ): BarOrderDto {
   return {
     id: order.id,

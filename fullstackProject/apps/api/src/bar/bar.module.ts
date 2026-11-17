@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { OutboxModule } from '../outbox/outbox.module';
 import { BarItem } from './bar-item.entity';
 import { BarOrder, BarOrderItem } from './bar-order.entity';
 import { BarController } from './bar.controller';
@@ -11,7 +12,7 @@ import { BarService } from './bar.service';
  * в собственной базе, статусы возвращаются событием bar.order.status.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([BarItem, BarOrder, BarOrderItem])],
+  imports: [TypeOrmModule.forFeature([BarItem, BarOrder, BarOrderItem]), OutboxModule],
   controllers: [BarController],
   providers: [BarService],
 })

@@ -1,0 +1,62 @@
+import { BadRequestException } from '@nestjs/common';
+import {
+  barTotal,
+  BarOutOfStockError,
+  MAX_QTY_PER_ITEM,
+  validateBarOrder,
+} from './bar.logic';
+
+describe('validateBarOrder', () => {
+  it('пропускает корректный заказ', () => {
+    expect(() =>
+      validateBarOrder([
+        { itemId: 'a', qty: 1 },
+        { itemId: 'b', qty: MAX_QTY_PER_ITEM },
+      ]),
+    ).not.toThrow();
+  });
+
+  it('запрещает дубль позиции — количество живёт в qty, не в повторах строк', () => {
+    expect(() =>
+      validateBarOrder([
+        { itemId: 'a', qty: 1 },
+        { itemId: 'a', qty: 2 },
+      ]),
+    ).toThrow(BadRequestException);
+  });
+
+  it.each([0, -1, 1.5, MAX_QTY_PER_ITEM + 1])(
+    'отклоняет qty=%p (нужно целое 1…10)',
+    (qty) => {
+      expect(() => validateBarOrder([{ itemId: 'a', qty }])).toThrow(
+        BadRequestException,
+      );
+    },
+  );
+});
+
+describe('barTotal', () => {
+  it('складывает позиции по снимкам цен', () => {
+    expect(
+      barTotal([
+        { priceRub: 340, qty: 2 },
+        { priceRub: 220, qty: 1 },
+        { priceRub: 890, qty: 3 },
+      ]),
+    ).toBe(340 * 2 + 220 + 890 * 3);
+  });
+
+  it('пустой состав — 0', () => {
+    expect(barTotal([])).toBe(0);
+  });
+});
+
+describe('BarOutOfStockError', () => {
+  it('несёт имя позиции и честный остаток для 409', () => {
+    const err = new BarOutOfStockError('Вода газированная 0,5 л', 0);
+    expect(err.itemName).toBe('Вода газированная 0,5 л');
+    expect(err.left).toBe(0);
+    expect(err.message).toContain('Вода газированная 0,5 л');
+    expect(err.message).toContain('0 порц.');
+  });
+});
