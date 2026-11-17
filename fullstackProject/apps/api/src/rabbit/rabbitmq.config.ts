@@ -35,9 +35,15 @@ export const rabbitMqModule = RabbitMQModule.forRoot({
     // «письмо ушло» от reminder-сервиса → SSE-событие зрителю
     // (параллельно то же событие читает notification-service)
     ...withRetryTopology('api.reminder.sent', 'user.session.reminder'),
-    // статусы приготовления кинобара от Бармена (параллельно то же
-    // событие читает notification-service — «письмо» о готовности)
-    ...withRetryTopology('api.bar.status', 'bar.order.status'),
+    // статусы приготовления кинобара от Бармена: rk по одному на
+    // переход, очередь слушает все три (retry/parking — по первому rk,
+    // как у api.recommendations.signals). Параллельно ready читает
+    // notification-service — «письмо» о готовности
+    ...withRetryTopology('api.bar.status', [
+      'bar.order.preparing',
+      'bar.order.ready',
+      'bar.order.picked_up',
+    ]),
     // wait-очередь резерва: без потребителей, держит событие create ровно
     // окно оплаты и по TTL (dead-letter) отдаёт его в «booking.payment.timeout».
     // Декларирует только API — единственный публикатор: расхождение аргументов

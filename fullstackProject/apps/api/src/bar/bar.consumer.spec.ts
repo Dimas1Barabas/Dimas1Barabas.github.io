@@ -58,7 +58,7 @@ describe('BarConsumer (трейсинг)', () => {
     const finished = exporter.getFinishedSpans();
     const consumerSpan = finished.find((s) => s.name === 'api.bar.status');
     expect(consumerSpan).toBeDefined();
-    expect(consumerSpan!.parentSpanId).toBe(spanId);
+    expect(consumerSpan!.parentSpanContext?.spanId).toBe(spanId);
   });
 
   it('без traceparent спан становится корнем — событие не теряется', async () => {

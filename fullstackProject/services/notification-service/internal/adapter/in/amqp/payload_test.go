@@ -108,6 +108,44 @@ func TestToOutcome(t *testing.T) {
 		}
 	})
 
+	t.Run("bar.order.ready — письмо о готовности заказа кинобара", func(t *testing.T) {
+		o, err := toOutcome(delivery(keyBarReady,
+			`{"orderId":"0b0e6f2a-1111-4222-8333-444455556666","status":"READY","email":"anna@example.com","customerName":"Анна","changedAt":"2026-11-17T12:03:00Z"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.Verdict != "BAR_READY" || o.BookingID != "anna@example.com" {
+			t.Fatalf("outcome = %+v", o)
+		}
+		// текст собран из полей события, имя адресата и короткий номер заказа
+		if o.Message != "Анна, ваш заказ кинобара готов — ждём на стойке бара (заказ №0b0e6f2a)" {
+			t.Fatalf("message = %q", o.Message)
+		}
+	})
+
+	t.Run("bar.order.ready без имени — вежливый дефолт", func(t *testing.T) {
+		o, err := toOutcome(delivery(keyBarReady,
+			`{"orderId":"short","email":"boris@example.com"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.Message != "Ваш заказ кинобара готов — ждём на стойке бара (заказ №short)" {
+			t.Fatalf("message = %q", o.Message)
+		}
+	})
+
+	t.Run("bar.order.ready без email — ядовитое", func(t *testing.T) {
+		if _, err := toOutcome(delivery(keyBarReady, `{"orderId":"o-1"}`)); err == nil {
+			t.Fatal("ожидали ошибку: письмо без адресата")
+		}
+	})
+
+	t.Run("барменские статусы кроме ready сервис не слушает — ядовитое", func(t *testing.T) {
+		if _, err := toOutcome(delivery("bar.order.preparing", `{"orderId":"o-1","email":"x@y.z"}`)); err == nil {
+			t.Fatal("ожидали ошибку routing key: готовить читает только API")
+		}
+	})
+
 	t.Run("битый JSON", func(t *testing.T) {
 		if _, err := toOutcome(delivery(keyProcessed, `{не json`)); err == nil {
 			t.Fatal("ожидали ошибку разбора")

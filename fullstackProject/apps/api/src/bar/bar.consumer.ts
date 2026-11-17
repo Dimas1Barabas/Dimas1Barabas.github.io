@@ -8,10 +8,10 @@ import { BarService } from './bar.service';
 
 /**
  * Слушает статусные переходы Бармена (кнопки «в работу» / «готово» /
- * «выдано» на экране бара) и отражает их в bar_orders — источник статуса
- * для «Моих заказов». Параллельно то же событие читает
- * notification-service («письмо» о готовности). Сбой обработки не роняет
- * событие: retry → parking.
+ * «выдано» на экране бара — rk по одному на переход) и отражает их в
+ * bar_orders — источник статуса для «Моих заказов». Параллельно ready
+ * читает notification-service («письмо» о готовности). Сбой обработки
+ * не роняет событие: retry → parking.
  */
 @Injectable()
 export class BarConsumer {
@@ -19,10 +19,15 @@ export class BarConsumer {
 
   @RabbitSubscribe({
     exchange: 'cinema',
-    routingKey: 'bar.order.status',
+    routingKey: [
+      'bar.order.preparing',
+      'bar.order.ready',
+      'bar.order.picked_up',
+    ],
     queue: 'api.bar.status',
     queueOptions: { durable: true },
-    errorHandler: retryErrorHandler('bar.order.status'),
+    // rk выводится из сообщения: очередь слушает три потока сразу
+    errorHandler: retryErrorHandler(),
   })
   async onStatus(
     event: BarOrderStatusEvent,
@@ -30,7 +35,7 @@ export class BarConsumer {
   ): Promise<void> {
     await withConsumeSpan(
       'api.bar.status',
-      'bar.order.status',
+      raw?.fields?.routingKey ?? 'bar.order.status',
       raw,
       () => this.bar.handleStatus(event),
     );

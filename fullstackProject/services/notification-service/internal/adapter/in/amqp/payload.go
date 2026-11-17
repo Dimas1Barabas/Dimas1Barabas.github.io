@@ -53,18 +53,48 @@ func toOutcome(d amqp091.Delivery) (domain.Outcome, error) {
 		o.Verdict = "SESSION_REMINDER"
 		// и здесь адресат едет в BookingID; текст письма прислал сервис
 		o.BookingID = p.Email
+	case keyBarReady:
+		if p.Email == "" {
+			return domain.Outcome{}, fmt.Errorf("bar.order.ready без адресата (email)")
+		}
+		if p.OrderID == "" {
+			return domain.Outcome{}, fmt.Errorf("bar.order.ready без orderId")
+		}
+		o.Verdict = "BAR_READY"
+		// текст собираем из полей события: Бармен шлёт контракт без message
+		who := p.CustomerName
+		if who == "" {
+			who = "Ваш"
+		} else {
+			who += ", ваш"
+		}
+		o.Message = fmt.Sprintf("%s заказ кинобара готов — ждём на стойке бара (заказ %s)",
+			who, shortID(p.OrderID))
+		// тот же приём: адресат письма — email из BookingID
+		o.BookingID = p.Email
 	default:
 		return domain.Outcome{}, fmt.Errorf("неизвестный routing key %q", d.RoutingKey)
 	}
 	return o, nil
 }
 
+// shortID — человекочитаемый хвост uuid-заказа для текста письма.
+func shortID(id string) string {
+	if len(id) > 8 {
+		return "№" + id[:8]
+	}
+	return "№" + id
+}
+
 // verdictPayload — общая форма событий: у вердиктов воркера поля названы
-// одинаково, письмо сброса добавляет email адресата.
+// одинаково, письма сброса/листа/сеанса добавляют email адресата,
+// готовность кинобара — orderId и имя гостя.
 type verdictPayload struct {
-	BookingID   string `json:"bookingId"`
-	Status      string `json:"status"` // processed | refunded
-	Message     string `json:"message"`
-	ProcessedBy string `json:"processedBy"`
-	Email       string `json:"email,omitempty"` // user.password.reset от NestJS
+	BookingID    string `json:"bookingId"`
+	Status       string `json:"status"` // processed | refunded
+	Message      string `json:"message"`
+	ProcessedBy  string `json:"processedBy"`
+	Email        string `json:"email,omitempty"`        // user.password.reset от NestJS
+	OrderID      string `json:"orderId,omitempty"`      // bar.order.ready от Бармена
+	CustomerName string `json:"customerName,omitempty"` // bar.order.ready от Бармена
 }

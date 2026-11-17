@@ -8,6 +8,20 @@ import (
 	"barman-service/internal/domain"
 )
 
+// Routing-ключ по одному на статус: notification биндит только ready.
+func TestRoutingKeyFor(t *testing.T) {
+	cases := map[domain.Status]string{
+		domain.StatusPreparing: "bar.order.preparing",
+		domain.StatusReady:     "bar.order.ready",
+		domain.StatusPickedUp:  "bar.order.picked_up",
+	}
+	for status, want := range cases {
+		if got := RoutingKeyFor(status); got != want {
+			t.Fatalf("RoutingKeyFor(%s) = %s, ожидался %s", status, got, want)
+		}
+	}
+}
+
 // Контракт события: camelCase-поля, RFC3339-время, статус строкой.
 // Читающая сторона — NestJS API (BarOrderStatusEvent) и
 // notification-service; тест держит имена полей намертво.

@@ -23,15 +23,15 @@ export interface BarOrderCreatedEvent {
 }
 
 /**
- * Бармен → API (и notification-service): routing key «bar.order.status».
- * Статусные переходы после оформления: PREPARING / READY / PICKED_UP.
- * READY параллельно читает notification-service — «письмо» «заказ готов,
- * ждём на стойке бара» (email Бармен взял из BarOrderCreatedEvent).
+ * Бармен → API (и notification-service): routing key по одному на
+ * переход — bar.order.preparing / bar.order.ready / bar.order.picked_up
+ * (топик-обмен даёт читателям свою выборку: API слушает все три,
+ * notification — только ready для «письма»). Статус дублируется полем.
  */
 export interface BarOrderStatusEvent {
   orderId: string;
   status: 'PREPARING' | 'READY' | 'PICKED_UP';
-  /** адресат «письма» о готовности; прочим статусам не нужен */
+  /** адресат «письма» о готовности (шлёт notification на ready) */
   email: string;
   customerName: string;
   changedAt: string;

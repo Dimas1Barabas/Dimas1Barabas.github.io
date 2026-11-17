@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,9 +23,16 @@ import (
 
 const (
 	exchangeName = "cinema"
-	// RoutingKey — ключ статусного события; PREPARING/READY/PICKED_UP.
-	RoutingKey = "bar.order.status"
 )
+
+// RoutingKeyFor — ключ статусного события по одному на переход:
+// bar.order.preparing | bar.order.ready | bar.order.picked_up.
+// Читателям нужна своя выборка: NestJS API — все три, notification
+// («письмо» о готовности) — только ready. Топик-обмен даёт биндить
+// ровно то, что нужно, как у booking.processed/refunded/expired.
+func RoutingKeyFor(status domain.Status) string {
+	return "bar.order." + strings.ToLower(string(status))
+}
 
 // statusPayload — JSON события (контракт BarOrderStatusEvent из NestJS
 // API, camelCase). Email — адресат «письма» о готовности: событие
@@ -108,10 +116,10 @@ func (p *Publisher) Run(ctx context.Context) error {
 	}
 }
 
-// PublishStatus — событие в обмен cinema. Persistent: сообщение
-// переживает рестарт брокера в устойчивых очередях консьюмеров.
-// PRODUCER-спан и traceparent — в tracing.PublishJSON: статус
-// продолжает трейс нажатой кнопки экрана бара.
+// PublishStatus — событие в обмен cinema, rk по статусу (RoutingKeyFor).
+// Persistent: сообщение переживает рестарт брокера в устойчивых
+// очередях консьюмеров. PRODUCER-спан и traceparent — в
+// tracing.PublishJSON: статус продолжает трейс нажатой кнопки бара.
 func (p *Publisher) PublishStatus(ctx context.Context, o domain.Order) error {
 	body, err := json.Marshal(buildPayload(o))
 	if err != nil {
@@ -124,7 +132,8 @@ func (p *Publisher) PublishStatus(ctx context.Context, o domain.Order) error {
 		p.metrics.PublishFailed()
 		return errors.New("соединение с брокером не установлено")
 	}
-	if err := tracing.PublishJSON(ctx, p.channel, exchangeName, RoutingKey, body); err != nil {
+	rk := RoutingKeyFor(o.Status)
+	if err := tracing.PublishJSON(ctx, p.channel, exchangeName, rk, body); err != nil {
 		p.metrics.PublishFailed()
 		return err
 	}
