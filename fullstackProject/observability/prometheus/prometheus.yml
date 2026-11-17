@@ -65,6 +65,11 @@ scrape_configs:
     static_configs:
       - targets: ['outbox-relay:8094']
 
+  # Бармен: принятые заказы, кнопки экрана бара, публикация статусов
+  - job_name: barman
+    static_configs:
+      - targets: ['barman:8097']
+
   # Брокер: очереди, публикации/доставки, соединения
   # (встроенный плагин rabbitmq_prometheus)
   - job_name: rabbitmq

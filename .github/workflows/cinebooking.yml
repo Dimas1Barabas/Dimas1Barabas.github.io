@@ -266,6 +266,13 @@ jobs:
           - name: outbox-relay
             dir: outbox-relay
             threshold: 19
+          # Бармен (этап 32, кинобар): домен/use-cases/memory/витрина и
+          # парсер с тестами; в CI testcontainers раскрывает live-PG
+          # адаптер. Первый прогон 17.11 — порог по локальной цифре,
+          # поднять по факту зелёного (число — в notice-аннотации шага)
+          - name: barman
+            dir: barman-service
+            threshold: 35
     defaults:
       run:
         working-directory: fullstackProject/services/${{ matrix.dir }}

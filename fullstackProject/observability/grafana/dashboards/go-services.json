@@ -309,6 +309,67 @@
         "legend": { "displayMode": "list", "placement": "bottom" },
         "tooltip": { "mode": "multi" }
       }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Бармен: очередь кинобара",
+      "description": "Принятые заказы и кнопки экрана бара («в работу» / «готов» / «выдан») по действиям",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(cine_barman_accepted_total[5m])) by (routing_key)",
+          "legendFormat": "принято: {{routing_key}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(cine_barman_buttons_total[5m])) by (action)",
+          "legendFormat": "кнопка: {{action}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Бармен: статусы и сбои",
+      "description": "Опубликованные bar.order.*-статусы (API обновляет заказ, notification шлёт «письмо» на ready) и сбои: недоставленные статусы лечит повторное нажатие кнопки",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(cine_barman_published_total[5m])) by (status)",
+          "legendFormat": "опубликовано: {{status}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(cine_barman_publish_failed_total[5m]))",
+          "legendFormat": "недоставленные статусы",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(cine_barman_errors_total[5m]))",
+          "legendFormat": "сбои обработки",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      }
     }
   ]
 }
