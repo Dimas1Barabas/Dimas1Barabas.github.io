@@ -76,12 +76,18 @@ describe('ReferralsService', () => {
       referredBy: host.id,
       referralCode: 'PAAAAAAA',
       referralRewardedAt: new Date(),
+      // Боб зарегистрировался ПОЗЖЕ Кэрол: сортировка «свежие сверху»
+      // ставит его первым — без явных дат оба.createdAt попадают в одну
+      // миллисекунду и порядок решает стабильность sort, а на границе мс
+      // Кэрол становится «новее» — тест флакается (поймано 17.11)
+      createdAt: new Date(Date.now() - 30_000),
     });
     const lazyFriend = makeUser({
       email: 'carol@example.com',
       name: 'Кэрол',
       referredBy: host.id,
       referralCode: 'PBBBBBBB',
+      createdAt: new Date(Date.now() - 60_000),
     });
     const stranger = makeUser({ email: 'stranger@example.com' });
     const users = new FakeUserRepo();
