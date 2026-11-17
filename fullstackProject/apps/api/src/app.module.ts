@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminModule } from './admin/admin.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AuthModule } from './auth/auth.module';
+import { BarModule } from './bar/bar.module';
 import { BonusModule } from './bonus/bonus.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
@@ -58,6 +59,8 @@ import { FlagsModule } from './flags/flags.module';
     SearchModule,
     // реферальная программа: код приглашения + статистика (этап 31)
     ReferralsModule,
+    // кинобар: каталог с остатками и предзаказы к сеансу (этап 32)
+    BarModule,
     AdminModule,
     PromosModule,
     WaitlistModule,
