@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBadRequestResponse,
@@ -46,6 +46,7 @@ export class GiftsController {
   }
 
   @Post('activate')
+  @HttpCode(200)
   @ApiOperation({
     summary: 'Активировать код подаренной карты',
     description:
