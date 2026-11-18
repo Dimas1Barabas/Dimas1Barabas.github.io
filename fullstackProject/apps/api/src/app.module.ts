@@ -26,6 +26,7 @@ import { SearchModule } from './search/search.module';
 import { UsersModule } from './users/users.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
 import { FlagsModule } from './flags/flags.module';
+import { GiftsModule } from './gifts/gifts.module';
 
 @Module({
   imports: [
@@ -61,6 +62,8 @@ import { FlagsModule } from './flags/flags.module';
     ReferralsModule,
     // кинобар: каталог с остатками и предзаказы к сеансу (этап 32)
     BarModule,
+    // гифт-сертификаты: подарочные карты, списание в оплате брони (этап 33)
+    GiftsModule,
     AdminModule,
     PromosModule,
     WaitlistModule,
