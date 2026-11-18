@@ -748,6 +748,9 @@ class DemoEngine {
     this.waitlist = [];
     this.bonusLedger = seedBonusLedger();
     this.bonusSeq = seedBonusLedger().length;
+    this.gifts = seedGifts();
+    this.giftSeq = 1;
+    this.giftSpends = [];
     this.signals = seedSignals();
     DEMO_MOVIES.forEach((m) => this.recomputeMovie(m.id));
     this.firstLoad = true;

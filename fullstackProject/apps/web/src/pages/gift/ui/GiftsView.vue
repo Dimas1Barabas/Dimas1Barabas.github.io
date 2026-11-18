@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useAppStore } from '@/shared/api/app-mode';
+import { ApiError } from '@/shared/api/client';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useGiftStore } from '@/entities/gift/model/store';
 import {
@@ -72,15 +73,17 @@ async function copyCode(): Promise<void> {
   }
 }
 
+/** текст ошибки: у ApiError причина лежит в JSON-теле (как в оплате) */
 function messageOf(err: unknown, fallback: string): string {
-  const message = (err as { message?: string })?.message ?? '';
-  try {
-    const parsed = JSON.parse(message) as { message?: string };
-    if (parsed.message) return parsed.message;
-  } catch {
-    // не JSON — отдаём как есть
+  if (err instanceof ApiError) {
+    try {
+      const parsed = JSON.parse(err.body) as { message?: string };
+      if (parsed.message) return parsed.message;
+    } catch {
+      // тело не JSON — уходим к общему тексту
+    }
   }
-  return message || fallback;
+  return (err as { message?: string })?.message || fallback;
 }
 
 function formatDate(iso: string): string {
