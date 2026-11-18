@@ -102,6 +102,8 @@ describe('QR-билеты: HTTP-интеграция (фейковые зави�
       promoCode: null,
       discountRub: null,
       bonusSpent: null,
+      giftCode: null,
+      giftSpent: null,
       status: 'CONFIRMED',
       expiresAt: null,
       message: 'Оплата прошла',

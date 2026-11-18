@@ -34,4 +34,18 @@ export class CheckoutDto extends CreateBookingDto {
   @IsInt()
   @Min(1)
   useBonuses?: number;
+
+  @ApiProperty({
+    example: 'GIFT-AB2CD3EF',
+    required: false,
+    description:
+      'Гифт-сертификат: закрывает хвост чека после промокода и бонусов ' +
+      '(частично или целиком); коды отказа — как в /bookings/:id/pay',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9-]{5,16}$/, {
+    message: 'Код сертификата: 5–16 символов — латиница, цифры и дефис',
+  })
+  giftCode?: string;
 }

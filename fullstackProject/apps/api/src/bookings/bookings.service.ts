@@ -33,6 +33,9 @@ import {
   promoDiscount,
   promoRefusalError,
 } from '../promos/promo.logic';
+import { normalizeGiftCode } from '../gifts/gift-code';
+import { giftSpendRefusalError } from '../gifts/gifts.logic';
+import { GiftRefusedError, GiftsService } from '../gifts/gifts.service';
 import { Session } from '../movies/session.entity';
 import {
   RecommendationBookingEvent,
@@ -137,6 +140,30 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
+/**
+ * Гостевые брони гифтом не оплачиваются: карта привязана к счёту
+ * владельца — списание в gift_spends требует user_id. Прямой 409 без
+ * разворота в причину по строке карты (как bonusUnavailable).
+ */
+function giftUnavailableError(): ConflictException {
+  return new ConflictException({
+    statusCode: 409,
+    error: 'Conflict',
+    message: 'Гостевые брони нельзя оплатить сертификатом',
+    code: 'giftUnavailable',
+  });
+}
+
+/** гифтом нечего закрывать: промокод и бонусы уже погасили чек */
+function giftNothingError(code: string): ConflictException {
+  return new ConflictException({
+    statusCode: 409,
+    error: 'Conflict',
+    message: `Чек уже закрыт промокодом и бонусами — сертификат ${code} не нужен`,
+    code: 'giftNothingToPay',
+  });
+}
+
 @Injectable()
 export class BookingsService {
   private readonly logger = new Logger(BookingsService.name);
@@ -169,6 +196,9 @@ export class BookingsService {
     // конверсия эксперимента checkout.new_flow: успешный чекаут — то самое
     // бизнес-событие, ради которого считаются экспозиции (fire-and-forget)
     private readonly flagsEvaluator: FlagsEvaluator,
+    // гифт-сертификаты: списание в pay и возвраты в вердиктах —
+    // транзакционные методы GiftsService (модуль импортирован ниже)
+    private readonly gifts: GiftsService,
   ) {}
 
   /**
@@ -422,14 +452,18 @@ export class BookingsService {
    * переключение брони — она остаётся в PENDING_PAYMENT. Бонусы — тем же
    * способом сразу после промокода: не больше половины чека (со скидкой) и
    * не больше баланса; контрольный пересчёт SUM после вставки не даёт
-   * параллельным оплатам увести счёт в минус. Воркеру уходит событие с уже
-   * финальной суммой: вердикт, возврат и аналитика видят одно число.
+   * параллельным оплатам увести счёт в минус. Гифт-сертификат — последним,
+   * деньгами: карта владельца закрывает хвост после промокода и бонусов
+   * (частично или целиком), списание — условный UPDATE по остатку карты.
+   * Воркеру уходит событие с уже финальной суммой: вердикт, возврат и
+   * аналитика видят одно число.
    */
   async pay(
     id: string,
     user: AuthUser,
     promoCode?: string,
     useBonuses?: number,
+    giftCode?: string,
   ): Promise<BookingDto> {
     const booking = await this.bookings.findOneByOrFail({ id });
     if (booking.userId && booking.userId !== user.id) {
@@ -437,9 +471,11 @@ export class BookingsService {
     }
     const { movie, session } = await this.contextOf(booking);
     const code = promoCode ? normalizePromoCode(promoCode) : null;
+    const gift = giftCode ? normalizeGiftCode(giftCode) : null;
 
     let applied: { code: string; discountRub: number } | null = null;
     let spent = 0;
+    let giftApplied: { code: string; amount: number } | null = null;
     try {
       const result = await this.dataSource.transaction(async (em) => {
         const switched = await em.update(
@@ -522,26 +558,63 @@ export class BookingsService {
           );
           spent = useBonuses;
         }
+
+        // гифт-сертификат — последним, деньгами: закрывает хвост чека
+        // после промокода и бонусов (частично или целиком). Списание —
+        // условный UPDATE по остатку карты: гонку за последний рубль
+        // решает БД, отказ откатывает транзакцию целиком — включая
+        // промо-активацию и списание бонусов
+        let giftApplied: { code: string; amount: number } | null = null;
+        if (gift) {
+          if (!booking.userId) throw giftUnavailableError();
+          const rest = booking.totalRub - (applied?.discountRub ?? 0) - spent;
+          if (rest <= 0) throw giftNothingError(gift);
+          giftApplied = await this.gifts.spendInTx(em, {
+            code: gift,
+            userId: booking.userId,
+            bookingId: id,
+            restRub: rest,
+          });
+          await em.update(
+            Booking,
+            { id },
+            {
+              totalRub: rest - giftApplied.amount,
+              giftCode: giftApplied.code,
+              giftSpent: giftApplied.amount,
+            },
+          );
+        }
         // воркеру — событие с уже финальной суммой; в outbox той же
         // транзакцией: оплата и событие о ней либо оба прошли, либо
         // оба нет (доставит Курьер)
         const paid: Booking = {
           ...booking,
           status: 'PENDING',
-          totalRub: booking.totalRub - (applied?.discountRub ?? 0) - spent,
+          totalRub:
+            booking.totalRub -
+            (applied?.discountRub ?? 0) -
+            spent -
+            (giftApplied?.amount ?? 0),
           promoCode: applied?.code ?? booking.promoCode,
           discountRub: applied?.discountRub ?? booking.discountRub,
           bonusSpent: spent > 0 ? spent : booking.bonusSpent,
+          giftCode: giftApplied?.code ?? booking.giftCode,
+          giftSpent:
+            giftApplied && giftApplied.amount > 0
+              ? giftApplied.amount
+              : booking.giftSpent,
         };
         await enqueueOutbox(
           em,
           'booking.created',
           this.createdEventOf(paid, movie, session),
         );
-        return { applied, spent };
+        return { applied, spent, giftApplied };
       });
       applied = result.applied;
       spent = result.spent;
+      giftApplied = result.giftApplied;
     } catch (err) {
       if (err instanceof PromoRefusedError) {
         // транзакция откатилась — спрашиваем у БД причину отказа
@@ -550,6 +623,12 @@ export class BookingsService {
       }
       if (err instanceof BonusRefusedError) {
         throw await this.bonusRefusalError(err.reason, booking);
+      }
+      if (err instanceof GiftRefusedError) {
+        // карта не списалась — причина по свежепрочитанной строке:
+        // чужая / не активирована / просрочена / гонка за остаток
+        const cert = await this.gifts.findByCode(err.code);
+        throw giftSpendRefusalError(cert, err.userId);
       }
       throw err;
     }
@@ -560,11 +639,16 @@ export class BookingsService {
       booking.discountRub = applied.discountRub;
     }
     if (spent > 0) booking.bonusSpent = spent;
-    booking.totalRub -= (applied?.discountRub ?? 0) + spent;
+    if (giftApplied) {
+      booking.giftCode = giftApplied.code;
+      booking.giftSpent = giftApplied.amount;
+    }
+    booking.totalRub -=
+      (applied?.discountRub ?? 0) + spent + (giftApplied?.amount ?? 0);
     // событие оплаты закоммичено в outbox — будим Курьера
     this.outboxRelay.poke();
     this.logger.log(
-      `Оплата брони ${booking.id} (${booking.totalRub} ₽${applied ? `, промокод ${applied.code} −${applied.discountRub} ₽` : ''}${spent ? `, бонусы −${spent}` : ''}) → в очередь`,
+      `Оплата брони ${booking.id} (${booking.totalRub} ₽${applied ? `, промокод ${applied.code} −${applied.discountRub} ₽` : ''}${spent ? `, бонусы −${spent}` : ''}${giftApplied ? `, сертификат ${giftApplied.code} −${giftApplied.amount} ₽` : ''}) → в очередь`,
     );
     await this.push(booking, movie, session);
     return toBookingDto(booking, movie, session);
@@ -581,7 +665,13 @@ export class BookingsService {
    */
   async checkout(dto: CheckoutDto, user: AuthUser): Promise<BookingDto> {
     const booking = await this.create(dto, user);
-    const paid = await this.pay(booking.id, user, dto.promoCode, dto.useBonuses);
+    const paid = await this.pay(
+      booking.id,
+      user,
+      dto.promoCode,
+      dto.useBonuses,
+      dto.giftCode,
+    );
     // конверсия эксперимента: покупка за флагом состоялась — вариант
     // пересчитает «Суфлёр» по тому же бакетингу, что пропустил гвард
     this.flagsEvaluator.reportConversion('checkout.new_flow', user.id);
@@ -969,6 +1059,13 @@ export class BookingsService {
         });
       }
 
+      if (event.status === 'FAILED' && booking.giftSpent) {
+        // оплата не прошла — деньги сертификата возвращаются на карту.
+        // Идемпотентно: повторный вердикт видит помеченные reversed_at
+        // траты и ничего не возвращает
+        await this.gifts.reverseForBooking(em, booking.id);
+      }
+
       if (event.status === 'CONFIRMED') {
         // КиноСоветник: «сходил на фильм» — базовый сигнал профиля
         // зрителя; контракт и dedup-ключ (bookingId) — в
@@ -1075,9 +1172,11 @@ export class BookingsService {
       await em.save(Booking, updated);
 
       // возврат прошёл — бонусы разворачиваются: списанное возвращается,
-      // кэшбэк гасится (но не в минус)
+      // кэшбэк гасится (но не в минус); гифт-деньги возвращаются на карту
+      // (идемпотентно — помеченные траты второй раз не забираются)
       if (updated.status === 'CANCELLED' && updated.userId) {
         await this.reverseBookingBonuses(em, updated.userId, updated.id);
+        await this.gifts.reverseForBooking(em, updated.id);
       }
       if (updated.status === 'CANCELLED') {
         // возврат прошёл — места снова в продаже: гашение занятости и

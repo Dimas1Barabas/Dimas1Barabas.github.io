@@ -124,7 +124,7 @@ export class BookingsController {
   @HttpCode(200)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Оплатить бронь (опционально с промокодом и бонусами)',
+    summary: 'Оплатить бронь (промокод, бонусы, гифт-сертификат)',
     description:
       'Условный UPDATE переводит PENDING_PAYMENT → PENDING и публикует ' +
       'booking.created воркеру. Гонку с таймаутом резерва и двойным кликом ' +
@@ -135,8 +135,11 @@ export class BookingsController {
       'бронь остаётся в PENDING_PAYMENT. Бонусы (`useBonuses`, 1 бонус = ' +
       '1 ₽) списываются там же, сразу после промокода: не больше половины ' +
       'чека со скидкой и не больше баланса — иначе 409 bonusOverLimit / ' +
-      'bonusInsufficient, транзакция откатывается целиком. Вердикт ' +
-      '(CONFIRMED/FAILED) придёт по SSE-стриму.',
+      'bonusInsufficient, транзакция откатывается целиком. Гифт-сертификат ' +
+      '(`giftCode`) — последним, деньгами: закрывает хвост чека частично ' +
+      'или целиком; отказ 404 giftNotFound / 409 giftNotYours / 410 ' +
+      'giftExpired / 409 giftExhausted. Вердикт (CONFIRMED/FAILED) придёт ' +
+      'по SSE-стриму.',
   })
   @ApiOkResponse({ type: BookingDto })
   @ApiUnauthorizedResponse({ description: 'Нет JWT' })
@@ -144,15 +147,22 @@ export class BookingsController {
   @ApiConflictResponse({
     description:
       'Бронь уже оплачена/истекла/отменена (status), промокод исчерпан ' +
-      '(promoExhausted) или бонусы не подошли (bonusOverLimit / ' +
-      'bonusInsufficient / bonusUnavailable)',
+      '(promoExhausted), бонусы не подошли (bonusOverLimit / ' +
+      'bonusInsufficient / bonusUnavailable) или сертификат не списался ' +
+      '(giftNotFound / giftNotYours / giftExpired / giftExhausted)',
   })
   pay(
     @Param('id') id: string,
     @Body() dto: PayBookingDto,
     @Req() req: { user: AuthUser },
   ) {
-    return this.bookings.pay(id, req.user, dto.promoCode, dto.useBonuses);
+    return this.bookings.pay(
+      id,
+      req.user,
+      dto.promoCode,
+      dto.useBonuses,
+      dto.giftCode,
+    );
   }
 
   /** запуск компенсирующей саги: возврат платежа через Go-воркера */

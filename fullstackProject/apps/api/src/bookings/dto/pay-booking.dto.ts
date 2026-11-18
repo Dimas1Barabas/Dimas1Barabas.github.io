@@ -29,5 +29,21 @@ export class PayBookingDto {
   @IsInt()
   @Min(1)
   useBonuses?: number;
+
+  @ApiProperty({
+    example: 'GIFT-AB2CD3EF',
+    required: false,
+    description:
+      'Гифт-сертификат (активируйте код заранее на /gifts): закрывает ' +
+      'хвост чека после промокода и бонусов — частично или целиком. ' +
+      'Отказ: 404 giftNotFound / 409 giftNotYours / 410 giftExpired / ' +
+      '409 giftExhausted (гонку за остаток решает БД)',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9-]{5,16}$/, {
+    message: 'Код сертификата: 5–16 символов — латиница, цифры и дефис',
+  })
+  giftCode?: string;
 }
 

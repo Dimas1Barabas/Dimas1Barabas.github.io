@@ -184,6 +184,8 @@ describe('Промокоды: HTTP-интеграция (фейковые зав
       promoCode: null,
       discountRub: null,
       bonusSpent: null,
+      giftCode: null,
+      giftSpent: null,
       status: 'PENDING_PAYMENT',
       expiresAt: new Date(Date.now() + 60_000),
       message: null,

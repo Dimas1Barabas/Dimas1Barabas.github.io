@@ -17,9 +17,10 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
   let stream: BookingsHarness['stream'];
   let emUpdate: BookingsHarness['emUpdate'];
   let bonusRows: BookingsHarness['bonusRows'];
+  let gifts: BookingsHarness['gifts'];
 
   beforeEach(async () => {
-    ({ service, bookingsRepo, sessionsRepo, occupancyRepo, reminders, outboxInsert, stream, bonusRows, emUpdate } = await buildBookingsHarness());
+    ({ service, bookingsRepo, sessionsRepo, occupancyRepo, reminders, outboxInsert, stream, bonusRows, emUpdate, gifts } = await buildBookingsHarness());
   });
 
   describe('handleProcessed', () => {
@@ -250,6 +251,28 @@ describe('BookingsService: вердикты воркера: handleProcessed/Expi
           reason: 'payment_failed',
           amount: 400,
         });
+      });
+
+      it('FAILED возвращает деньги гифт-сертификата на карту', async () => {
+        bookingsRepo.findOneByOrFail.mockResolvedValue({
+          ...bookingFixture(),
+          giftSpent: 700,
+        });
+
+        await service.handleProcessed(processed('FAILED'));
+
+        expect(gifts.reverseForBooking).toHaveBeenCalledWith(
+          expect.anything(),
+          'booking-1',
+        );
+      });
+
+      it('FAILED без гифта — возврата карты нет', async () => {
+        bookingsRepo.findOneByOrFail.mockResolvedValue(bookingFixture());
+
+        await service.handleProcessed(processed('FAILED'));
+
+        expect(gifts.reverseForBooking).not.toHaveBeenCalled();
       });
 
       it('FAILED без списания — строки нет', async () => {

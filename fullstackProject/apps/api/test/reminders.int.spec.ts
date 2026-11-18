@@ -71,6 +71,8 @@ function pendingBooking(): Booking {
     promoCode: null,
     discountRub: null,
     bonusSpent: null,
+    giftCode: null,
+    giftSpent: null,
     status: 'PENDING',
     expiresAt: new Date(Date.now() + 60_000),
     message: null,

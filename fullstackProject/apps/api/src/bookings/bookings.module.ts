@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BonusTransaction } from '../bonus/bonus-transaction.entity';
+import { GiftsModule } from '../gifts/gifts.module';
 import { Movie } from '../movies/movie.entity';
 import { OutboxModule } from '../outbox/outbox.module';
 import { Promo } from '../promos/promo.entity';
@@ -43,6 +44,9 @@ import { SeatStream } from './seat-stream';
     ]),
     // RatelimiterModule — гвард лимитов на create() (клиент gRPC общий)
     RatelimiterModule,
+    // GiftsModule — списание сертификата в pay и возвраты в вердиктах
+    // (транзакционные методы GiftsService над общим EntityManager)
+    GiftsModule,
     // FlagsModule — FeatureFlagGuard на POST /bookings/checkout
     // (new_flow): модуль-синглтон, кэш состояний делится с админкой
     FlagsModule,

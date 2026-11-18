@@ -73,6 +73,14 @@ export class Booking {
   @Column({ name: 'bonus_spent', type: 'int', nullable: true })
   bonusSpent: number | null;
 
+  /** гифт-сертификат, закрывший хвост чека (списание в pay; null — без карты) */
+  @Column({ name: 'gift_code', type: 'varchar', length: 16, nullable: true })
+  giftCode: string | null;
+
+  /** сколько рублей снято с сертификата при оплате */
+  @Column({ name: 'gift_spent', type: 'int', nullable: true })
+  giftSpent: number | null;
+
   /** lifecycle: ждёт оплаты → проводится → вердикт; не оплачена вовремя — истекла */
   @Column({ length: 24, default: 'PENDING_PAYMENT' })
   status: BookingStatus;
@@ -161,6 +169,22 @@ export class BookingDto {
   })
   bonusSpent!: number | null;
 
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'GIFT-AB2CD3EF',
+    description: 'гифт-сертификат, закрывший хвост чека',
+  })
+  giftCode!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    example: 700,
+    description: 'сколько рублей снято с сертификата при оплате',
+  })
+  giftSpent!: number | null;
+
   /** union-тип в reflect-metadata неразличим — перечисляем явно */
   @ApiProperty({
     enum: BOOKING_STATUSES,
@@ -212,6 +236,8 @@ export function toBookingDto(
     promoCode: booking.promoCode ?? null,
     discountRub: booking.discountRub ?? null,
     bonusSpent: booking.bonusSpent ?? null,
+    giftCode: booking.giftCode ?? null,
+    giftSpent: booking.giftSpent ?? null,
     status: booking.status,
     expiresAt: booking.expiresAt?.toISOString() ?? null,
     message: booking.message,

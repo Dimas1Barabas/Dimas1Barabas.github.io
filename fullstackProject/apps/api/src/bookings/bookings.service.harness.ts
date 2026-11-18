@@ -15,6 +15,7 @@ import { Promo } from '../promos/promo.entity';
 import { PricingClient } from '../pricing/pricing.client';
 import { RemindersClient } from '../reminders/reminders.client';
 import { FlagsEvaluator } from '../flags/flags.evaluator';
+import { GiftsService } from '../gifts/gifts.service';
 import { User } from '../users/user.entity';
 import { WaitlistEntry } from '../waitlist/waitlist.entity';
 import { Session } from '../movies/session.entity';
@@ -71,6 +72,8 @@ export function bookingFixture(): Booking {
     promoCode: null,
     discountRub: null,
     bonusSpent: null,
+    giftCode: null,
+    giftSpent: null,
     status: 'PENDING',
     expiresAt: new Date('2026-09-03T12:15:00Z'),
     message: null,
@@ -116,6 +119,16 @@ export interface BookingsHarness {
   seatStream: { emit: jest.Mock };
   /** «Суфлёр»: конверсия эксперимента checkout.new_flow после чекаута */
   flagsEvaluator: { reportConversion: jest.Mock; reportExposure: jest.Mock };
+  /**
+   * Гифт-сертификаты: spendInTx по умолчанию проводит списание (кейсы
+   * оплаты переключают мок точечно), reverseForBooking — тихий ноль,
+   * findByCode — нет карты (маппинг отказа).
+   */
+  gifts: {
+    spendInTx: jest.Mock;
+    reverseForBooking: jest.Mock;
+    findByCode: jest.Mock;
+  };
   /** что «INSERT INTO seat_occupancy» сделал внутри транзакции */
   emInsert: jest.Mock;
   /** что «UPDATE …» сделал внутри транзакции (pay: статус + скидка) */
@@ -191,6 +204,13 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
   const flagsEvaluator: BookingsHarness['flagsEvaluator'] = {
     reportConversion: jest.fn(),
     reportExposure: jest.fn(),
+  };
+  // гифт-сертификаты: списание/возврат/чтение — спеки переключают моки
+  // точечно; дефолт — успешное списание нуля и отсутствие карты
+  const gifts: BookingsHarness['gifts'] = {
+    spendInTx: jest.fn(),
+    reverseForBooking: jest.fn(async () => 0),
+    findByCode: jest.fn(async () => null),
   };
   // Тарификатор по умолчанию «прозрачен»: базовая цена без факторов —
   // кейсы ценообразования переключают мок точечно
@@ -346,6 +366,7 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
       { provide: BookingStream, useValue: stream },
       { provide: SeatStream, useValue: seatStream },
       { provide: FlagsEvaluator, useValue: flagsEvaluator },
+      { provide: GiftsService, useValue: gifts },
     ],
   }).compile();
 
@@ -365,6 +386,7 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
     stream,
     seatStream,
     flagsEvaluator,
+    gifts,
     emInsert,
     emUpdate,
     emQuery,

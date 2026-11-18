@@ -6,6 +6,7 @@
 import { ConflictException, ForbiddenException, GoneException, NotFoundException } from '@nestjs/common';
 import { buildBookingsHarness, type BookingsHarness, authUser, bookingFixture } from './bookings.service.harness';
 import { Booking } from './booking.entity';
+import { GiftRefusedError } from '../gifts/gifts.service';
 
 describe('BookingsService: оплата: pay и промокоды (unit)', () => {
   let service: BookingsHarness['service'];
@@ -16,9 +17,10 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
   let emUpdate: BookingsHarness['emUpdate'];
   let emQuery: BookingsHarness['emQuery'];
   let bonusRows: BookingsHarness['bonusRows'];
+  let gifts: BookingsHarness['gifts'];
 
   beforeEach(async () => {
-    ({ service, bookingsRepo, promosRepo, outboxInsert, stream, emUpdate, emQuery, bonusRows } = await buildBookingsHarness());
+    ({ service, bookingsRepo, promosRepo, outboxInsert, stream, emUpdate, emQuery, bonusRows, gifts } = await buildBookingsHarness());
   });
 
   describe('pay', () => {
@@ -322,6 +324,153 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
           (await promise.catch((e: unknown) => e)) as ConflictException;
         expect(err.getResponse()).toMatchObject({ code: 'bonusUnavailable' });
       });
+    });
+  });
+
+  describe('pay с гифт-сертификатом', () => {
+    beforeEach(() => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        status: 'PENDING_PAYMENT',
+      });
+    });
+
+    it('списывает карту после промокода и бонусов: хвост чека закрыт до нуля', async () => {
+      // промо −10% (120) и 400 бонусов: 1200 − 120 − 400 = 680 — карта
+      bonusRows.push({
+        userId: 'user-1',
+        bookingId: 'seed-booking',
+        kind: 'accrual',
+        reason: 'cashback',
+        amount: 1000,
+      });
+      emQuery.mockImplementation(async (sql: string, params: unknown[]) => {
+        if (/UPDATE promos/.test(sql)) {
+          return [[{ code: 'CINE10', kind: 'percent', value: 10 }], 1];
+        }
+        if (/user_id/.test(sql)) {
+          const balance = bonusRows
+            .filter((r) => r.userId === params[0])
+            .reduce(
+              (s, r) => s + (r.kind === 'accrual' ? r.amount : -r.amount),
+              0,
+            );
+          return [{ balance: String(balance) }];
+        }
+        return [[], 0];
+      });
+      gifts.spendInTx.mockResolvedValueOnce({
+        code: 'GIFT-AB2CD3EF',
+        amount: 680,
+      });
+
+      const result = await service.pay(
+        'booking-1',
+        authUser,
+        'CINE10',
+        400,
+        ' gift-ab2cd3ef ',
+      );
+
+      // нормализация кода + остаток чека после промо и бонусов
+      expect(gifts.spendInTx).toHaveBeenCalledWith(expect.anything(), {
+        code: 'GIFT-AB2CD3EF',
+        userId: 'user-1',
+        bookingId: 'booking-1',
+        restRub: 680,
+      });
+      expect(result).toMatchObject({
+        status: 'PENDING',
+        totalRub: 0,
+        discountRub: 120,
+        bonusSpent: 400,
+        giftCode: 'GIFT-AB2CD3EF',
+        giftSpent: 680,
+      });
+      expect(emUpdate).toHaveBeenLastCalledWith(
+        Booking,
+        { id: 'booking-1' },
+        { totalRub: 0, giftCode: 'GIFT-AB2CD3EF', giftSpent: 680 },
+      );
+      // воркер видит уже финальную сумму
+      expect(outboxInsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          routingKey: 'booking.created',
+          payload: expect.objectContaining({ totalRub: 0 }),
+        }),
+      );
+    });
+
+    it('отказ карты: причина по свежепрочитанной строке (giftNotYours), всё откатилось', async () => {
+      gifts.spendInTx.mockRejectedValueOnce(
+        new GiftRefusedError('GIFT-AB2CD3EF', 'user-1'),
+      );
+      gifts.findByCode.mockResolvedValueOnce({
+        code: 'GIFT-AB2CD3EF',
+        status: 'active',
+        activatedByUserId: 'someone-else',
+        remainingRub: 500,
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+
+      const promise = service.pay(
+        'booking-1',
+        authUser,
+        undefined,
+        undefined,
+        'GIFT-AB2CD3EF',
+      );
+
+      await expect(promise).rejects.toBeInstanceOf(ConflictException);
+      const err =
+        (await promise.catch((e: unknown) => e)) as ConflictException;
+      expect(err.getResponse()).toMatchObject({ code: 'giftNotYours' });
+      // только переключение статуса — списание не писалось, события нет
+      expect(emUpdate).toHaveBeenCalledTimes(1);
+      expect(outboxInsert).not.toHaveBeenCalled();
+    });
+
+    it('409 giftUnavailable: гостевая бронь без владельца', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        userId: null,
+        status: 'PENDING_PAYMENT',
+      });
+
+      const promise = service.pay(
+        'booking-1',
+        authUser,
+        undefined,
+        undefined,
+        'GIFT-AB2CD3EF',
+      );
+
+      await expect(promise).rejects.toBeInstanceOf(ConflictException);
+      const err =
+        (await promise.catch((e: unknown) => e)) as ConflictException;
+      expect(err.getResponse()).toMatchObject({ code: 'giftUnavailable' });
+      expect(gifts.spendInTx).not.toHaveBeenCalled();
+    });
+
+    it('409 giftNothingToPay: промокод закрыл чек целиком', async () => {
+      emQuery.mockResolvedValue([
+        [{ code: 'FULL', kind: 'fixed', value: 1200 }],
+        1,
+      ]);
+
+      const promise = service.pay(
+        'booking-1',
+        authUser,
+        'FULL',
+        undefined,
+        'GIFT-AB2CD3EF',
+      );
+
+      await expect(promise).rejects.toBeInstanceOf(ConflictException);
+      const err =
+        (await promise.catch((e: unknown) => e)) as ConflictException;
+      expect(err.getResponse()).toMatchObject({ code: 'giftNothingToPay' });
+      expect(gifts.spendInTx).not.toHaveBeenCalled();
     });
   });
 
