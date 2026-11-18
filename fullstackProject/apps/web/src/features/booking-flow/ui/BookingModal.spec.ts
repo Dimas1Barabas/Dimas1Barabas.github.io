@@ -142,6 +142,8 @@ describe('BookingModal', () => {
       promoCode: null,
       discountRub: null,
       bonusSpent: null,
+      giftCode: null,
+      giftSpent: null,
       status: 'PENDING', // мгновенный чекаут: платёж уже запущен
       expiresAt: null,
       message: null,
@@ -202,6 +204,8 @@ describe('BookingModal', () => {
       promoCode: null,
       discountRub: null,
       bonusSpent: null,
+      giftCode: null,
+      giftSpent: null,
       status: 'PENDING_PAYMENT',
       expiresAt: new Date(Date.now() + 120_000).toISOString(),
       message: null,

@@ -119,6 +119,10 @@ export interface Booking {
   discountRub: number | null;
   /** сколько бонусов списано при оплате (null — без бонусов), 1 бонус = 1 ₽ */
   bonusSpent: number | null;
+  /** гифт-сертификат, закрывший хвост чека (null — без карты) */
+  giftCode: string | null;
+  /** сколько рублей снято с сертификата при оплате */
+  giftSpent: number | null;
   status: BookingStatus;
   /** дедлайн оплаты (актуален для PENDING_PAYMENT), ISO */
   expiresAt: string | null;
@@ -161,11 +165,13 @@ export interface CreateBookingPayload {
 
 /**
  * Мгновенный чекаут (новый поток оплаты за флагом checkout.new_flow):
- * поля брони те же, поля оплаты — опциональные промокод и бонусы.
+ * поля брони те же, поля оплаты — опциональные промокод, бонусы и
+ * гифт-сертификат.
  */
 export interface CheckoutPayload extends CreateBookingPayload {
   promoCode?: string;
   useBonuses?: number;
+  giftCode?: string;
 }
 
 /**
@@ -546,6 +552,35 @@ export interface ReferralMy {
   bonusFriend: number;
   totals: { invited: number; paid: number; earned: number };
   invited: ReferralInvited[];
+}
+
+/** жизненный цикл карты: ждёт активации → можно тратить → потрачена */
+export type GiftStatus = 'purchased' | 'active' | 'exhausted';
+
+/** гифт-сертификат — POST /api/gifts, /api/gifts/activate, строка GET /api/gifts/my */
+export interface Gift {
+  id: string;
+  /** «GIFT-XXXXXXXX» — нормализуется в верхний регистр */
+  code: string;
+  /** номинал при покупке, ₽ */
+  nominalRub: number;
+  /** остаток, ₽ */
+  remainingRub: number;
+  status: GiftStatus;
+  /** когда получатель активировал код (null — ещё не активирована) */
+  activatedAt: string | null;
+  /** срок: после него тратить и активировать нельзя, ISO */
+  expiresAt: string;
+  createdAt: string;
+}
+
+/** мои сертификаты — GET /api/gifts/my */
+export interface GiftsMy {
+  /** активированные мной карты (живые и потраченные), свежие сверху */
+  cards: Gift[];
+  /** купленные мной коды, ожидающие получателя */
+  given: Gift[];
+  totals: { availableRub: number; cards: number; given: number };
 }
 
 /** позиция топа «Вам понравится» — GET /api/recommendations/my */

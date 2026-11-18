@@ -64,6 +64,12 @@ const router = createRouter({
       component: () => import('@/pages/bar/ui/BarView.vue'),
     },
     {
+      // гифт-сертификаты: покупка, активация кодов, остатки (этап 33)
+      path: '/gifts',
+      name: 'gifts',
+      component: () => import('@/pages/gift/ui/GiftsView.vue'),
+    },
+    {
       path: '/admin',
       name: 'admin',
       component: () => import('@/pages/admin/ui/AdminView.vue'),

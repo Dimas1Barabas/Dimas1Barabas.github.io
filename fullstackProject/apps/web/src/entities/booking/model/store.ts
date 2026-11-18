@@ -143,14 +143,15 @@ export const useBookingsStore = defineStore('bookings', {
       id: string,
       promoCode?: string,
       useBonuses?: number,
+      giftCode?: string,
     ): Promise<Booking> {
       const app = useAppStore();
       this.paying.push(id);
       try {
         const booking =
           app.mode === 'demo'
-            ? demoEngine.pay(id, promoCode, useBonuses)
-            : await api.payBooking(id, promoCode, useBonuses);
+            ? demoEngine.pay(id, promoCode, useBonuses, giftCode)
+            : await api.payBooking(id, promoCode, useBonuses, giftCode);
         this.error = null;
         return booking;
       } catch (err) {

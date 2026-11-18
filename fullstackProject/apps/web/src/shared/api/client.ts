@@ -15,6 +15,8 @@ import type {
   CreatePromoPayload,
   CreateReviewPayload,
   FlagVerdict,
+  Gift,
+  GiftsMy,
   HealthResponse,
   LoginResult,
   Movie,
@@ -241,15 +243,22 @@ export const api = {
       method: 'POST',
     }),
   /** оплата: PENDING_PAYMENT → PENDING, воркер проводит платёж;
-   *  промокод и бонусы активируются той же транзакцией (409 промо-
-   *  исчерпан / bonusOverLimit / bonusInsufficient в гонке) */
-  payBooking: (id: string, promoCode?: string, useBonuses?: number) =>
+   *  промокод, бонусы и гифт-сертификат активируются той же
+   *  транзакцией (409 промо-исчерпан / bonusOverLimit /
+   *  bonusInsufficient / giftExhausted в гонке) */
+  payBooking: (
+    id: string,
+    promoCode?: string,
+    useBonuses?: number,
+    giftCode?: string,
+  ) =>
     request<Booking>(`/bookings/${id}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...(promoCode ? { promoCode } : {}),
         ...(useBonuses ? { useBonuses } : {}),
+        ...(giftCode ? { giftCode } : {}),
       }),
     }),
   /** билеты брони: по одному на место (409 bookingNotConfirmed без CONFIRMED) */
@@ -271,6 +280,22 @@ export const api = {
   myBonuses: () => request<BonusAccount>('/bonuses/my'),
   /** реферальный счёт: код приглашения + статистика приглашений */
   myReferrals: () => request<ReferralMy>('/referrals/my'),
+  /** купить гифт-сертификат (400 — номинал вне границ или не кратен 100) */
+  buyGift: (nominalRub: number) =>
+    request<Gift>('/gifts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nominalRub }),
+    }),
+  /** активировать код подаренной карты (409/404/410 — причина в message) */
+  activateGift: (code: string) =>
+    request<Gift>('/gifts/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }),
+  /** мои сертификаты: карты + подаренные коды + живой остаток */
+  myGifts: () => request<GiftsMy>('/gifts/my'),
   /** кинобар: каталог с остатками (публичная витрина) */
   barMenu: () => request<BarMenuItem[]>('/bar/menu'),
   /** оформить предзаказ кинобара (409 — остатка не хватило, message честный) */

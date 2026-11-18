@@ -9,6 +9,7 @@ import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useBookingsStore } from '@/entities/booking/model/store';
 import { useBonusStore } from '@/entities/bonus/model/store';
+import { useGiftStore } from '@/entities/gift/model/store';
 import type { PromoPreview } from '@/shared/api/types';
 import {
   formatCountdown,
@@ -17,6 +18,7 @@ import {
   formatSession,
 } from '@/shared/lib/format';
 import { PROMO_CODE_RE } from '@/shared/lib/promo';
+import { normalizeGiftCode } from '@/shared/lib/gift';
 import { spendCap } from '@/shared/lib/bonus';
 
 /**
@@ -30,6 +32,7 @@ const app = useAppStore();
 const auth = useAuthStore();
 const store = useBookingsStore();
 const bonuses = useBonusStore();
+const gifts = useGiftStore();
 
 const bookingId = computed(() => String(route.params.bookingId ?? ''));
 const booking = computed(
@@ -55,6 +58,10 @@ const useBonus = ref(false);
 const bonusSpend = ref(0);
 const bonusError = ref<string | null>(null);
 
+/** гифт-сертификат: код своей живой карты (валидацию повторит API) */
+const giftInput = ref('');
+const giftError = ref<string | null>(null);
+
 const now = ref(Date.now());
 let tick: ReturnType<typeof setInterval> | null = null;
 
@@ -66,8 +73,10 @@ onMounted(async () => {
   if (app.mode === 'live' && auth.isAuthed) {
     await store.refreshMine();
     await bonuses.refresh();
+    void gifts.refresh();
   } else if (app.mode === 'demo') {
     await bonuses.refresh();
+    void gifts.refresh();
   }
   loaded.value = true;
   tick = setInterval(() => (now.value = Date.now()), 1000);
@@ -128,6 +137,30 @@ const totalDue = computed(
   () => afterPromo.value - (useBonus.value ? clampedSpend.value : 0),
 );
 
+/** своя живая карта по введённому коду (null — код не из моих карт) */
+const giftCard = computed(() => {
+  const code = normalizeGiftCode(giftInput.value);
+  if (!code.startsWith('GIFT-')) return null;
+  return (
+    gifts.account?.cards.find(
+      (c) =>
+        c.code === code &&
+        c.status === 'active' &&
+        Date.parse(c.expiresAt) > Date.now(),
+    ) ?? null
+  );
+});
+
+/** карта закрывает хвост после промокода и бонусов — частично или целиком */
+const giftPlanned = computed(() =>
+  giftCard.value
+    ? Math.max(0, Math.min(giftCard.value.remainingRub, totalDue.value))
+    : 0,
+);
+
+/** финальный чек: что реально уйдёт «на кассу» после карты */
+const grandDue = computed(() => totalDue.value - giftPlanned.value);
+
 const PROMO_HINTS: Record<string, string> = {
   promoNotFound: 'Промокод не найден',
   promoExpired: 'Срок действия промокода истёк',
@@ -138,6 +171,15 @@ const BONUS_HINTS: Record<string, string> = {
   bonusOverLimit: 'Бонусами можно закрыть не больше половины чека',
   bonusInsufficient: 'Не хватает бонусов на счету',
   bonusUnavailable: 'Гостевые брони нельзя оплатить бонусами',
+};
+
+const GIFT_HINTS: Record<string, string> = {
+  giftNotFound: 'Сертификат с таким кодом не найден',
+  giftNotYours: 'Код не активирован — активируйте его на странице «Подарки»',
+  giftExpired: 'Срок действия сертификата истёк',
+  giftExhausted: 'Сертификат потрачен полностью',
+  giftNothingToPay: 'Чек уже закрыт промокодом и бонусами — карта не нужна',
+  giftUnavailable: 'Гостевые брони нельзя оплатить сертификатом',
 };
 
 /** текст-подсказка из кода ошибки API (null — это не про промокод) */
@@ -155,6 +197,16 @@ function bonusHintOf(err: ApiError): string | null {
   try {
     const code = (JSON.parse(err.body) as { code?: string }).code;
     return code && BONUS_HINTS[code] ? BONUS_HINTS[code] : null;
+  } catch {
+    return null;
+  }
+}
+
+/** и для гифт-карты (null — ошибка не про неё) */
+function giftHintOf(err: ApiError): string | null {
+  try {
+    const code = (JSON.parse(err.body) as { code?: string }).code;
+    return code && GIFT_HINTS[code] ? GIFT_HINTS[code] : null;
   } catch {
     return null;
   }
@@ -200,11 +252,14 @@ async function pay(): Promise<void> {
   paying.value = true;
   error.value = null;
   bonusError.value = null;
+  giftError.value = null;
   try {
     const spend = useBonus.value && clampedSpend.value > 0 ? clampedSpend.value : undefined;
-    await store.pay(booking.value.id, applied.value?.code, spend);
-    // списание ушло — счёт уже изменился (кэшбэк доначислит вердикт)
+    const gift = giftInput.value.trim() ? normalizeGiftCode(giftInput.value) : undefined;
+    await store.pay(booking.value.id, applied.value?.code, spend, gift);
+    // списание ушло — счёты уже изменились (кэшбэк доначислит вердикт)
     void bonuses.refresh();
+    void gifts.refresh();
   } catch (err) {
     if (err instanceof ApiError) {
       // код могли исчерпать между превью и оплатой: транзакция откатилась,
@@ -222,6 +277,15 @@ async function pay(): Promise<void> {
         await bonuses.refresh();
         bonusSpend.value = bonusCap.value;
         bonusError.value = bonusHint;
+        return;
+      }
+      // карту могли списать параллельной оплатой: откатилась вся оплата —
+      // чистим поле и подсказываем
+      const giftHint = giftHintOf(err);
+      if (giftHint) {
+        giftInput.value = '';
+        await gifts.refresh();
+        giftError.value = giftHint;
         return;
       }
       // 409 «уже PENDING» — платёж ушёл с первого клика, ждём вердикт по SSE
@@ -296,7 +360,7 @@ async function cancel(): Promise<void> {
 
       <div class="pay-card__summary">
         <span>К оплате</span>
-        <strong class="pay-card__total">{{ formatPrice(totalDue) }}</strong>
+        <strong class="pay-card__total">{{ formatPrice(grandDue) }}</strong>
       </div>
 
       <!-- промокод: превью пересчитывает сумму, активация — в момент оплаты -->
@@ -362,6 +426,42 @@ async function cancel(): Promise<void> {
       </div>
       <p v-if="bonusError" class="hint hint--error">{{ bonusError }}</p>
 
+      <!-- гифт-сертификат: карта списается последней, деньгами — закрывает
+           хвост после промокода и бонусов частично или целиком -->
+      <div v-if="!giftCard" class="pay-promo">
+        <input
+          v-model="giftInput"
+          class="field__input pay-promo__input"
+          placeholder="Гифт-сертификат, GIFT-…"
+          data-testid="gift-input"
+          :disabled="paying"
+          @keydown.enter.prevent
+        />
+        <RouterLink to="/gifts" class="btn btn--ghost" tabindex="-1">
+          Подарки
+        </RouterLink>
+      </div>
+      <div v-else class="promo-applied" data-testid="gift-applied">
+        <span class="promo-applied__code">🎁 {{ giftCard.code }}</span>
+        <span class="promo-applied__discount">
+          −{{ formatPrice(giftPlanned) }}
+        </span>
+        <span class="pay-gift__rest">
+          на карте {{ formatPrice(giftCard.remainingRub - giftPlanned) }}
+        </span>
+        <button
+          class="btn btn--ghost btn--sm"
+          :disabled="paying"
+          data-testid="gift-remove"
+          @click="giftInput = ''"
+        >
+          Убрать
+        </button>
+      </div>
+      <p v-if="giftError" class="hint hint--error" data-testid="gift-error">
+        {{ giftError }}
+      </p>
+
       <p class="pay-timer" :class="{ 'pay-timer--overdue': overdue }">
         <template v-if="overdue">время вышло — проверяем статус…</template>
         <template v-else>оплата в течение {{ timeLeft }}</template>
@@ -379,7 +479,7 @@ async function cancel(): Promise<void> {
           @click="pay"
         >
           <span v-if="paying" class="spinner"></span>
-          {{ paying ? 'Отправляем…' : `Оплатить ${formatPrice(totalDue)}` }}
+          {{ paying ? 'Отправляем…' : `Оплатить ${formatPrice(grandDue)}` }}
         </button>
         <button
           class="btn btn--danger"
@@ -431,3 +531,10 @@ async function cancel(): Promise<void> {
     </div>
   </section>
 </template>
+
+<style scoped>
+.pay-gift__rest {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+</style>

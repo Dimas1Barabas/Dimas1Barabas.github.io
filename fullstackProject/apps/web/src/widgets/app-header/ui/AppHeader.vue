@@ -28,6 +28,7 @@ async function logout(): Promise<void> {
         <RouterLink to="/">Сеансы</RouterLink>
         <RouterLink to="/bookings">Бронирования</RouterLink>
         <RouterLink to="/bar">Кинобар</RouterLink>
+        <RouterLink to="/gifts">Подарки</RouterLink>
         <RouterLink v-if="appStore.mode === 'live' && authStore.isAuthed" to="/my">
           Мои билеты
         </RouterLink>

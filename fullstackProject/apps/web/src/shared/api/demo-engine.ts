@@ -17,6 +17,8 @@ import type {
   CreatePromoPayload,
   CreateReviewPayload,
   FlagVerdict,
+  Gift,
+  GiftsMy,
   LoginResult,
   Movie,
   SearchEnvelope,
@@ -59,6 +61,13 @@ import {
   normalizePromoCode,
   promoDiscount,
 } from '@/shared/lib/promo';
+import {
+  generateGiftCode,
+  giftExpired,
+  giftSpendAmount,
+  nominalError,
+  normalizeGiftCode,
+} from '@/shared/lib/gift';
 import {
   parseTicketQr,
   signTicket,
@@ -481,6 +490,8 @@ function seedBookings(): Booking[] {
       promoCode: null,
       discountRub: null,
       bonusSpent: null,
+      giftCode: null,
+      giftSpent: null,
       status: s.status,
       expiresAt: null,
       message: verdictMessage,
@@ -544,6 +555,44 @@ interface DemoWaitlistEntry {
   createdAt: string;
 }
 
+/** карта в состоянии движка (как gift_certificates в Postgres) */
+interface DemoGift extends Gift {
+  /** кто активировал — в демо счёт один, метка различает «своя» карта */
+  activatedByDemo: boolean;
+  /** куплена в этой сессии демо (для списка «подаренные») */
+  boughtByDemo: boolean;
+}
+
+/**
+ * Сид-карта демо: активирована «гостем демо» месяц назад, номинал 1000 ₽,
+ * остаток 500 ₽ — витрина «Подарки» сразу показывает живой баланс, а
+ * поле гифт-кода в оплате может списать ровно его.
+ */
+function seedGifts(): DemoGift[] {
+  return [
+    {
+      id: 'demo-gift-1',
+      code: 'GIFT-DEM0CA11',
+      nominalRub: 1000,
+      remainingRub: 500,
+      status: 'active',
+      activatedAt: inDays(-30, 12),
+      expiresAt: inDays(335, 12),
+      createdAt: inDays(-30, 13),
+      activatedByDemo: true,
+      boughtByDemo: true,
+    },
+  ];
+}
+
+/** трата карты (как gift_spends): сумма и метка возврата — идемпотентность */
+interface DemoGiftSpend {
+  certificateId: string;
+  bookingId: string;
+  amount: number;
+  reversedAt: string | null;
+}
+
 class DemoEngine {
   private bookings: Booking[] = [];
   /** отзывы всех фильмов; «гость демо» — как user из JWT в live-режиме */
@@ -595,6 +644,12 @@ class DemoEngine {
   private barSeq = 0;
   /** orderId → цепочка таймеров «Бармена» (NEW → PREPARING → READY → PICKED_UP) */
   private barTimers = new Map<string, ReturnType<typeof setTimeout>[]>();
+  /** гифт-сертификаты демо: сид-карта + купленные в сессии */
+  private gifts: DemoGift[] = seedGifts();
+  /** счётчик id карт — сид занял demo-gift-1 */
+  private giftSeq = 1;
+  /** траты карт (журнал gift_spends в миниатюре) */
+  private giftSpends: DemoGiftSpend[] = [];
 
   /** «access-токен» демо-сессии — не JWT, просто маркер для стора */
   static readonly SESSION_TOKEN = 'demo-session';
@@ -1248,6 +1303,8 @@ class DemoEngine {
       promoCode: null,
       discountRub: null,
       bonusSpent: null,
+      giftCode: null,
+      giftSpent: null,
       status: 'PENDING_PAYMENT',
       expiresAt: new Date(Date.now() + DEMO_PAYMENT_TIMEOUT_MS).toISOString(),
       message: null,
@@ -1294,18 +1351,30 @@ class DemoEngine {
    */
   checkout(payload: CheckoutPayload): Booking {
     const booking = this.create(payload);
-    return this.pay(booking.id, payload.promoCode, payload.useBonuses);
+    return this.pay(
+      booking.id,
+      payload.promoCode,
+      payload.useBonuses,
+      payload.giftCode,
+    );
   }
 
   /**
    * Оплата: PENDING_PAYMENT → PENDING (условный переход — 409 иначе),
    * затем «воркер» проводит платёж. Миниатюра POST /bookings/:id/pay.
-   * Промокод и бонусы — как в транзакции API: сначала валидация
-   * (промо жив, бонусы в лимите и на счету), потом «коммит» — отказ
-   * ничего не мутирует (бронь остаётся payable, активация не списана).
-   * Бонусы списываются после скидки: лимит «половина чека» — от остатка.
+   * Промокод, бонусы и гифт-карта — как в транзакции API: сначала
+   * валидация (промо жив, бонусы в лимите и на счету, карта активна и
+   * не просрочена), потом «коммит» — отказ ничего не мутирует (бронь
+   * остаётся payable, активация не списана). Бонусы списываются после
+   * скидки: лимит «половина чека» — от остатка; карта — последней,
+   * деньгами: закрывает хвост частично или целиком.
    */
-  pay(id: string, promoCode?: string, useBonuses?: number): Booking {
+  pay(
+    id: string,
+    promoCode?: string,
+    useBonuses?: number,
+    giftCode?: string,
+  ): Booking {
     const booking = this.bookings.find((b) => b.id === id);
     if (!booking) throw new Error('Бронь не найдена');
     if (booking.status !== 'PENDING_PAYMENT') {
@@ -1342,6 +1411,58 @@ class DemoEngine {
       }));
     }
 
+    // валидация гифт-карты (демо-счёт один — гость и есть владелец,
+    // поэтому giftUnavailable из API здесь не нужен): та же
+    // последовательность отказов, что в spendInTx + fresh-read в API
+    let gift: DemoGift | null = null;
+    let giftAmount = 0;
+    if (giftCode) {
+      const code = normalizeGiftCode(giftCode);
+      gift = this.gifts.find((g) => g.code === code) ?? null;
+      if (!gift) {
+        throw new ApiError('HTTP 404', 404, JSON.stringify({
+          statusCode: 404,
+          error: 'Not Found',
+          message: 'Сертификат с таким кодом не найден',
+          code: 'giftNotFound',
+        }));
+      }
+      if (gift.status === 'purchased' || !gift.activatedByDemo) {
+        throw new ApiError('HTTP 409', 409, JSON.stringify({
+          statusCode: 409,
+          error: 'Conflict',
+          message: `Сертификат ${gift.code} ещё не активирован — активируйте код на странице «Подарки»`,
+          code: 'giftNotYours',
+        }));
+      }
+      if (giftExpired(gift.expiresAt)) {
+        throw new ApiError('HTTP 410', 410, JSON.stringify({
+          statusCode: 410,
+          error: 'Gone',
+          message: `Срок действия сертификата ${gift.code} истёк`,
+          code: 'giftExpired',
+        }));
+      }
+      if (gift.remainingRub <= 0) {
+        throw new ApiError('HTTP 409', 409, JSON.stringify({
+          statusCode: 409,
+          error: 'Conflict',
+          message: `Сертификат ${gift.code} потрачен полностью`,
+          code: 'giftExhausted',
+        }));
+      }
+      const rest = base - (useBonuses ?? 0);
+      if (rest <= 0) {
+        throw new ApiError('HTTP 409', 409, JSON.stringify({
+          statusCode: 409,
+          error: 'Conflict',
+          message: `Чек уже закрыт промокодом и бонусами — сертификат ${gift.code} не нужен`,
+          code: 'giftNothingToPay',
+        }));
+      }
+      giftAmount = giftSpendAmount(gift.remainingRub, rest);
+    }
+
     // «коммит транзакции»: активация, статус, списание, финальная сумма
     if (promo) promo.usedCount += 1; // атомарный инкремент в миниатюре
     const timer = this.expiryTimers.get(booking.id);
@@ -1363,7 +1484,19 @@ class DemoEngine {
         bookingId: booking.id,
       });
     }
-    booking.totalRub = base - (useBonuses ?? 0);
+    if (gift) {
+      gift.remainingRub -= giftAmount;
+      if (gift.remainingRub === 0) gift.status = 'exhausted';
+      booking.giftCode = gift.code;
+      booking.giftSpent = giftAmount;
+      this.giftSpends.push({
+        certificateId: gift.id,
+        bookingId: booking.id,
+        amount: giftAmount,
+        reversedAt: null,
+      });
+    }
+    booking.totalRub = base - (useBonuses ?? 0) - giftAmount;
     this.notify();
 
     this.scheduleVerdict(booking);
@@ -1433,6 +1566,9 @@ class DemoEngine {
             bookingId: booking.id,
           });
         }
+        // деньги сертификата возвращаются на карту (идемпотентно —
+        // помеченные траты не разворачиваются повторно)
+        if (booking.giftSpent) this.reverseGiftSpends(booking.id);
       }
       this.notify();
     }, delay);
@@ -1529,6 +1665,8 @@ class DemoEngine {
         booking.seats.forEach((s) => occupiedSet.delete(s));
         this.releaseWaitlist(booking.sessionId);
         this.reverseBookingBonuses(booking);
+        // гифт-деньги — на карту обратно (как reverseForBooking в API)
+        this.reverseGiftSpends(booking.id);
         // билеты вернулись — напоминание гасим (как Cancel gRPC в API);
         // REFUND_FAILED-откат ниже по коду сюда не попадает — письмо ждёт
         const reminder = this.reminderTimers.get(booking.id);
@@ -1597,6 +1735,121 @@ class DemoEngine {
       },
       invited: DEMO_REFERRAL_FRIENDS.map((f) => ({ ...f })),
     };
+  }
+
+  // ── Гифт-сертификаты: зеркала GiftsService в миниатюре ───────────────
+
+  /** покупка: те же границы номинала и срок, что в API (400 при отказе) */
+  buyGift(nominalRub: number): Gift {
+    const problem = nominalError(nominalRub);
+    if (problem) {
+      throw new ApiError('HTTP 400', 400, JSON.stringify({ message: problem }));
+    }
+    const gift: DemoGift = {
+      id: `demo-gift-${(this.giftSeq += 1)}`,
+      code: generateGiftCode(),
+      nominalRub,
+      remainingRub: nominalRub,
+      status: 'purchased',
+      activatedAt: null,
+      expiresAt: inDays(365, 12),
+      createdAt: new Date().toISOString(),
+      activatedByDemo: false,
+      boughtByDemo: true,
+    };
+    this.gifts.unshift(gift);
+    this.notify();
+    return this.giftDto(gift);
+  }
+
+  /** активация: одноразовая — та же последовательность отказов, что в API */
+  activateGift(rawCode: string): Gift {
+    const code = normalizeGiftCode(rawCode);
+    const gift = this.gifts.find((g) => g.code === code);
+    if (!gift) {
+      throw new ApiError('HTTP 404', 404, JSON.stringify({
+        statusCode: 404,
+        error: 'Not Found',
+        message: 'Сертификат с таким кодом не найден',
+        code: 'giftNotFound',
+      }));
+    }
+    if (gift.status !== 'purchased' || gift.activatedByDemo) {
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Сертификат ${gift.code} уже активирован`,
+        code: 'giftAlreadyActivated',
+      }));
+    }
+    if (giftExpired(gift.expiresAt)) {
+      throw new ApiError('HTTP 410', 410, JSON.stringify({
+        statusCode: 410,
+        error: 'Gone',
+        message: `Срок действия сертификата ${gift.code} истёк`,
+        code: 'giftExpired',
+      }));
+    }
+    gift.status = 'active';
+    gift.activatedByDemo = true;
+    gift.activatedAt = new Date().toISOString();
+    this.notify();
+    return this.giftDto(gift);
+  }
+
+  /** витрина «Подарки»: свои карты, подаренные коды, живой остаток */
+  myGifts(): GiftsMy {
+    const mine = this.gifts.filter((g) => g.activatedByDemo);
+    const given = this.gifts.filter(
+      (g) => g.status === 'purchased' && g.boughtByDemo,
+    );
+    const live = mine.filter(
+      (g) => g.status === 'active' && !giftExpired(g.expiresAt),
+    );
+    return {
+      cards: mine.map((g) => this.giftDto(g)),
+      given: given.map((g) => this.giftDto(g)),
+      totals: {
+        availableRub: live.reduce((acc, g) => acc + g.remainingRub, 0),
+        cards: mine.length,
+        given: given.length,
+      },
+    };
+  }
+
+  /** копия без служебных полей движка — как GiftDto из API */
+  private giftDto(gift: DemoGift): Gift {
+    return {
+      id: gift.id,
+      code: gift.code,
+      nominalRub: gift.nominalRub,
+      remainingRub: gift.remainingRub,
+      status: gift.status,
+      activatedAt: gift.activatedAt,
+      expiresAt: gift.expiresAt,
+      createdAt: gift.createdAt,
+    };
+  }
+
+  /**
+   * Возврат трат брони на карты — зеркало reverseForBooking: захват
+   * непомеченных строк, деньги возвращаются ровно один раз, исчерпанная
+   * карта оживает (active). Срок не продлевается — как в API.
+   */
+  private reverseGiftSpends(bookingId: string): void {
+    let returned = 0;
+    for (const spend of this.giftSpends) {
+      if (spend.bookingId !== bookingId || spend.reversedAt !== null) {
+        continue;
+      }
+      spend.reversedAt = new Date().toISOString();
+      const gift = this.gifts.find((g) => g.id === spend.certificateId);
+      if (!gift) continue;
+      gift.remainingRub += spend.amount;
+      if (gift.status === 'exhausted') gift.status = 'active';
+      returned += spend.amount;
+    }
+    if (returned > 0) this.notify();
   }
 
   /** витрина кинобара: все позиции с остатками — проданное остаётся
