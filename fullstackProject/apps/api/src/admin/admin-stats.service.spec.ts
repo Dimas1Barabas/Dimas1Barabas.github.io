@@ -3,6 +3,8 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Booking } from '../bookings/booking.entity';
 import { SeatOccupancy } from '../bookings/seat-occupancy.entity';
 import { BonusTransaction } from '../bonus/bonus-transaction.entity';
+import { GiftCertificate } from '../gifts/gift-certificate.entity';
+import { GiftSpend } from '../gifts/gift-spend.entity';
 import { Movie } from '../movies/movie.entity';
 import { Session } from '../movies/session.entity';
 import { Review } from '../reviews/review.entity';
@@ -36,6 +38,8 @@ describe('AdminStatsService', () => {
     occupancy?: Partial<SeatOccupancy>[];
     users?: Partial<User>[];
     referralBonuses?: Partial<BonusTransaction>[];
+    giftCerts?: Partial<GiftCertificate>[];
+    giftSpends?: Partial<GiftSpend>[];
   }) {
     store = new Map();
     bookingsFind = jest.fn(async () =>
@@ -72,6 +76,13 @@ describe('AdminStatsService', () => {
     const bonusFind = jest.fn(async () =>
       (rows.referralBonuses ?? []).map((b) => b as BonusTransaction),
     );
+    // гифт-срез: карты и живые траты (возвраты отфильтрованы where)
+    const giftCertsFind = jest.fn(async () =>
+      (rows.giftCerts ?? []).map((c) => c as GiftCertificate),
+    );
+    const giftSpendsFind = jest.fn(async () =>
+      (rows.giftSpends ?? []).map((s) => s as GiftSpend),
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -103,6 +114,14 @@ describe('AdminStatsService', () => {
         {
           provide: getRepositoryToken(BonusTransaction),
           useValue: { find: bonusFind },
+        },
+        {
+          provide: getRepositoryToken(GiftCertificate),
+          useValue: { find: giftCertsFind },
+        },
+        {
+          provide: getRepositoryToken(GiftSpend),
+          useValue: { find: giftSpendsFind },
         },
       ],
     }).compile();
@@ -179,6 +198,56 @@ describe('AdminStatsService', () => {
       paid: 0,
       paidPct: 0,
       paidBonuses: 0,
+    });
+    // гифтов ещё нет — нулевой срез
+    expect(data.gifts).toEqual({
+      sold: 0,
+      soldRub: 0,
+      activated: 0,
+      spentRub: 0,
+      activeCount: 0,
+      activeRemainingRub: 0,
+    });
+  });
+
+  it('гифт-срез: продажи, активации, траты и живой остаток', async () => {
+    await setup({
+      bookings: [],
+      giftCerts: [
+        {
+          nominalRub: 2000,
+          remainingRub: 500,
+          status: 'active',
+          activatedByUserId: 'user-a',
+          expiresAt: new Date(Date.now() + 86_400_000),
+        },
+        {
+          nominalRub: 1000,
+          remainingRub: 0,
+          status: 'exhausted',
+          activatedByUserId: 'user-b',
+          expiresAt: new Date(Date.now() + 86_400_000),
+        },
+        {
+          nominalRub: 3000,
+          remainingRub: 3000,
+          status: 'purchased',
+          activatedByUserId: null,
+          expiresAt: new Date(Date.now() + 86_400_000),
+        },
+      ],
+      giftSpends: [{ amount: 500 }, { amount: 1000 }],
+    });
+
+    const { data } = await service.getStats();
+
+    expect(data.gifts).toEqual({
+      sold: 3,
+      soldRub: 6000,
+      activated: 2,
+      spentRub: 1500,
+      activeCount: 1,
+      activeRemainingRub: 500,
     });
   });
 

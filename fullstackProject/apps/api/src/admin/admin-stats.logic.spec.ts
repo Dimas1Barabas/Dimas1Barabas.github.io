@@ -4,6 +4,7 @@ import {
   REVENUE_DAYS,
   countByStatus,
   dayKey,
+  giftStats,
   ratingAgg,
   referralStats,
   revenueByDay,
@@ -288,5 +289,73 @@ describe('referralStats', () => {
         [],
       ).paidPct,
     ).toBe(33);
+  });
+});
+
+describe('giftStats', () => {
+  const now = new Date('2026-11-18T12:00:00Z');
+  const live = (overrides: Partial<Parameters<typeof giftStats>[0][number]> = {}) => ({
+    nominalRub: 2000,
+    remainingRub: 500,
+    status: 'active' as const,
+    activatedByUserId: 'user-1',
+    expiresAt: new Date('2027-11-18T12:00:00Z'),
+    ...overrides,
+  });
+
+  it('продажи, активации, траты и живой остаток', () => {
+    expect(
+      giftStats(
+        [
+          live(),
+          // потрачена до нуля
+          live({
+            remainingRub: 0,
+            status: 'exhausted',
+            nominalRub: 1000,
+          }),
+          // куплена, но ещё не активирована
+          live({
+            status: 'purchased',
+            activatedByUserId: null,
+            remainingRub: 3000,
+            nominalRub: 3000,
+          }),
+        ],
+        [500, 1000],
+        now,
+      ),
+    ).toEqual({
+      sold: 3,
+      soldRub: 6000,
+      activated: 2,
+      spentRub: 1500,
+      activeCount: 1,
+      activeRemainingRub: 500,
+    });
+  });
+
+  it('просроченная карта не попадает в живой остаток', () => {
+    const stats = giftStats(
+      [
+        live({ expiresAt: new Date('2026-11-17T12:00:00Z') }),
+        live(),
+      ],
+      [],
+      now,
+    );
+    expect(stats.activeCount).toBe(1);
+    expect(stats.activeRemainingRub).toBe(500);
+  });
+
+  it('без карт — нули', () => {
+    expect(giftStats([], [], now)).toEqual({
+      sold: 0,
+      soldRub: 0,
+      activated: 0,
+      spentRub: 0,
+      activeCount: 0,
+      activeRemainingRub: 0,
+    });
   });
 });

@@ -4,6 +4,8 @@ import { In, IsNull, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import { Booking } from '../bookings/booking.entity';
 import { SeatOccupancy } from '../bookings/seat-occupancy.entity';
 import { BonusTransaction } from '../bonus/bonus-transaction.entity';
+import { GiftCertificate } from '../gifts/gift-certificate.entity';
+import { GiftSpend } from '../gifts/gift-spend.entity';
 import { Movie } from '../movies/movie.entity';
 import { Session } from '../movies/session.entity';
 import { Review } from '../reviews/review.entity';
@@ -12,6 +14,7 @@ import { User } from '../users/user.entity';
 import type { AdminStatsDto, AdminStatsResultDto } from './dto/admin-stats.dto';
 import {
   countByStatus,
+  giftStats,
   ratingAgg,
   referralStats,
   revenueByDay,
@@ -20,10 +23,10 @@ import {
   upcomingOccupancy,
 } from './admin-stats.logic';
 
-// v2: к v1 добавлен реферальный срез (этап 31). При смене формы —
+// v3: к v2 добавлен гифт-срез (этап 33). При смене формы —
 // бампнуть суффикс, чтобы старые значения не доживали свой TTL
 // в новом коде (как movies:all)
-export const ADMIN_STATS_KEY = 'admin:stats:v2';
+export const ADMIN_STATS_KEY = 'admin:stats:v3';
 const ADMIN_STATS_TTL_SEC = 30;
 
 /**
@@ -44,6 +47,10 @@ export class AdminStatsService {
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(BonusTransaction)
     private readonly bonusLedger: Repository<BonusTransaction>,
+    @InjectRepository(GiftCertificate)
+    private readonly giftCerts: Repository<GiftCertificate>,
+    @InjectRepository(GiftSpend)
+    private readonly giftSpends: Repository<GiftSpend>,
     private readonly redis: RedisService,
   ) {}
 
@@ -65,6 +72,8 @@ export class AdminStatsService {
       reviewRows,
       invitedRows,
       referralBonusRows,
+      giftCertRows,
+      giftSpendRows,
     ] = await Promise.all([
       this.bookings.find(),
       this.occupancy.find(),
@@ -80,6 +89,9 @@ export class AdminStatsService {
       this.bonusLedger.find({
         where: { kind: 'accrual', reason: In(['referral', 'referral_welcome']) },
       }),
+      // гифт-срез: карты и живые траты (возвраты не считаются)
+      this.giftCerts.find(),
+      this.giftSpends.find({ where: { reversedAt: IsNull() } }),
     ]);
 
     const occupiedBySession = new Map<string, number>();
@@ -115,6 +127,10 @@ export class AdminStatsService {
       referrals: referralStats(
         invitedRows,
         referralBonusRows.map((r) => r.amount),
+      ),
+      gifts: giftStats(
+        giftCertRows,
+        giftSpendRows.map((s) => s.amount),
       ),
     };
   }

@@ -14,6 +14,8 @@ import { RolesGuard } from '../src/auth/roles.guard';
 import { Booking } from '../src/bookings/booking.entity';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { BonusTransaction } from '../src/bonus/bonus-transaction.entity';
+import { GiftCertificate } from '../src/gifts/gift-certificate.entity';
+import { GiftSpend } from '../src/gifts/gift-spend.entity';
 import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Review } from '../src/reviews/review.entity';
@@ -91,6 +93,33 @@ describe('GET /api/admin/stats (integration)', () => {
       { kind: 'accrual', reason: 'referral_welcome', amount: 100 },
     ] as unknown as BonusTransaction[];
 
+    // гифт-срез: продано три карты (одна ещё не активирована), одна
+    // потрачена до нуля; возврат траты в живой остаток не попадает
+    const giftCertRows = [
+      {
+        nominalRub: 2000,
+        remainingRub: 500,
+        status: 'active',
+        activatedByUserId: 'u-Боб',
+        expiresAt: new Date(now + 86_400_000),
+      },
+      {
+        nominalRub: 1000,
+        remainingRub: 0,
+        status: 'exhausted',
+        activatedByUserId: 'u-Галя',
+        expiresAt: new Date(now + 86_400_000),
+      },
+      {
+        nominalRub: 3000,
+        remainingRub: 3000,
+        status: 'purchased',
+        activatedByUserId: null,
+        expiresAt: new Date(now + 86_400_000),
+      },
+    ] as unknown as GiftCertificate[];
+    const giftSpendRows = [{ amount: 500 }, { amount: 1000 }] as unknown as GiftSpend[];
+
     redisStore = new Map();
 
     const moduleRef = await Test.createTestingModule({
@@ -146,6 +175,15 @@ describe('GET /api/admin/stats (integration)', () => {
         {
           provide: getRepositoryToken(BonusTransaction),
           useValue: { find: async () => bonusRows },
+        },
+        // гифт-срез (этап 33): карты и живые траты
+        {
+          provide: getRepositoryToken(GiftCertificate),
+          useValue: { find: async () => giftCertRows },
+        },
+        {
+          provide: getRepositoryToken(GiftSpend),
+          useValue: { find: async () => giftSpendRows },
         },
         { provide: ConfigService, useValue: { get: (_k: string, def?: string) => def } },
         JwtStrategy,
@@ -263,6 +301,17 @@ describe('GET /api/admin/stats (integration)', () => {
       paid: 2,
       paidPct: 67,
       paidBonuses: 800,
+    });
+
+    // гифт-срез: 3 продано на 6000 ₽, 2 активировано, 1500 ₽ потрачено
+    // живыми тратами, одна карта живая с остатком 500 ₽
+    expect(res.body.data.gifts).toEqual({
+      sold: 3,
+      soldRub: 6000,
+      activated: 2,
+      spentRub: 1500,
+      activeCount: 1,
+      activeRemainingRub: 500,
     });
   });
 

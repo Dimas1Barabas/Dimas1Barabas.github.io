@@ -140,6 +140,33 @@ export class AdminReferralsDto {
   paidBonuses!: number;
 }
 
+/** гифт-срез: как подарочные карты продаются и превращаются в оплаты */
+export class AdminGiftsDto {
+  @ApiProperty({ example: 12, description: 'продано сертификатов' })
+  sold!: number;
+
+  @ApiProperty({ example: 24_000, description: 'продано на сумму номиналов, ₽' })
+  soldRub!: number;
+
+  @ApiProperty({
+    example: 9,
+    description: 'активировано получателями (включая потраченные до нуля)',
+  })
+  activated!: number;
+
+  @ApiProperty({
+    example: 8_500,
+    description: 'потрачено картами в оплатах броней (живые траты, без возвратов), ₽',
+  })
+  spentRub!: number;
+
+  @ApiProperty({ example: 4, description: 'живые карты: активны и не просрочены' })
+  activeCount!: number;
+
+  @ApiProperty({ example: 6_200, description: 'живый остаток на картах, ₽' })
+  activeRemainingRub!: number;
+}
+
 export class AdminStatsDto {
   @ApiProperty({ type: AdminTotalsDto })
   totals!: AdminTotalsDto;
@@ -164,6 +191,9 @@ export class AdminStatsDto {
 
   @ApiProperty({ type: AdminReferralsDto, description: 'реферальный срез (этап 31)' })
   referrals!: AdminReferralsDto;
+
+  @ApiProperty({ type: AdminGiftsDto, description: 'гифт-срез (этап 33)' })
+  gifts!: AdminGiftsDto;
 }
 
 /** конверт как у каталога: источник ответа виден фронту бейджем «из кэша» */

@@ -1,7 +1,9 @@
 import { BOOKING_STATUSES, BookingStatus } from '../bookings/booking.entity';
+import { GiftStatus } from '../gifts/gift-certificate.entity';
 import { HALL_CAPACITY } from '../bookings/hall';
 import type {
   AdminDayRevenueDto,
+  AdminGiftsDto,
   AdminReferralsDto,
   AdminSessionOccupancyDto,
   AdminStatusCountsDto,
@@ -194,5 +196,36 @@ export function referralStats(
       ? Math.round((paid / invited.length) * 100)
       : 0,
     paidBonuses: bonusAmounts.reduce((acc, n) => acc + n, 0),
+  };
+}
+
+/**
+ * Гифт-срез: сколько карт продано и на какую сумму, сколько дошло до
+ * активации, сколько реально потрачено в оплатах (живые траты —
+ * возвраты отменённых броней не считаются) и что осталось на живых
+ * картах. Просроченные active-карты в живой остаток не попадают.
+ */
+export function giftStats(
+  certs: {
+    nominalRub: number;
+    remainingRub: number;
+    status: GiftStatus;
+    activatedByUserId: string | null;
+    expiresAt: Date;
+  }[],
+  liveSpendAmounts: number[],
+  now: Date = new Date(),
+): AdminGiftsDto {
+  const live = certs.filter(
+    (c) =>
+      c.status === 'active' && c.expiresAt.getTime() > now.getTime(),
+  );
+  return {
+    sold: certs.length,
+    soldRub: certs.reduce((acc, c) => acc + c.nominalRub, 0),
+    activated: certs.filter((c) => c.activatedByUserId !== null).length,
+    spentRub: liveSpendAmounts.reduce((acc, n) => acc + n, 0),
+    activeCount: live.length,
+    activeRemainingRub: live.reduce((acc, c) => acc + c.remainingRub, 0),
   };
 }
