@@ -160,6 +160,20 @@ describe('AuthView: второй шаг 2FA', () => {
     expect(wrapper.text()).toContain('Код подтверждения');
   });
 
+  it('галочка доверия снята — второй шаг без ключей устройства', async () => {
+    const { wrapper, authStore } = mountView();
+    await passwordStep(wrapper, authStore);
+
+    await wrapper.find('input[type="checkbox"]').setValue(false);
+    await wrapper.find('input[autocomplete="one-time-code"]').setValue('123456');
+    await wrapper.find('form').trigger('submit');
+
+    expect(authStore.loginSecondFactor).toHaveBeenCalledWith({
+      ticket: 'ticket-x',
+      code: '123456',
+    });
+  });
+
   it('«вернуться к паролю» — снова форма входа', async () => {
     const { wrapper, authStore } = mountView();
     await passwordStep(wrapper, authStore);

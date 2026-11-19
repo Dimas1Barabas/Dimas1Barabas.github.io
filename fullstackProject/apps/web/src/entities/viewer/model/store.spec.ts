@@ -17,6 +17,7 @@ vi.mock('@/shared/api/client', async (importOriginal) => {
       register: vi.fn(),
       logout: vi.fn(),
       forgotPassword: vi.fn(),
+      loginSecondFactor: vi.fn(),
     },
   };
 });
@@ -88,6 +89,46 @@ describe('auth store: сессия', () => {
     expect(store.isAdmin).toBe(false);
   });
 
+  describe('второй шаг 2FA', () => {
+    it('login с включённой 2FA отдаёт билет и не открывает сессию', async () => {
+      vi.mocked(api.login).mockResolvedValue({
+        twoFactorRequired: true,
+        ticket: 'ticket-x',
+      });
+
+      const store = useAuthStore();
+      const outcome = await store.login('anna@example.com', 'secret123');
+
+      expect(outcome).toEqual({ twoFactorRequired: true, ticket: 'ticket-x' });
+      expect(store.isAuthed).toBe(false);
+      expect(localStorage.getItem('cine.token')).toBeNull();
+    });
+
+    it('loginSecondFactor применяет пару и персистит токен', async () => {
+      vi.mocked(api.loginSecondFactor).mockResolvedValue({
+        accessToken: 'jwt-2fa',
+        user,
+      });
+
+      const store = useAuthStore();
+      await store.loginSecondFactor({
+        ticket: 'ticket-x',
+        code: '123456',
+        trustDevice: true,
+        deviceName: 'Ноутбук',
+      });
+
+      expect(api.loginSecondFactor).toHaveBeenCalledWith({
+        ticket: 'ticket-x',
+        code: '123456',
+        trustDevice: true,
+        deviceName: 'Ноутбук',
+      });
+      expect(store.isAuthed).toBe(true);
+      expect(localStorage.getItem('cine.token')).toBe('jwt-2fa');
+    });
+  });
+
   it('сессия восстанавливается из localStorage', () => {
     localStorage.setItem('cine.token', 'jwt-saved');
     localStorage.setItem('cine.user', JSON.stringify(user));
@@ -145,5 +186,26 @@ describe('auth store: демо-режим (симуляция движком)', 
     await expect(
       store.changePassword({ currentPassword: 'wrong', newPassword: 'new-secret-9' }),
     ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('второй шаг в демо: билет от движка, код открывает сессию без localStorage', async () => {
+    const store = useAuthStore();
+    await store.login('anna@example.com', 'secret123');
+    // включим 2FA и выйдем — движок потребует код при следующем входе
+    const setup = demoEngine.twoFactorSetup();
+    const { totp } = await import('@/shared/lib/totp');
+    demoEngine.twoFactorEnable(totp(setup.secret));
+    await store.logout();
+
+    const outcome = await store.login('anna@example.com', 'secret123');
+    expect('twoFactorRequired' in outcome).toBe(true);
+
+    await store.loginSecondFactor({
+      ticket: (outcome as { ticket: string }).ticket,
+      code: totp(setup.secret),
+    });
+    expect(store.isAuthed).toBe(true);
+    expect(api.loginSecondFactor).not.toHaveBeenCalled();
+    expect(localStorage.getItem('cine.token')).toBeNull();
   });
 });

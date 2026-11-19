@@ -99,4 +99,46 @@ describe('TwoFactorSection (демо-режим)', () => {
     expect(wrapper.text()).toContain('Включить 2FA');
     expect(demoEngine.twoFactorStatus().enabled).toBe(false);
   });
+
+  it('неверный код при включении — ошибка на месте, статус не меняется', async () => {
+    signIn();
+    const wrapper = mountSection();
+    await nextTick();
+
+    await wrapper.find('button').trigger('click');
+    await nextTick();
+    await wrapper.find('input[autocomplete="one-time-code"]').setValue('000000');
+    await wrapper.findAll('button').find((b) => b.text().includes('Подтвердить'))!.trigger('click');
+    await nextTick();
+
+    expect(wrapper.text()).toContain('Неверный код');
+    expect(demoEngine.twoFactorStatus().enabled).toBe(false);
+    // всё ещё на этапе настройки — QR виден
+    expect(wrapper.find('svg.qr').exists()).toBe(true);
+  });
+
+  it('доверенное устройство: «это устройство» и отзыв из витрины', async () => {
+    signIn();
+    const setup = demoEngine.twoFactorSetup();
+    demoEngine.twoFactorEnable(totp(setup.secret));
+    // доверим «браузер» через второй шаг движка
+    demoEngine.logout();
+    const outcome = demoEngine.login('anna@example.com', 'secret123');
+    demoEngine.loginSecondFactor({
+      ticket: (outcome as { ticket: string }).ticket,
+      code: totp(setup.secret),
+      trustDevice: true,
+      deviceName: 'Тестовый браузер',
+    });
+
+    const wrapper = mountSection();
+    await nextTick();
+    expect(wrapper.text()).toContain('Тестовый браузер');
+    expect(wrapper.text()).toContain('это устройство');
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Отозвать')!.trigger('click');
+    await nextTick();
+    expect(wrapper.text()).toContain('Пока нет');
+    expect(demoEngine.twoFactorDevices()).toHaveLength(0);
+  });
 });
