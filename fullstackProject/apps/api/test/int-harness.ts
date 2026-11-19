@@ -26,6 +26,7 @@ import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsService } from '../src/bookings/bookings.service';
+import { GiftsService } from '../src/gifts/gifts.service';
 import { FeatureFlagGuard } from '../src/flags/feature-flag.guard';
 import { FlagsEvaluator } from '../src/flags/flags.evaluator';
 import { SeatsController } from '../src/bookings/seats.controller';
@@ -553,6 +554,18 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
       { provide: PricingClient, useValue: pricingFake() },
       // будильник Курьера — мок: poke() в int-тестах неинтересен
       { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
+      // гифт-сертификаты: BookingsService инжектит GiftsService (этап 33),
+      // но int-стенд без модуля gifts — спеки харнеса платят без giftCode,
+      // spendInTx не звать (undefined.amount уронит pay заметно); цикл
+      // покупки/траты/возврата — в gifts.int (свой модуль) и gifts.e2e
+      {
+        provide: GiftsService,
+        useValue: {
+          spendInTx: jest.fn(),
+          findByCode: jest.fn(async () => null),
+          reverseForBooking: jest.fn(async () => undefined),
+        },
+      },
       { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
       { provide: AmqpConnection, useValue: { publish: rabbitPublish, connected: true } },
       {

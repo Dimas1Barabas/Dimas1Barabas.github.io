@@ -12,6 +12,7 @@ import { BookingsController } from '../src/bookings/bookings.controller';
 import { FeatureFlagGuard } from '../src/flags/feature-flag.guard';
 import { FlagsEvaluator } from '../src/flags/flags.evaluator';
 import { BookingsService } from '../src/bookings/bookings.service';
+import { GiftsService } from '../src/gifts/gifts.service';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { BonusTransaction } from '../src/bonus/bonus-transaction.entity';
@@ -164,6 +165,9 @@ describe('Reminders (integration)', () => {
 
         BookingStream,
         SeatStream,
+        // GiftsService (этап 33): спек платит без giftCode — сервис не звать,
+        // цикл траты/возврата гифта — gifts.int/gifts.e2e
+        { provide: GiftsService, useValue: { spendInTx: jest.fn(), findByCode: jest.fn(async () => null), reverseForBooking: jest.fn(async () => undefined) } },
         RemindersConsumer,
         { provide: RemindersClient, useValue: reminders },
       { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },

@@ -12,6 +12,7 @@ import { BookingsController } from '../src/bookings/bookings.controller';
 import { FeatureFlagGuard } from '../src/flags/feature-flag.guard';
 import { FlagsEvaluator } from '../src/flags/flags.evaluator';
 import { BookingsService } from '../src/bookings/bookings.service';
+import { GiftsService } from '../src/gifts/gifts.service';
 import { SessionPriceController } from '../src/bookings/session-price.controller';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
@@ -130,6 +131,9 @@ describe('Pricing (integration)', () => {
 
         BookingStream,
         SeatStream,
+        // GiftsService (этап 33): спек платит без giftCode — сервис не звать,
+        // цикл траты/возврата гифта — gifts.int/gifts.e2e
+        { provide: GiftsService, useValue: { spendInTx: jest.fn(), findByCode: jest.fn(async () => null), reverseForBooking: jest.fn(async () => undefined) } },
         { provide: PricingClient, useValue: pricing },
         { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
         // «Суфлёр» для @FeatureFlag-маршрута чекаута: вердикты фейка (все скрыты)

@@ -21,6 +21,7 @@ import { STREAM_BUS } from '../src/redis/stream-bus';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingsService } from '../src/bookings/bookings.service';
+import { GiftsService } from '../src/gifts/gifts.service';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
 import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
@@ -272,6 +273,9 @@ describe('Промокоды: HTTP-интеграция (фейковые зав
 
         BookingStream,
         SeatStream,
+        // GiftsService (этап 33): спек платит без giftCode — сервис не звать,
+        // цикл траты/возврата гифта — gifts.int/gifts.e2e
+        { provide: GiftsService, useValue: { spendInTx: jest.fn(), findByCode: jest.fn(async () => null), reverseForBooking: jest.fn(async () => undefined) } },
         { provide: getRepositoryToken(Promo), useValue: promosRepo },
         // create() гасит запись листа ожидания — фейку достаточно update
         { provide: getRepositoryToken(WaitlistEntry), useValue: { update: jest.fn(async () => ({ affected: 0 })) } },
