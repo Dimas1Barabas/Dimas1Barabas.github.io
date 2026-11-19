@@ -5,6 +5,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoEngine } from '@/shared/api/demo-engine';
 import { ApiError } from '@/shared/api/client';
+import type { LoginResult } from '@/shared/api/types';
+
+/** вход без 2FA — тут всегда пара; union-возврат сужаем для ассертов */
+const loginPair = (email: string, password: string): LoginResult =>
+  demoEngine.login(email, password) as LoginResult;
 
 describe('demoEngine: аккаунт: симуляция auth-модуля', () => {
   beforeEach(() => {
@@ -17,7 +22,7 @@ describe('demoEngine: аккаунт: симуляция auth-модуля', () 
 
   describe('аккаунт: симуляция auth-модуля', () => {
     it('вход с любыми данными до регистрации; сессия — «свежая пара»', () => {
-      const result = demoEngine.login('Anna@Example.com', 'secret123');
+      const result = loginPair('Anna@Example.com', 'secret123');
 
       expect(result.accessToken).toBe('demo-session');
       expect(result.user).toMatchObject({
@@ -82,7 +87,7 @@ describe('demoEngine: аккаунт: симуляция auth-модуля', () 
       demoEngine.changePassword('secret123', 'new-secret-9');
       // вход работает только с новым паролем
       expect(() => demoEngine.login('anna@example.com', 'secret123')).toThrow();
-      expect(demoEngine.login('anna@example.com', 'new-secret-9').user.email).toBe(
+      expect(loginPair('anna@example.com', 'new-secret-9').user.email).toBe(
         'anna@example.com',
       );
     });
@@ -96,7 +101,7 @@ describe('demoEngine: аккаунт: симуляция auth-модуля', () 
       expect(result.user.email).toBe('anna@example.com');
 
       expect(() => demoEngine.login('anna@example.com', 'secret123')).toThrow();
-      expect(demoEngine.login('anna@example.com', 'reset-new-9').accessToken).toBe(
+      expect(loginPair('anna@example.com', 'reset-new-9').accessToken).toBe(
         'demo-session',
       );
     });

@@ -34,6 +34,10 @@ import type {
   SessionQuote,
   Ticket,
   TicketVerifyResult,
+  TwoFactorChallenge,
+  TwoFactorSetup,
+  TwoFactorStatus,
+  TrustedDevice,
   UpdateProfilePayload,
   User,
   ValidatePromoPayload,
@@ -42,6 +46,14 @@ import type {
   WaitlistStatus,
 } from '@/shared/api/types';
 import { ApiError } from '@/shared/api/client';
+import {
+  generateBackupCode,
+  generateTotpSecret,
+  normalizeBackupCode,
+  otpauthUri,
+  totp,
+  verifyTotp,
+} from '@/shared/lib/totp';
 import {
   HALL_CAPACITY,
   HALL_ROWS,
@@ -616,7 +628,18 @@ class DemoEngine {
     password: string;
     /** пришёл по системному коду — welcome после первой оплаты */
     invitedByReferral?: boolean;
+    /** 2FA: секрет и факт включения — зеркало users.totp_* (этап 34) */
+    totpSecret: string | null;
+    totpEnabled: boolean;
   } | null = null;
+  /** backup-коды 2FA: нормализованный код + расход — зеркало backup_codes */
+  private backupCodes: { code: string; used: boolean }[] = [];
+  /** доверенное устройство: движок = один браузер — зеркало trusted_devices */
+  private trustedDevice: { id: string; name: string } | null = null;
+  /** неверных кодов на текущий билет второго шага (лимит 5) */
+  private challengeAttempts = 0;
+  /** билет второго шага погашен (успех или лимит попыток) — новый даст логин */
+  private challengeUsed = false;
   /** метка «первенца»: welcome-бонус одноразовый, как referral_rewarded_at */
   private referralRewarded = false;
   private session: User | null = null;
@@ -655,6 +678,8 @@ class DemoEngine {
   static readonly SESSION_TOKEN = 'demo-session';
   /** одноразовый токен «письма» сброса: страница показывает ссылку сама */
   static readonly RESET_TOKEN = 'demo-reset-token';
+  /** билет второго шага 2FA (движок один — токен константа, попытки считаем) */
+  static readonly CHALLENGE_TOKEN = 'demo-2fa-ticket';
   /** «занятый» email — витрина может показать честный 409 emailTaken */
   static readonly TAKEN_EMAIL = 'admin@cine.local';
 
@@ -744,6 +769,9 @@ class DemoEngine {
     this.account = null;
     this.session = null;
     this.referralRewarded = false;
+    this.backupCodes = [];
+    this.trustedDevice = null;
+    this.challengeAttempts = 0;
     this.promos = seedPromos();
     this.waitlist = [];
     this.bonusLedger = seedBonusLedger();
@@ -762,8 +790,10 @@ class DemoEngine {
   // сессия, выход. localStorage демо не трогает. Ошибки — те же ApiError
   // с теми же кодами и текстами, что у живого API.
 
-  /** вход: любой email до первой регистрации; после — сверка пароля (401) */
-  login(email: string, password: string): LoginResult {
+  /** вход: любой email до первой регистрации; после — сверка пароля (401).
+   *  Включённая 2FA спрашивает код: доверенное устройство (движок — один
+   *  браузер) пропускает второй шаг, как живое устройство по cookie */
+  login(email: string, password: string): LoginResult | TwoFactorChallenge {
     const normalized = email.trim().toLowerCase();
     // лимит до проверки пароля — как гвард API: неверные попытки тоже
     // едят корзину, брутфорс исчерпывает её раньше подбора
@@ -779,9 +809,82 @@ class DemoEngine {
       );
     }
     if (!this.account) {
-      this.account = { email: normalized, name: 'Гость', password };
+      this.account = {
+        email: normalized,
+        name: 'Гость',
+        password,
+        totpSecret: null,
+        totpEnabled: false,
+      };
+    }
+    if (this.account.totpEnabled && !this.trustedDevice) {
+      this.challengeAttempts = 0;
+      this.challengeUsed = false;
+      return { twoFactorRequired: true, ticket: DemoEngine.CHALLENGE_TOKEN };
     }
     return this.openSession();
+  }
+
+  /** второй шаг: код приложения или backup; 5 попыток — билет гасится.
+   *  Сессии ещё нет — пароль верен, но вход не завершён; билет и есть
+   *  доказательство первого шага (как stateless-сервер без сессии) */
+  loginSecondFactor(input: {
+    ticket: string;
+    code: string;
+    trustDevice?: boolean;
+    deviceName?: string;
+  }): LoginResult {
+    if (!this.account) {
+      throw new ApiError(
+        'HTTP 401',
+        401,
+        JSON.stringify({ message: 'Код неверен или билет входа истёк' }),
+      );
+    }
+    if (
+      input.ticket !== DemoEngine.CHALLENGE_TOKEN ||
+      !this.account!.totpEnabled ||
+      this.challengeAttempts >= 5 ||
+      this.challengeUsed
+    ) {
+      throw new ApiError(
+        'HTTP 401',
+        401,
+        JSON.stringify({ message: 'Код неверен или билет входа истёк' }),
+      );
+    }
+    if (!this.verifyCode(input.code)) {
+      this.challengeAttempts++;
+      if (this.challengeAttempts >= 5) this.challengeUsed = true;
+      throw new ApiError(
+        'HTTP 401',
+        401,
+        JSON.stringify({ message: 'Код неверен или билет входа истёк' }),
+      );
+    }
+    this.challengeAttempts = 0;
+    this.challengeUsed = true;
+    if (input.trustDevice) {
+      this.trustedDevice = {
+        id: 'demo-device-1',
+        name: (input.deviceName ?? 'Браузер').trim().slice(0, 60) || 'Браузер',
+      };
+    }
+    return this.openSession();
+  }
+
+  /** код приложения или backup-код (расход на месте) — как verifyLogin API */
+  private verifyCode(rawCode: string): boolean {
+    const code = rawCode.trim();
+    const secret = this.account?.totpSecret;
+    if (secret && verifyTotp(secret, code)) return true;
+    const normalized = normalizeBackupCode(code);
+    const backup = this.backupCodes.find((b) => b.code === normalized && !b.used);
+    if (backup) {
+      backup.used = true;
+      return true;
+    }
+    return false;
   }
 
   /** регистрация: занятый email (свой или демо-админ) — 409 emailTaken */
@@ -815,9 +918,153 @@ class DemoEngine {
       name: payload.name.trim(),
       password: payload.password,
       invitedByReferral: Boolean(code),
+      totpSecret: null,
+      totpEnabled: false,
     };
     this.referralRewarded = false;
     return this.userOf();
+  }
+
+  // ── 2FA: настройки профиля — зеркало TwoFactorService API ─────────
+
+  /** статус; в демо добавляем подсказку текущего кода (как «письма») */
+  twoFactorStatus(): TwoFactorStatus & { demoCurrentCode?: string } {
+    this.requireSession();
+    const enabled = this.account?.totpEnabled ?? false;
+    const pending = !enabled && this.account?.totpSecret != null;
+    return {
+      enabled,
+      pending,
+      ...(this.account?.totpSecret
+        ? { demoCurrentCode: totp(this.account.totpSecret) }
+        : {}),
+    };
+  }
+
+  /** настройка: новый секрет + otpauth-ссылка (QR рисует фронт) */
+  twoFactorSetup(): TwoFactorSetup {
+    this.requireSession();
+    if (this.account!.totpEnabled) {
+      throw new ApiError(
+        'HTTP 409',
+        409,
+        JSON.stringify({
+          message: '2FA уже включена — отключите, чтобы перенастроить',
+          code: 'twoFactorAlreadyOn',
+        }),
+      );
+    }
+    const secret = generateTotpSecret();
+    this.account!.totpSecret = secret;
+    return {
+      secret,
+      otpauthUri: otpauthUri({ secretBase32: secret, email: this.account!.email }),
+    };
+  }
+
+  /** включение кодом: 10 backup-кодов наружу один раз */
+  twoFactorEnable(rawCode: string): { backupCodes: string[] } {
+    this.requireSession();
+    const account = this.account!;
+    if (!account.totpSecret) {
+      throw new ApiError(
+        'HTTP 400',
+        400,
+        JSON.stringify({
+          message: 'Сначала запросите QR на странице профиля',
+          code: 'twoFactorNotSetup',
+        }),
+      );
+    }
+    if (account.totpEnabled) {
+      throw new ApiError(
+        'HTTP 409',
+        409,
+        JSON.stringify({ message: '2FA уже включена', code: 'twoFactorAlreadyOn' }),
+      );
+    }
+    if (!verifyTotp(account.totpSecret, rawCode.trim())) {
+      throw new ApiError(
+        'HTTP 401',
+        401,
+        JSON.stringify({ message: 'Неверный код', code: 'totpInvalid' }),
+      );
+    }
+    account.totpEnabled = true;
+    this.backupCodes = Array.from({ length: 10 }, () => ({
+      code: normalizeBackupCode(generateBackupCode()),
+      used: false,
+    }));
+    return { backupCodes: this.backupCodes.map((b) => b.code) };
+  }
+
+  /** выключение кодом приложения или backup; гасит всё */
+  twoFactorDisable(rawCode: string): void {
+    this.requireSession();
+    const account = this.account!;
+    if (!account.totpEnabled) {
+      throw new ApiError(
+        'HTTP 409',
+        409,
+        JSON.stringify({ message: '2FA не включена', code: 'twoFactorOff' }),
+      );
+    }
+    if (!this.verifyCode(rawCode)) {
+      throw new ApiError(
+        'HTTP 401',
+        401,
+        JSON.stringify({ message: 'Неверный код', code: 'totpInvalid' }),
+      );
+    }
+    this.resetTwoFactor();
+  }
+
+  /** витрина доверенных устройств (движок — максимум одно) */
+  twoFactorDevices(): TrustedDevice[] {
+    this.requireSession();
+    if (!this.trustedDevice) return [];
+    const now = new Date();
+    return [
+      {
+        id: this.trustedDevice.id,
+        name: this.trustedDevice.name,
+        createdAt: now.toISOString(),
+        lastUsedAt: now.toISOString(),
+        expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      },
+    ];
+  }
+
+  /** отзыв устройства: чужой id — 404, как условный UPDATE API */
+  revokeTwoFactorDevice(id: string): void {
+    this.requireSession();
+    if (!this.trustedDevice || this.trustedDevice.id !== id) {
+      throw new ApiError(
+        'HTTP 404',
+        404,
+        JSON.stringify({ message: 'Устройство не найдено', code: 'deviceNotFound' }),
+      );
+    }
+    this.trustedDevice = null;
+  }
+
+  /** гашение 2FA-состояния (disable и recovery-сброс пароля) */
+  private resetTwoFactor(): void {
+    if (this.account) {
+      this.account.totpSecret = null;
+      this.account.totpEnabled = false;
+    }
+    this.backupCodes = [];
+    this.trustedDevice = null;
+    this.challengeAttempts = 0;
+    this.challengeUsed = false;
+  }
+
+  /** демо-подсказка текущего кода — телефона-то нет, как «письма» сброса */
+  demoTotpHint(): string | null {
+    return this.account?.totpSecret && this.account.totpEnabled
+      ? totp(this.account.totpSecret)
+      : null;
   }
 
   logout(): void {
@@ -867,7 +1114,9 @@ class DemoEngine {
     return DemoEngine.RESET_TOKEN;
   }
 
-  /** сброс по ссылке: одноразовый токен, мёртвый — 400 тем же текстом */
+  /** сброс по ссылке: одноразовый токен, мёртвый — 400 тем же текстом.
+   *  Recovery-канал, как в API: 2FA и доверие устройств гасятся — иначе
+   *  потерявший телефон зритель заперт */
   resetPassword(token: string, newPassword: string): LoginResult {
     if (!this.account || token !== DemoEngine.RESET_TOKEN) {
       throw new ApiError(
@@ -877,6 +1126,7 @@ class DemoEngine {
       );
     }
     this.account.password = newPassword;
+    this.resetTwoFactor();
     return this.openSession();
   }
 
