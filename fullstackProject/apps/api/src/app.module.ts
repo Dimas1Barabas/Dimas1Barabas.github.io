@@ -27,6 +27,7 @@ import { UsersModule } from './users/users.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
 import { FlagsModule } from './flags/flags.module';
 import { GiftsModule } from './gifts/gifts.module';
+import { TwoFactorModule } from './twofactor/twofactor.module';
 
 @Module({
   imports: [
@@ -64,6 +65,9 @@ import { GiftsModule } from './gifts/gifts.module';
     BarModule,
     // гифт-сертификаты: подарочные карты, списание в оплате брони (этап 33)
     GiftsModule,
+    // двухфакторная аутентификация: TOTP, backup-коды, доверенные
+    // устройства; настройки в профиле, второй шаг — в AuthModule (этап 34)
+    TwoFactorModule,
     AdminModule,
     PromosModule,
     WaitlistModule,
