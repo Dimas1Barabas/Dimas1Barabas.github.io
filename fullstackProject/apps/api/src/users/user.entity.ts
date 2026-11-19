@@ -85,6 +85,21 @@ export class User {
   @Column({ name: 'referral_rewarded_at', type: 'timestamp', nullable: true })
   referralRewardedAt: Date | null;
 
+  /**
+   * TOTP-секрет 2FA (этап 34) в base32: 20 байт = 32 символа.
+   * Прописывается setup'ом, но включается только после подтверждения
+   * кодом — до того totpEnabledAt пуст и логин идёт без второго шага.
+   * null — 2FA не настраивалась (или отключена).
+   */
+  // type обязателен: union string|null в reflect-metadata неотличим
+  // (тот же урок, что у referral_code — DataTypeNotSupportedError)
+  @Column({ name: 'totp_secret', type: 'varchar', length: 64, nullable: true })
+  totpSecret: string | null;
+
+  /** момент включения 2FA подтверждённым кодом; null — не включена */
+  @Column({ name: 'totp_enabled_at', type: 'timestamp', nullable: true })
+  totpEnabledAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }
