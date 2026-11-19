@@ -102,3 +102,72 @@ describe('AuthView: Привратник — брутфорс-лимит вхо�
     expect(submit.attributes('disabled')).toBeUndefined();
   });
 });
+
+describe('AuthView: второй шаг 2FA', () => {
+  /** залогиниться паролем — стор выдаст билет вместо пары */
+  async function passwordStep(
+    wrapper: ReturnType<typeof mountView>['wrapper'],
+    authStore: ReturnType<typeof mountView>['authStore'],
+  ): Promise<void> {
+    authStore.login = vi.fn().mockResolvedValue({
+      twoFactorRequired: true,
+      ticket: 'ticket-x',
+    });
+    authStore.loginSecondFactor = vi.fn().mockResolvedValue(undefined);
+    await wrapper.find('input[type="email"]').setValue('anna@cine.local');
+    await wrapper.find('input[type="password"]').setValue('secret123');
+    await wrapper.find('form').trigger('submit');
+    await nextTick();
+  }
+
+  it('пароль верен → форма кода вместо формы входа, без перехода', async () => {
+    const { wrapper, authStore } = mountView();
+    await passwordStep(wrapper, authStore);
+
+    expect(wrapper.text()).toContain('Код подтверждения');
+    expect(wrapper.find('input[autocomplete="one-time-code"]').exists()).toBe(true);
+    expect(wrapper.find('input[type="email"]').exists()).toBe(false);
+  });
+
+  it('код уходит вторым шагом с галочкой доверия и именем', async () => {
+    const { wrapper, authStore } = mountView();
+    await passwordStep(wrapper, authStore);
+
+    await wrapper.find('input[autocomplete="one-time-code"]').setValue('123456');
+    await wrapper.find('input[maxlength="60"]').setValue('Рабочий ноутбук');
+    await wrapper.find('form').trigger('submit');
+
+    expect(authStore.loginSecondFactor).toHaveBeenCalledWith({
+      ticket: 'ticket-x',
+      code: '123456',
+      trustDevice: true,
+      deviceName: 'Рабочий ноутбук',
+    });
+  });
+
+  it('неверный код — сообщение об ошибке на месте, без перехода назад', async () => {
+    const { wrapper, authStore } = mountView();
+    await passwordStep(wrapper, authStore);
+    (authStore.loginSecondFactor as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new ApiError('HTTP 401', 401, JSON.stringify({ message: 'Код неверен или билет входа истёк' })),
+    );
+
+    await wrapper.find('input[autocomplete="one-time-code"]').setValue('000000');
+    await wrapper.find('form').trigger('submit');
+    await nextTick();
+
+    expect(wrapper.text()).toContain('Код неверен или билет входа истёк');
+    expect(wrapper.text()).toContain('Код подтверждения');
+  });
+
+  it('«вернуться к паролю» — снова форма входа', async () => {
+    const { wrapper, authStore } = mountView();
+    await passwordStep(wrapper, authStore);
+
+    await wrapper.find('button.link').trigger('click');
+    await nextTick();
+
+    expect(wrapper.find('input[type="email"]').exists()).toBe(true);
+    expect(wrapper.find('input[autocomplete="one-time-code"]').exists()).toBe(false);
+  });
+});

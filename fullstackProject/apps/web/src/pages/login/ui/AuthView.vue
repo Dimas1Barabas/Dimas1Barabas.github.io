@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ApiError, retryAfterFrom } from '@/shared/api/client';
 import { useAppStore } from '@/shared/api/app-mode';
+import { demoEngine } from '@/shared/api/demo-engine';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useCooldown } from '@/shared/lib/use-cooldown';
 
@@ -24,6 +25,12 @@ const error = ref<string | null>(null);
 /** кулдаун после 429 Привратника: корзина входа (5/мин на email) пуста */
 const { cooldownSec, startCooldown } = useCooldown();
 
+/** второй шаг 2FA: пароль верен, ждём код приложения или backup */
+const secondFactor = ref<string | null>(null); // билет
+const otpCode = ref('');
+const trustDevice = ref(true);
+const deviceName = ref('');
+
 /** 401/409 у API несут человекочитаемый message — показываем его */
 function apiMessage(err: unknown): string | null {
   if (err instanceof ApiError) {
@@ -37,13 +44,23 @@ function apiMessage(err: unknown): string | null {
   return null;
 }
 
+/** демо без телефона: текущий код подсказывает движок, как «письма» */
+const demoHint = ref<string | null>(null);
+
 async function submit(): Promise<void> {
   if (submitting.value || cooldownSec.value > 0) return;
   submitting.value = true;
   error.value = null;
   try {
     if (mode.value === 'login') {
-      await authStore.login(email.value.trim(), password.value);
+      const outcome = await authStore.login(email.value.trim(), password.value);
+      if (outcome && 'twoFactorRequired' in outcome) {
+        secondFactor.value = outcome.ticket;
+        otpCode.value = '';
+        demoHint.value =
+          appStore.mode === 'demo' ? demoEngine.demoTotpHint() : null;
+        return;
+      }
     } else {
       // после регистрации сразу входим — так меньше шагов в демо-флоу
       await authStore.register({
@@ -71,14 +88,99 @@ async function submit(): Promise<void> {
     submitting.value = false;
   }
 }
+
+async function submitCode(): Promise<void> {
+  if (submitting.value || !secondFactor.value) return;
+  submitting.value = true;
+  error.value = null;
+  try {
+    await authStore.loginSecondFactor({
+      ticket: secondFactor.value,
+      code: otpCode.value.trim(),
+      ...(trustDevice.value
+        ? { trustDevice: true, deviceName: deviceName.value.trim() || 'Браузер' }
+        : {}),
+    });
+    void router.push('/');
+  } catch (err) {
+    error.value =
+      apiMessage(err) ??
+      (err instanceof Error ? err.message : 'Не получилось, попробуйте ещё раз');
+  } finally {
+    submitting.value = false;
+  }
+}
+
+/** назад к паролю: новый билет выдаст повторный логин */
+function backToPassword(): void {
+  secondFactor.value = null;
+  demoHint.value = null;
+  error.value = null;
+}
 </script>
 
 <template>
   <section class="container auth">
     <h1 class="page-title">
-      {{ mode === 'login' ? 'Вход' : 'Регистрация' }}
+      {{ secondFactor ? 'Код подтверждения' : mode === 'login' ? 'Вход' : 'Регистрация' }}
     </h1>
 
+    <!-- шаг 2: код из приложения-аутентификатора или backup-код -->
+    <form v-if="secondFactor" class="auth-form" @submit.prevent="submitCode">
+      <p class="auth-note">
+        Пароль верен — введите шестизначный код из приложения или backup-код.
+      </p>
+
+      <label class="field">
+        <span class="field__label">Код</span>
+        <input
+          v-model="otpCode"
+          class="field__input"
+          type="text"
+          required
+          minlength="6"
+          maxlength="14"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          placeholder="123456 или AB2C-3DEF"
+        />
+      </label>
+
+      <p v-if="demoHint" class="auth-note">
+        Демо без телефона: текущий код — <code>{{ demoHint }}</code>
+      </p>
+
+      <label class="auth-trust">
+        <input v-model="trustDevice" type="checkbox" />
+        <span>Доверять этому браузеру (30 дней без кода)</span>
+      </label>
+
+      <label v-if="trustDevice" class="field">
+        <span class="field__label">Имя устройства</span>
+        <input
+          v-model="deviceName"
+          class="field__input"
+          type="text"
+          maxlength="60"
+          placeholder="Браузер на работе"
+        />
+      </label>
+
+      <p v-if="error" class="auth-error">{{ error }}</p>
+
+      <button class="btn" type="submit" :disabled="submitting">
+        {{ submitting ? 'Проверяем…' : 'Войти' }}
+      </button>
+
+      <p class="auth-switch">
+        Ошиблись пользователем?
+        <button class="link" type="button" @click="backToPassword">
+          Вернуться к паролю
+        </button>
+      </p>
+    </form>
+
+    <template v-else>
     <p v-if="appStore.mode === 'demo'" class="auth-note">
       Демо-режим: сессия симулируется в браузере и живёт до перезагрузки.
       Сработает любой email (кроме занятого <code>admin@cine.local</code> —
@@ -179,6 +281,7 @@ async function submit(): Promise<void> {
         только свои брони. Админ видит форму добавления сеансов.
       </p>
     </form>
+    </template>
   </section>
 </template>
 
@@ -196,6 +299,14 @@ async function submit(): Promise<void> {
 .auth-error {
   color: #ff8080;
   margin: 0;
+}
+
+.auth-trust {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted, #9aa4b2);
+  font-size: 0.92rem;
 }
 
 .auth-switch {

@@ -211,6 +211,34 @@ export interface LoginResult {
   user: User;
 }
 
+/** ответ POST /auth/login при включённой 2FA: пары нет, ждём код */
+export interface TwoFactorChallenge {
+  twoFactorRequired: true;
+  ticket: string;
+}
+
+/** GET /users/me/2fa */
+export interface TwoFactorStatus {
+  enabled: boolean;
+  /** секрет сгенерирован, ждёт подтверждения кодом из приложения */
+  pending: boolean;
+}
+
+/** POST /users/me/2fa/setup — секрет и otpauth-ссылка для QR */
+export interface TwoFactorSetup {
+  secret: string;
+  otpauthUri: string;
+}
+
+/** строка витрины доверенных устройств */
+export interface TrustedDevice {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+}
+
 export interface RegisterPayload {
   email: string;
   password: string;

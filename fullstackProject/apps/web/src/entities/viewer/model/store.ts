@@ -13,6 +13,7 @@ import type {
   ChangePasswordPayload,
   LoginResult,
   RegisterPayload,
+  TwoFactorChallenge,
   UpdateProfilePayload,
   User,
 } from '@/shared/api/types';
@@ -36,10 +37,34 @@ export const useAuthStore = defineStore('auth', {
       return useAppStore().mode === 'demo';
     },
 
-    async login(email: string, password: string): Promise<void> {
+    /**
+     * Вход. При включённой 2FA сервер/движок вместо пары выдают билет
+     * второго шага — экранным слоем становится {twoFactorRequired}.
+     */
+    async login(
+      email: string,
+      password: string,
+    ): Promise<LoginResult | TwoFactorChallenge> {
+      const outcome = this.demoMode()
+        ? demoEngine.login(email, password)
+        : await api.login({ email, password });
+      if ('twoFactorRequired' in outcome) return outcome;
+      this.apply(outcome, { persist: !this.demoMode() });
+      return outcome;
+    },
+
+    /** второй шаг входа: код приложения или backup-код */
+    async loginSecondFactor(input: {
+      ticket: string;
+      code: string;
+      trustDevice?: boolean;
+      deviceName?: string;
+    }): Promise<void> {
       const demo = this.demoMode();
       this.apply(
-        demo ? demoEngine.login(email, password) : await api.login({ email, password }),
+        demo
+          ? demoEngine.loginSecondFactor(input)
+          : await api.loginSecondFactor(input),
         { persist: !demo },
       );
     },

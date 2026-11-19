@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { ApiError } from '@/shared/api/client';
 import { useAuthStore } from '@/entities/viewer/model/store';
+import TwoFactorSection from './TwoFactorSection.vue';
 
 const authStore = useAuthStore();
 const allowed = computed(() => authStore.isAuthed);
@@ -186,6 +187,8 @@ async function changePassword(): Promise<void> {
         </p>
         <RouterLink class="btn" to="/invite">Пригласить друга</RouterLink>
       </section>
+
+      <TwoFactorSection />
     </template>
   </section>
 </template>

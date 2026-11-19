@@ -30,6 +30,10 @@ import type {
   SeatMap,
   SessionQuote,
   Ticket,
+  TwoFactorChallenge,
+  TwoFactorSetup,
+  TwoFactorStatus,
+  TrustedDevice,
   UpdateProfilePayload,
   User,
   ValidatePromoPayload,
@@ -321,12 +325,51 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
-  /** вход: {accessToken, user}; токен живёт 2 часа */
+  /** вход: {accessToken, user}; при включённой 2FA — {twoFactorRequired, ticket} */
   login: (payload: { email: string; password: string }) =>
-    request<LoginResult>('/auth/login', {
+    request<LoginResult | TwoFactorChallenge>('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+    }),
+  /** второй шаг входа: код приложения или backup; trustDevice —
+   *  токен доверия в httpOnly-cookie (30 дней без кода) */
+  loginSecondFactor: (payload: {
+    ticket: string;
+    code: string;
+    trustDevice?: boolean;
+    deviceName?: string;
+  }) =>
+    request<LoginResult>('/auth/login/2fa', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  /** статус 2FA для профиля */
+  twoFactorStatus: () => request<TwoFactorStatus>('/users/me/2fa'),
+  /** новый секрет + otpauth-ссылка (QR рисует фронт своим QrCode) */
+  twoFactorSetup: () =>
+    request<TwoFactorSetup>('/users/me/2fa/setup', { method: 'POST' }),
+  /** включение кодом из приложения — backup-коды приходят один раз */
+  twoFactorEnable: (code: string) =>
+    request<{ backupCodes: string[] }>('/users/me/2fa/enable', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }),
+  /** выключение кодом приложения или backup-кодом */
+  twoFactorDisable: (code: string) =>
+    request<void>('/users/me/2fa/disable', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }),
+  /** доверенные устройства (живые, свежие сверху) */
+  twoFactorDevices: () => request<TrustedDevice[]>('/users/me/2fa/devices'),
+  /** отзыв доверенного устройства */
+  revokeTwoFactorDevice: (id: string) =>
+    request<void>(`/users/me/2fa/devices/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
     }),
   /** новый сеанс в афишу — только администратору (403 остальным) */
   createMovie: (payload: CreateMoviePayload) =>
