@@ -1,4 +1,5 @@
 import type { CookieOptions, Response } from 'express';
+import { DEVICE_TTL_MS } from '../twofactor/twofactor.service';
 import { REFRESH_TTL_MS } from './tokens.service';
 
 /**
@@ -31,4 +32,29 @@ export function setRefreshCookie(res: Response, token: string): void {
 
 export function clearRefreshCookie(res: Response): void {
   res.clearCookie(REFRESH_COOKIE, cookieOptions());
+}
+
+/**
+ * Доверенное устройство 2FA (этап 34): httpOnly-кука с токеном — как
+ * refresh, JS не видит. Рядом кладём нечувствительную куку с id строки
+ * (не httpOnly): витрина профиля помечает «это устройство» в списке,
+ * сравнивая id — сам токен наружу не выходит.
+ */
+export const DEVICE_COOKIE = 'cine.device';
+export const DEVICE_ID_COOKIE = 'cine.device.id';
+
+export function setDeviceCookies(res: Response, token: string, id: string): void {
+  const options = cookieOptions();
+  res.cookie(DEVICE_COOKIE, token, options);
+  res.cookie(DEVICE_ID_COOKIE, id, {
+    ...options,
+    httpOnly: false,
+    maxAge: DEVICE_TTL_MS,
+  });
+}
+
+export function clearDeviceCookies(res: Response): void {
+  const options = cookieOptions();
+  res.clearCookie(DEVICE_COOKIE, options);
+  res.clearCookie(DEVICE_ID_COOKIE, { ...options, httpOnly: false });
 }

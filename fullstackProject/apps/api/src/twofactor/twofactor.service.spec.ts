@@ -262,7 +262,7 @@ describe('TwoFactorService (юнит, фейк-репозитории)', () => {
   describe('disable', () => {
     it('кодом приложения выключает и гасит backup-коды с устройствами', async () => {
       const { secret } = await enableFresh();
-      const token = await service.issueTrustedDevice(USER.id, 'Ноутбук');
+      const { token } = await service.issueTrustedDevice(USER.id, 'Ноутбук');
       expect(await service.listDevices(USER.id)).toHaveLength(1);
 
       await service.disable(USER, totp(secret));
@@ -342,7 +342,10 @@ describe('TwoFactorService (юнит, фейк-репозитории)', () => {
 
   describe('доверенные устройства', () => {
     it('выдача обрезает имя; touch продлевает окно и метку использования', async () => {
-      const token = await service.issueTrustedDevice(USER.id, '  Браузер на работе  ');
+      const { token } = await service.issueTrustedDevice(
+        USER.id,
+        '  Браузер на работе  ',
+      );
       const first = (await service.listDevices(USER.id))[0];
       expect(first.name).toBe('Браузер на работе');
 
@@ -364,7 +367,7 @@ describe('TwoFactorService (юнит, фейк-репозитории)', () => {
     });
 
     it('отзыв: вход снова спросит код; повторный отзыв — 404', async () => {
-      const token = await service.issueTrustedDevice(USER.id, 'Телефон');
+      const { token } = await service.issueTrustedDevice(USER.id, 'Телефон');
       const [device] = await service.listDevices(USER.id);
       await service.revokeDevice(USER.id, device.id);
       expect(await service.touchTrustedDevice(USER.id, token)).toBe(false);

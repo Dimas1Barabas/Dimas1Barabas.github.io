@@ -97,8 +97,9 @@ export class TwoFactorService {
   /** статус для витрины профиля */
   async status(user: AuthUser): Promise<TwoFactorStatusDto> {
     const row = await this.users.findOneByOrFail({ id: user.id });
-    const enabled = row.totpEnabledAt !== null;
-    return { enabled, pending: !enabled && row.totpSecret !== null };
+    // != null ловит и undefined (фейки с частичными строками)
+    const enabled = row.totpEnabledAt != null;
+    return { enabled, pending: !enabled && row.totpSecret != null };
   }
 
   /**
@@ -194,7 +195,7 @@ export class TwoFactorService {
   /** включена ли 2FA у пользователя (решение логина о втором шаге) */
   async isEnabled(userId: string): Promise<boolean> {
     const row = await this.users.findOneByOrFail({ id: userId });
-    return row.totpEnabledAt !== null;
+    return row.totpEnabledAt != null;
   }
 
   /** код второго шага: приложение или backup-код (расход атомарен) */
@@ -248,10 +249,14 @@ export class TwoFactorService {
 
   // ── доверенные устройства ─────────────────────────────────────────
 
-  /** выдать токен устройства (raw — в cookie, в БД — хэш) */
-  async issueTrustedDevice(userId: string, name: string): Promise<string> {
+  /** выдать токен устройства: raw — в cookie, в БД — хэш; id строки —
+   *  для нечувствительной куки «это устройство» в витрине профиля */
+  async issueTrustedDevice(
+    userId: string,
+    name: string,
+  ): Promise<{ token: string; id: string }> {
     const token = randomBytes(32).toString('base64url');
-    await this.devices.save(
+    const saved = await this.devices.save(
       this.devices.create({
         userId,
         tokenHash: sha256(token),
@@ -260,7 +265,7 @@ export class TwoFactorService {
         expiresAt: new Date(Date.now() + DEVICE_TTL_MS),
       }),
     );
-    return token;
+    return { token, id: saved.id };
   }
 
   /** живое ли устройство; вход продлевает окно на 30 дней (слайдинг) */

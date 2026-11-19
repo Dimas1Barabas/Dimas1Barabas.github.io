@@ -28,6 +28,11 @@ import { TokensService } from '../src/tokens/tokens.service';
 import { PasswordReset } from '../src/auth/password-reset.entity';
 import { UsersService } from '../src/users/users.service';
 import { User } from '../src/users/user.entity';
+import { BackupCode } from '../src/twofactor/backup-code.entity';
+import { TrustedDevice } from '../src/twofactor/trusted-device.entity';
+import { TwoFactorChallenge } from '../src/twofactor/two-factor-challenge.entity';
+import { TwoFactorService } from '../src/twofactor/twofactor.service';
+import { generateTotpSecret, totp } from '../src/twofactor/totp';
 
 /**
  * Интеграционный тест авторизации: реальный HTTP-стек Nest
@@ -71,6 +76,127 @@ class FakeUserRepo {
           (where.id === undefined || r.id === where.id),
       ) ?? null
     );
+  }
+
+  /** TwoFactorService читает строку пользователя вторым шагом логина */
+  async findOneByOrFail(where: { id: string }): Promise<User> {
+    const found = await this.findOneBy(where);
+    if (!found) throw new Error('user not found');
+    return found;
+  }
+
+  /** recovery-сброс 2FA (reset-password) чистит колонки пользователя */
+  async update(criteria: { id: string }, patch: Partial<User>): Promise<void> {
+    const found = this.rows.find((r) => r.id === criteria.id);
+    if (found) Object.assign(found, patch);
+  }
+}
+
+/** фейк backup-кодов: одноразовый расход через условный UPDATE */
+class FakeBackupRepo {
+  rows: BackupCode[] = [];
+  seq = 0;
+  create(p: Partial<BackupCode>): BackupCode {
+    return {
+      id: `bc-${++this.seq}`,
+      createdAt: new Date(),
+      usedAt: null,
+      ...p,
+    } as BackupCode;
+  }
+  async save(row: BackupCode): Promise<BackupCode> {
+    this.rows.push(row);
+    return row;
+  }
+  async delete(where: { userId: string }): Promise<void> {
+    this.rows = this.rows.filter((r) => r.userId !== where.userId);
+  }
+  async update(
+    where: { userId: string; codeHash: string },
+    set: { usedAt: Date },
+  ): Promise<{ affected: number }> {
+    let affected = 0;
+    for (const r of this.rows) {
+      if (r.userId === where.userId && r.codeHash === where.codeHash && r.usedAt === null) {
+        r.usedAt = set.usedAt;
+        affected++;
+      }
+    }
+    return { affected };
+  }
+}
+
+/** фейк доверенных устройств: слайдинг и отзыв */
+class FakeDeviceRepo {
+  rows: TrustedDevice[] = [];
+  seq = 0;
+  create(p: Partial<TrustedDevice>): TrustedDevice {
+    return {
+      id: `dev-${++this.seq}`,
+      createdAt: new Date(),
+      lastUsedAt: new Date(),
+      revokedAt: null,
+      ...p,
+    } as TrustedDevice;
+  }
+  async save(row: TrustedDevice): Promise<TrustedDevice> {
+    this.rows.push(row);
+    return row;
+  }
+  async find(): Promise<TrustedDevice[]> {
+    return this.rows.filter((r) => r.revokedAt === null);
+  }
+  async findOneBy(where: { tokenHash: string; userId: string }) {
+    return (
+      this.rows.find(
+        (r) => r.tokenHash === where.tokenHash && r.userId === where.userId,
+      ) ?? null
+    );
+  }
+  async update(
+    where: { id?: string; userId?: string; revokedAt?: unknown },
+    set: Partial<TrustedDevice>,
+  ): Promise<{ affected: number }> {
+    let affected = 0;
+    for (const r of this.rows) {
+      const byId = where.id === undefined || r.id === where.id;
+      const byUser = where.userId === undefined || r.userId === where.userId;
+      const byRevoked = where.revokedAt === undefined || r.revokedAt === null;
+      if (byId && byUser && byRevoked) {
+        Object.assign(r, set);
+        affected++;
+      }
+    }
+    return { affected };
+  }
+}
+
+/** фейк билетов второго шага */
+class FakeChallengeRepo {
+  rows: TwoFactorChallenge[] = [];
+  seq = 0;
+  create(p: Partial<TwoFactorChallenge>): TwoFactorChallenge {
+    return {
+      id: `chal-${++this.seq}`,
+      attempts: 0,
+      usedAt: null,
+      createdAt: new Date(),
+      ...p,
+    } as TwoFactorChallenge;
+  }
+  async save(row: TwoFactorChallenge): Promise<TwoFactorChallenge> {
+    this.rows.push(row);
+    return row;
+  }
+  async delete(): Promise<void> {
+    this.rows = [];
+  }
+  async findOneBy(where: { ticketHash: string }) {
+    return this.rows.find((r) => r.ticketHash === where.ticketHash) ?? null;
+  }
+  async update(where: { id: string }, set: Partial<TwoFactorChallenge>): Promise<void> {
+    const found = this.rows.find((r) => r.id === where.id);
+    if (found) Object.assign(found, set);
   }
 }
 
@@ -190,6 +316,9 @@ describe('POST /api/auth/* (integration)', () => {
   let repo: FakeUserRepo;
   let tokenRepo: FakeTokenRepo;
   let resetRepo: FakeResetRepo;
+  let backupRepo: FakeBackupRepo;
+  let deviceRepo: FakeDeviceRepo;
+  let challengeRepo: FakeChallengeRepo;
   /** «письма» user.password.reset из outbox-записей транзакции forgot */
   let outboxLetters: { routingKey: string; payload: { email: string; message: string } }[];
   let jwt: JwtService;
@@ -211,6 +340,9 @@ describe('POST /api/auth/* (integration)', () => {
     repo = new FakeUserRepo();
     tokenRepo = new FakeTokenRepo();
     resetRepo = new FakeResetRepo();
+    backupRepo = new FakeBackupRepo();
+    deviceRepo = new FakeDeviceRepo();
+    challengeRepo = new FakeChallengeRepo();
     outboxLetters = [];
 
     const moduleRef = await Test.createTestingModule({
@@ -222,6 +354,7 @@ describe('POST /api/auth/* (integration)', () => {
         UsersService,
         AuthService,
         TokensService,
+        TwoFactorService,
         JwtStrategy,
         // как в app.module.ts: всё закрыто JWT по умолчанию, @Public открывает
         { provide: APP_GUARD, useClass: JwtAuthGuard },
@@ -238,6 +371,13 @@ describe('POST /api/auth/* (integration)', () => {
         { provide: getRepositoryToken(User), useValue: repo },
         { provide: getRepositoryToken(RefreshToken), useValue: tokenRepo },
         { provide: getRepositoryToken(PasswordReset), useValue: resetRepo },
+        // 2FA: настройки и второй шаг логина (этап 34)
+        { provide: getRepositoryToken(BackupCode), useValue: backupRepo },
+        { provide: getRepositoryToken(TrustedDevice), useValue: deviceRepo },
+        {
+          provide: getRepositoryToken(TwoFactorChallenge),
+          useValue: challengeRepo,
+        },
         { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
         {
           // forgotPassword: строка reset и «письмо» — одной транзакцией;
@@ -616,6 +756,127 @@ describe('POST /api/auth/* (integration)', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.userId).toBe(alice?.id);
+    });
+  });
+
+  // ── второй шаг входа: 2FA включена прямо в строке пользователя ──────
+
+  describe('POST /api/auth/login + login/2fa (второй шаг)', () => {
+    /** включить 2FA пользователю напрямую в «БД» — как после setup+enable */
+    function enable2fa(email: string): string {
+      const row = repo.rows.find((r) => r.email === email)!;
+      row.totpSecret = generateTotpSecret();
+      row.totpEnabledAt = new Date();
+      return row.totpSecret;
+    }
+
+    const creds = { email: '2fa@example.com', password: 'secret123' };
+
+    beforeAll(async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send({ ...creds, name: 'Двойная Фактория' });
+    });
+
+    it('без 2FA логин сразу даёт пару', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send(creds);
+      expect(res.status).toBe(200);
+      expect(res.body.accessToken).toBeTruthy();
+    });
+
+    it('с 2FA — билет вместо пары, refresh-cookie не ставится', async () => {
+      enable2fa(creds.email);
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send(creds);
+
+      expect(res.status).toBe(200);
+      expect(res.body.twoFactorRequired).toBe(true);
+      expect(res.body.ticket).toBeTruthy();
+      expect(res.body.accessToken).toBeUndefined();
+      expect(res.headers['set-cookie']).toBeUndefined();
+    });
+
+    it('второй шаг: неверный код — 401, верный — пара + refresh-cookie', async () => {
+      const secret = enable2fa(creds.email);
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send(creds);
+
+      const bad = await request(app.getHttpServer())
+        .post('/api/auth/login/2fa')
+        .send({ ticket: login.body.ticket, code: '000000' });
+      expect(bad.status).toBe(401);
+
+      // после неверной попытки билет жив (лимит 5) — верный код проходит
+      const ok = await request(app.getHttpServer())
+        .post('/api/auth/login/2fa')
+        .send({ ticket: login.body.ticket, code: totp(secret) });
+      expect(ok.status).toBe(200);
+      expect(ok.body.accessToken).toBeTruthy();
+      expect(cookieHeader(ok)).toContain('cine.refresh');
+
+      // билет одноразовый: повторно пара не выдаётся
+      const replay = await request(app.getHttpServer())
+        .post('/api/auth/login/2fa')
+        .send({ ticket: login.body.ticket, code: totp(secret) });
+      expect(replay.status).toBe(401);
+    });
+
+    it('пять неверных кодов убивают билет', async () => {
+      const secret = enable2fa(creds.email);
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send(creds);
+      const ticket: string = login.body.ticket;
+
+      for (let i = 0; i < 5; i++) {
+        const res = await request(app.getHttpServer())
+          .post('/api/auth/login/2fa')
+          .send({ ticket, code: '999999' });
+        expect(res.status).toBe(401);
+      }
+      const dead = await request(app.getHttpServer())
+        .post('/api/auth/login/2fa')
+        .send({ ticket, code: totp(secret) });
+      expect(dead.status).toBe(401);
+    });
+
+    it('доверенное устройство: галочка выдаёт cine.device, следующий вход без кода', async () => {
+      const secret = enable2fa(creds.email);
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send(creds);
+
+      const trusted = await request(app.getHttpServer())
+        .post('/api/auth/login/2fa')
+        .send({
+          ticket: login.body.ticket,
+          code: totp(secret),
+          trustDevice: true,
+          deviceName: 'Ноутбук QA',
+        });
+      expect(trusted.status).toBe(200);
+      const cookies = cookieHeader(trusted);
+      expect(cookies).toContain('cine.refresh');
+      expect(cookies).toContain('cine.device');
+      expect(cookies).toContain('cine.device.id');
+
+      // вход с cookie доверия — пара сразу, без второго шага
+      const second = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .set('Cookie', cookies)
+        .send(creds);
+      expect(second.status).toBe(200);
+      expect(second.body.accessToken).toBeTruthy();
+      expect(second.body.twoFactorRequired).toBeUndefined();
+
+      // устройство видно в списке с именем
+      const devices = deviceRepo.rows.filter((d) => d.revokedAt === null);
+      expect(devices.map((d) => d.name)).toContain('Ноутбук QA');
     });
   });
 

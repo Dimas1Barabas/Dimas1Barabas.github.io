@@ -13,6 +13,7 @@ import { OutboxRelayClient } from '../outbox/outbox-relay.client';
 import { SessionPair, TokensService } from '../tokens/tokens.service';
 import { toUserDto, UserDto } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
+import { TwoFactorService } from '../twofactor/twofactor.service';
 import { PasswordReset } from './password-reset.entity';
 
 /** класс (не interface) — чтобы попадать в OpenAPI-схему ответа логина */
@@ -22,6 +23,15 @@ export class LoginResult {
 
   @ApiProperty({ type: UserDto })
   user!: UserDto;
+}
+
+/** ответ логина при включённой 2FA: пары нет, ждём код второго шага */
+export class TwoFactorRequired {
+  @ApiProperty({ example: true })
+  twoFactorRequired!: boolean;
+
+  @ApiProperty({ description: 'билет второго шага, живёт 5 минут' })
+  ticket!: string;
 }
 
 const sha256 = (v: string): string =>
@@ -34,6 +44,15 @@ const RESET_TTL_MS = 30 * 60_000;
 const resetLinkBase = (): string =>
   process.env.RESET_LINK_BASE ?? 'http://localhost:18080/#/reset-password';
 
+/** исход логина: пара (без 2FA или доверенное устройство) | билет */
+export type LoginOutcome = SessionPair | TwoFactorRequired;
+
+/** результат второго шага: пара + опциональный токен доверия */
+export interface SecondFactorResult {
+  pair: SessionPair;
+  device?: { token: string; id: string };
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -44,10 +63,18 @@ export class AuthService {
     private readonly dataSource: DataSource,
     // будильник Курьера: «письмо» закоммичено — доставка без poll-тика
     private readonly outboxRelay: OutboxRelayClient,
+    private readonly twofactor: TwoFactorService,
   ) {}
 
-  /** вход: сверяем bcrypt-хэш, выдаём пару (refresh уедет в httpOnly-cookie) */
-  async login(input: { email: string; password: string }): Promise<SessionPair> {
+  /**
+   * Вход: сверяем bcrypt-хэш; при включённой 2FA — билет вместо пары.
+   * Доверенное устройство (токен из httpOnly-cookie) пропускает второй
+   * шаг: пароль уже доказал личность, устройство — что код вводили тут.
+   */
+  async login(
+    input: { email: string; password: string },
+    deviceToken?: string,
+  ): Promise<LoginOutcome> {
     const user = await this.users.findByEmail(input.email);
     // одинаково отвечаем на «нет такого» и «не тот пароль» — не раскрываем, в чём дело
     if (
@@ -57,7 +84,48 @@ export class AuthService {
       throw new UnauthorizedException('Неверный email или пароль');
     }
 
+    if (user.totpEnabledAt != null) {
+      if (
+        deviceToken &&
+        (await this.twofactor.touchTrustedDevice(user.id, deviceToken))
+      ) {
+        return this.tokens.issuePair(user);
+      }
+      return {
+        twoFactorRequired: true,
+        ticket: await this.twofactor.issueChallenge(user.id),
+      };
+    }
+
     return this.tokens.issuePair(user);
+  }
+
+  /**
+   * Второй шаг: билет + код (приложение или backup). Успех гасит билет
+   * и выдаёт пару; по галочке — ещё и токен доверенного устройства.
+   */
+  async loginSecondFactor(input: {
+    ticket: string;
+    code: string;
+    trustDevice?: boolean;
+    deviceName?: string;
+  }): Promise<SecondFactorResult> {
+    const userId = await this.twofactor.consumeChallenge(
+      input.ticket,
+      input.code,
+    );
+    if (!userId) {
+      throw new UnauthorizedException('Код неверен или билет входа истёк');
+    }
+    const user = await this.users.findById(userId);
+    const pair = await this.tokens.issuePair(user);
+    const device: SecondFactorResult['device'] = input.trustDevice
+      ? await this.twofactor.issueTrustedDevice(
+          user.id,
+          input.deviceName ?? 'Браузер',
+        )
+      : undefined;
+    return { pair, device };
   }
 
   /**
@@ -138,6 +206,9 @@ export class AuthService {
 
     const user = await this.users.findById(row.userId);
     await this.tokens.revokeAllForUser(user.id);
+    // сброс по ссылке — recovery-канал: телефон могли потерять вместе с
+    // паролем, 2FA и доверенные устройства отзываются (иначе юзер заперт)
+    await this.twofactor.resetAllForUser(user.id);
     return this.tokens.issuePair(await this.users.setPassword(user, input.newPassword));
   }
 }

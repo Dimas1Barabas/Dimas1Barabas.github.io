@@ -83,6 +83,8 @@ describe('TokensService', () => {
       referralCode: 'AB2CD3EF',
       referredBy: null,
       referralRewardedAt: null,
+      totpSecret: null,
+      totpEnabledAt: null,
       createdAt: new Date(),
     };
   });

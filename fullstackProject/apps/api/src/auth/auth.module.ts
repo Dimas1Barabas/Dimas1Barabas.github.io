@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { OutboxModule } from '../outbox/outbox.module';
 import { RatelimiterModule } from '../ratelimiter/ratelimiter.module';
 import { TokensModule } from '../tokens/tokens.module';
+import { TwoFactorModule } from '../twofactor/twofactor.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -22,6 +23,8 @@ import { PasswordReset } from './password-reset.entity';
     // OutboxModule — будильник Курьера после коммита «письма» сброса
     // (само «письмо» user.password.reset Курьер и доставит)
     OutboxModule,
+    // второй шаг входа и recovery-сброс при forgot-password (этап 34)
+    TwoFactorModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

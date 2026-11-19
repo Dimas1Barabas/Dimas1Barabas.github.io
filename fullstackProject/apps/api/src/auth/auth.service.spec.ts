@@ -7,6 +7,7 @@ import * as bcrypt from 'bcryptjs';
 import { FindOperator } from 'typeorm';
 import { OutboxMessage } from '../outbox/outbox-message.entity';
 import { TokensService } from '../tokens/tokens.service';
+import { TwoFactorService } from '../twofactor/twofactor.service';
 import { User, toUserDto } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
@@ -77,6 +78,13 @@ describe('AuthService', () => {
     revoke: jest.Mock;
     revokeAllForUser: jest.Mock;
   };
+  let twofactor: {
+    touchTrustedDevice: jest.Mock;
+    issueChallenge: jest.Mock;
+    consumeChallenge: jest.Mock;
+    issueTrustedDevice: jest.Mock;
+    resetAllForUser: jest.Mock;
+  };
   let resets: FakeResetRepo;
   /** outbox-записи бизнес-событий (user.password.reset) */
   let outbox: { routingKey: string; payload: Record<string, unknown> }[];
@@ -92,6 +100,8 @@ describe('AuthService', () => {
       referralCode: 'AB2CD3EF',
       referredBy: null,
       referralRewardedAt: null,
+      totpSecret: null,
+      totpEnabledAt: null,
       createdAt: new Date(),
     };
   });
@@ -119,6 +129,16 @@ describe('AuthService', () => {
     };
     resets = new FakeResetRepo();
     outbox = [];
+    twofactor = {
+      touchTrustedDevice: jest.fn(async () => false),
+      issueChallenge: jest.fn(async () => 'ticket-x'),
+      consumeChallenge: jest.fn(async () => null),
+      issueTrustedDevice: jest.fn(async () => ({
+        token: 'device-token',
+        id: 'device-1',
+      })),
+      resetAllForUser: jest.fn(async () => undefined),
+    };
     // «транзакция» забытого пароля: строка reset + письмо в outbox — вместе
     const em = {
       create: (_e: unknown, p: Partial<PasswordReset>) => resets.create(p),
@@ -142,6 +162,7 @@ describe('AuthService', () => {
       resets as never,
       { transaction: (cb: (e: typeof em) => unknown) => cb(em) } as never,
       { poke: jest.fn() } as never,
+      twofactor as unknown as TwoFactorService,
     );
   });
 
@@ -207,6 +228,78 @@ describe('AuthService', () => {
     expect(tokens.revoke).not.toHaveBeenCalled();
   });
 
+  describe('второй шаг 2FA', () => {
+    it('включённая 2FA: вместо пары — билет, issuePair не звать', async () => {
+      user.totpEnabledAt = new Date();
+      try {
+        const outcome = await service.login({
+          email: user.email,
+          password: 'secret123',
+        });
+        expect(outcome).toEqual({ twoFactorRequired: true, ticket: 'ticket-x' });
+        expect(tokens.issuePair).not.toHaveBeenCalled();
+      } finally {
+        user.totpEnabledAt = null;
+      }
+    });
+
+    it('доверенное устройство: touch прошёл — пара без второго шага', async () => {
+      user.totpEnabledAt = new Date();
+      twofactor.touchTrustedDevice.mockResolvedValueOnce(true);
+      try {
+        const outcome = await service.login(
+          { email: user.email, password: 'secret123' },
+          'device-cookie-token',
+        );
+        expect(outcome).toMatchObject({ accessToken: 'access-x' });
+        expect(twofactor.touchTrustedDevice).toHaveBeenCalledWith(
+          user.id,
+          'device-cookie-token',
+        );
+      } finally {
+        user.totpEnabledAt = null;
+      }
+    });
+
+    it('доверенное устройство протухло — снова билет', async () => {
+      user.totpEnabledAt = new Date();
+      try {
+        const outcome = await service.login(
+          { email: user.email, password: 'secret123' },
+          'stale-token',
+        );
+        expect(outcome).toEqual({ twoFactorRequired: true, ticket: 'ticket-x' });
+      } finally {
+        user.totpEnabledAt = null;
+      }
+    });
+
+    it('loginSecondFactor: код верен — пара; по галочке — токен устройства', async () => {
+      twofactor.consumeChallenge.mockResolvedValueOnce(user.id);
+
+      const result = await service.loginSecondFactor({
+        ticket: 'ticket-x',
+        code: '123456',
+        trustDevice: true,
+        deviceName: 'Рабочий ноутбук',
+      });
+
+      expect(result.pair.accessToken).toBe('access-x');
+      expect(result.device).toEqual({ token: 'device-token', id: 'device-1' });
+      expect(twofactor.issueTrustedDevice).toHaveBeenCalledWith(
+        user.id,
+        'Рабочий ноутбук',
+      );
+    });
+
+    it('loginSecondFactor: код неверен/билет мёртв — 401 без пары', async () => {
+      await expect(
+        service.loginSecondFactor({ ticket: 'ticket-x', code: '000000' }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(tokens.issuePair).not.toHaveBeenCalled();
+    });
+  });
+
   describe('forgotPassword', () => {
     it('существующий email: «письмо» со ссылкой в outbox, в БД — хэш токена', async () => {
       await service.forgotPassword(user.email);
@@ -255,6 +348,14 @@ describe('AuthService', () => {
       expect(user.passwordHash).not.toBe(oldHash);
       expect(tokens.revokeAllForUser).toHaveBeenCalledWith(user.id);
       expect(resets.rows[0].usedAt).not.toBeNull(); // ссылка одноразовая
+    });
+
+    it('recovery-канал: сброс отзывает и 2FA с устройствами', async () => {
+      const token = await tokenFromEmail();
+
+      await service.resetPassword({ token, newPassword: 'new-secret-9' });
+
+      expect(twofactor.resetAllForUser).toHaveBeenCalledWith(user.id);
     });
 
     it('мусорный токен → 400 тем же текстом, что и протухший', async () => {

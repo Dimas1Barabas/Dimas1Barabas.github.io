@@ -21,8 +21,10 @@ import {
 } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import {
+  DEVICE_COOKIE,
   REFRESH_COOKIE,
   clearRefreshCookie,
+  setDeviceCookies,
   setRefreshCookie,
 } from '../tokens/cookies';
 import { RateLimited } from '../ratelimiter/rate-limited.decorator';
@@ -30,8 +32,9 @@ import { RateLimitGuard } from '../ratelimiter/rate-limit.guard';
 import { toUserDto, UserDto } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
 import { AuthUser } from './auth-user';
-import { AuthService, LoginResult } from './auth.service';
+import { AuthService, LoginResult, TwoFactorRequired } from './auth.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { Login2faDto } from './dto/login-2fa.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -62,7 +65,9 @@ export class AuthController {
 
   /**
    * Вход: {accessToken, user}; refresh-сессия (30 дней) уезжает в
-   * httpOnly-cookie cine.refresh — в теле ответа её нет.
+   * httpOnly-cookie cine.refresh — в теле ответа её нет. При включённой
+   * 2FA пары нет: {twoFactorRequired, ticket} — билет для второго шага
+   * (5 минут). Доверенное устройство (cine.device) пропускает код.
    * @Public — как у регистрации: токена ещё нет.
    */
   @Public()
@@ -74,9 +79,10 @@ export class AuthController {
     summary: 'Вход',
     description:
       'Верным ответом на «нет такого» и «не тот пароль» не раскрываем, в чём дело. ' +
-      'Refresh-токен выдаётся httpOnly-cookie (Path=/api/auth, 30 дней)',
+      'Refresh-токен выдаётся httpOnly-cookie (Path=/api/auth, 30 дней). ' +
+      'Включённая 2FA меняет ответ на {twoFactorRequired, ticket}',
   })
-  @ApiOkResponse({ type: LoginResult })
+  @ApiOkResponse({ type: LoginResult, description: 'без 2FA или доверенное устройство' })
   @ApiUnauthorizedResponse({ description: 'Неверный email или пароль' })
   @ApiTooManyRequestsResponse({
     description:
@@ -85,10 +91,45 @@ export class AuthController {
   })
   async login(
     @Body() dto: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<LoginResult | TwoFactorRequired> {
+    const outcome = await this.auth.login(
+      dto,
+      req.cookies?.[DEVICE_COOKIE] as string | undefined,
+    );
+    if ('twoFactorRequired' in outcome) return outcome;
+    setRefreshCookie(res, outcome.refreshToken);
+    return { accessToken: outcome.accessToken, user: outcome.user };
+  }
+
+  /**
+   * Второй шаг входа: билет из логина + код приложения (или backup-код).
+   * Галочка «доверять» выпускает токен устройства в httpOnly-cookie
+   * cine.device — следующие 30 дней этот браузер входит без кода.
+   * Та же корзина Привратника auth.login (ключ — ip: email в теле нет).
+   */
+  @Public()
+  @Post('login/2fa')
+  @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @RateLimited('auth.login')
+  @ApiOperation({
+    summary: 'Вход — второй шаг 2FA',
+    description:
+      'Код из приложения-аутентификатора или backup-код. Билет одноразовый ' +
+      '(5 минут, 5 попыток). trustDevice — токен доверия в cookie на 30 дней',
+  })
+  @ApiOkResponse({ type: LoginResult })
+  @ApiUnauthorizedResponse({ description: 'Код неверен или билет истёк' })
+  @ApiTooManyRequestsResponse({ description: 'Брутфорс кода — код rateLimited' })
+  async loginSecondFactor(
+    @Body() dto: Login2faDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<LoginResult> {
-    const pair = await this.auth.login(dto);
+    const { pair, device } = await this.auth.loginSecondFactor(dto);
     setRefreshCookie(res, pair.refreshToken);
+    if (device) setDeviceCookies(res, device.token, device.id);
     return { accessToken: pair.accessToken, user: pair.user };
   }
 
