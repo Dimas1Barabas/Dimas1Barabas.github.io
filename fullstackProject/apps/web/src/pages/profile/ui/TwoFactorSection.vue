@@ -171,7 +171,13 @@ const fmtDate = (iso: string): string =>
         Код из приложения-аутентификатора при входе: пароль недостаточен,
         даже если его узнали. Backup-коды — на случай утери телефона.
       </p>
-      <button class="btn" type="button" :disabled="busy" @click="startSetup">
+      <button
+        class="btn"
+        type="button"
+        data-testid="twofactor-enable-btn"
+        :disabled="busy"
+        @click="startSetup"
+      >
         Включить 2FA
       </button>
     </template>
@@ -183,14 +189,14 @@ const fmtDate = (iso: string): string =>
         Aegis, 1Password) и введите текущий код — так вы докажете, что
         приложение работает.
       </p>
-      <div class="twofactor-qr">
+      <div class="twofactor-qr" data-testid="twofactor-qr">
         <QrCode :value="setupDto.otpauthUri" :pixels="200" />
       </div>
       <p class="auth-note">
         Не сканируется? Введите секрет вручную:
         <code class="twofactor-secret">{{ setupDto.secret }}</code>
       </p>
-      <p v-if="demoCode" class="auth-note">
+      <p v-if="demoCode" class="auth-note" data-testid="twofactor-demo-code">
         Демо без телефона: текущий код — <code>{{ demoCode }}</code>
       </p>
       <label class="field">
@@ -204,9 +210,16 @@ const fmtDate = (iso: string): string =>
           minlength="6"
           maxlength="6"
           placeholder="123456"
+          data-testid="twofactor-code-input"
         />
       </label>
-      <button class="btn" type="button" :disabled="busy" @click="enable">
+      <button
+        class="btn"
+        type="button"
+        data-testid="twofactor-confirm-btn"
+        :disabled="busy"
+        @click="enable"
+      >
         {{ busy ? 'Проверяем…' : 'Подтвердить и включить' }}
       </button>
     </template>
@@ -219,7 +232,11 @@ const fmtDate = (iso: string): string =>
       </p>
 
       <!-- backup-коды показаны один раз -->
-      <div v-if="stage === 'enabled-just'" class="twofactor-backup">
+      <div
+        v-if="stage === 'enabled-just'"
+        class="twofactor-backup"
+        data-testid="twofactor-backup"
+      >
         <p class="auth-note">
           Backup-коды показываются <strong>один раз</strong> — сохраните:
           каждый работает один раз вместо кода приложения.
@@ -243,7 +260,10 @@ const fmtDate = (iso: string): string =>
             <div class="twofactor-device">
               <span class="twofactor-device-name">
                 {{ d.name }}
-                <em v-if="d.id === currentDeviceId" class="twofactor-current">
+                <em
+                  v-if="d.isCurrent || d.id === currentDeviceId"
+                  class="twofactor-current"
+                >
                   это устройство
                 </em>
               </span>

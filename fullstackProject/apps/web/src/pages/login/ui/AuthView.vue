@@ -143,15 +143,16 @@ function backToPassword(): void {
           inputmode="numeric"
           autocomplete="one-time-code"
           placeholder="123456 или AB2C-3DEF"
+          data-testid="login-code-input"
         />
       </label>
 
-      <p v-if="demoHint" class="auth-note">
+      <p v-if="demoHint" class="auth-note" data-testid="login-demo-code">
         Демо без телефона: текущий код — <code>{{ demoHint }}</code>
       </p>
 
       <label class="auth-trust">
-        <input v-model="trustDevice" type="checkbox" />
+        <input v-model="trustDevice" type="checkbox" data-testid="login-trust-check" />
         <span>Доверять этому браузеру (30 дней без кода)</span>
       </label>
 

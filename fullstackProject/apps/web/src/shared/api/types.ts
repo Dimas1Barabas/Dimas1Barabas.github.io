@@ -237,6 +237,9 @@ export interface TrustedDevice {
   createdAt: string;
   lastUsedAt: string;
   expiresAt: string;
+  /** демо: движок — один браузер, своё устройство помечает сам;
+   *  в live метку считает фронт по нечувствительной куке cine.device.id */
+  isCurrent?: boolean;
 }
 
 export interface RegisterPayload {

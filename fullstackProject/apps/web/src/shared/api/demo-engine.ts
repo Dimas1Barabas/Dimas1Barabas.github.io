@@ -1019,7 +1019,8 @@ class DemoEngine {
     this.resetTwoFactor();
   }
 
-  /** витрина доверенных устройств (движок — максимум одно) */
+  /** витрина доверенных устройств (движок — максимум одно, оно и есть
+   *  «это устройство»: браузер один, куки в демо нет) */
   twoFactorDevices(): TrustedDevice[] {
     this.requireSession();
     if (!this.trustedDevice) return [];
@@ -1031,6 +1032,7 @@ class DemoEngine {
         createdAt: now.toISOString(),
         lastUsedAt: now.toISOString(),
         expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+        isCurrent: true,
       },
     ];
   }
