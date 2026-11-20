@@ -275,6 +275,13 @@ jobs:
           - name: barman
             dir: barman-service
             threshold: 35
+          # Детектив (этап 36, антифрод): домен 100%, память/витрина/gRPC
+          # под тестами; локально без PG 29.8 — CI с testcontainers
+          # раскрывает live-PG адаптер решений (первый прогон 20.11 —
+          # порог по локальной цифре, поднять по факту зелёного)
+          - name: detective
+            dir: detective-service
+            threshold: 29
     defaults:
       run:
         working-directory: fullstackProject/services/${{ matrix.dir }}
@@ -374,7 +381,7 @@ jobs:
           docker compose up --build --wait --wait-timeout 300 -d \
             postgres redis rabbitmq \
             worker notification recommendation reminder pricing ratelimiter flags analytics \
-            outbox-relay meilisearch api
+            outbox-relay meilisearch detective api
         working-directory: fullstackProject
 
       # страховка на случай, если --wait пропустил (healthcheck-флейк):
@@ -484,7 +491,7 @@ jobs:
             up --build --wait --wait-timeout 300 -d \
             postgres redis rabbitmq toxiproxy \
             worker notification recommendation reminder pricing ratelimiter flags analytics \
-            outbox-relay api || status=$?
+            outbox-relay detective api || status=$?
           if [ "$status" -ne 0 ]; then
             msg="$(
               echo 'COMPOSE PS:'
