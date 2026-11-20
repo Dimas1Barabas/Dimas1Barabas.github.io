@@ -25,6 +25,7 @@ buf generate --template buf.gen.pricing.yaml --path pricing.proto
 buf generate --template buf.gen.ratelimiter.yaml --path ratelimiter.proto
 buf generate --template buf.gen.flags.yaml --path flags.proto
 buf generate --template buf.gen.outbox.yaml --path outbox.proto
+buf generate --template buf.gen.detective.yaml --path detective.proto
 echo "OK: proto -> services/*/internal/pb/"
 
 # копии контрактов для NestJS-стороны: proto-loader читает .proto в рантайме
@@ -45,4 +46,7 @@ cp "$root/proto/flags.proto" \
 mkdir -p "$root/apps/api/src/outbox/proto"
 cp "$root/proto/outbox.proto" \
    "$root/apps/api/src/outbox/proto/outbox.proto"
-echo "OK: proto -> apps/api/src/{recommendations,reminders,pricing,ratelimiter,outbox}/proto/"
+mkdir -p "$root/apps/api/src/fraud/proto"
+cp "$root/proto/detective.proto" \
+   "$root/apps/api/src/fraud/proto/detective.proto"
+echo "OK: proto -> apps/api/src/{recommendations,reminders,pricing,ratelimiter,outbox,fraud}/proto/"

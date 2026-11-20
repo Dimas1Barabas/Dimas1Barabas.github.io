@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+// Detective — gRPC-контракт «Детектива»: антифрод-скоринг броней.
+// Общий контракт API (NestJS) и detective-service (Go): proto-loader
+// на стороне Node читает этот файл в рантайме, Go-сторона использует
+// сгенерированный код (scripts/protogen.sh -> internal/pb).
+// Правила и пороги живут в самом сервисе — вызывающий присылает
+// только факты брони и срез истории покупателя.
+package cine.detective.v1;
+
+option go_package = "detective-service/internal/pb;cinepb";
+
+// Антифрод: чекаут спрашивает вердикт до создания брони. Отказ —
+// не ошибка RPC: block/review — штатные вердикты со скором и
+// причинами, чтобы вызывающий мог погасить падение сервиса
+// fallback'ом (fail-open: allow на стороне API).
+service Detective {
+  rpc Score (ScoreRequest) returns (ScoreResponse);
+  // решение человека по брони из очереди ревью (админ-витрина);
+  // идемпотентен по booking_id, повторное решение отклоняется
+  rpc Resolve (ResolveRequest) returns (ResolveResponse);
+}
+
+// Факты решения: чего бронь стоит и чем дышит покупатель. Срез
+// истории (возраст счёта, темп броней, отказы) собирает API одним
+// SQL-запросом — Детектив не ходит в базу биллинга сам.
+message ScoreRequest {
+  string booking_id       = 1; // идемпотентность: вердикт живёт в витрине под этим ключом
+  string user_id          = 2;
+  string session_id       = 3;
+  int32  seats_count      = 4;
+  int32  total_rub        = 5; // оценка чека на момент решения (места × цена)
+  int32  account_age_days = 6; // сколько дней счёту покупателя
+  int32  bookings_24h     = 7; // броней за последние сутки (любых статусов)
+  int32  cancels_24h      = 8; // отменённых и истёкших за сутки
+  int32  failed_24h       = 9; // отказов оплаты за сутки
+}
+
+message ScoreResponse {
+  string   verdict  = 1; // allow | review | block
+  int32    score    = 2; // 0..∞, сумма весов сработавших правил
+  repeated string reasons = 3; // коды сработавших правил (newAccount, velocity, ...)
+}
+
+message ResolveRequest {
+  string booking_id  = 1; // решение витрины по конкретной брони
+  string action      = 2; // approve | reject
+  string resolved_by = 3; // email админа — в аудит решения
+}
+
+message ResolveResponse {
+  bool   resolved = 1; // получилось ли (ложь — уже решено/не найдено)
+  string status   = 2; // итоговый статус решения в витрине
+}

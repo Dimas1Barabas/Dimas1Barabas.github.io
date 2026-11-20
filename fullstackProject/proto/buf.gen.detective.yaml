@@ -1,0 +1,10 @@
+# Конфиг кодогена buf для detective-сервиса; вызов в scripts/protogen.sh:
+#   buf generate --template buf.gen.detective.yaml --path detective.proto
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: ../services/detective-service/internal/pb
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: ../services/detective-service/internal/pb
+    opt: paths=source_relative
