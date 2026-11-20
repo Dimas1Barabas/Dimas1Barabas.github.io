@@ -30,7 +30,9 @@ const (
 
 // Факты решения: чего бронь стоит и чем дышит покупатель. Срез
 // истории (возраст счёта, темп броней, отказы) собирает API одним
-// SQL-запросом — Детектив не ходит в базу биллинга сам.
+// SQL-запросом — Детектив не ходит в базу биллинга сам. Имена полей
+// среза — без подчёркиваний перед цифрами: protoc-gen-go разрывает
+// «24h» на «24_h», GetBookings_24H нечитаемо.
 type ScoreRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	BookingId      string                 `protobuf:"bytes,1,opt,name=booking_id,json=bookingId,proto3" json:"booking_id,omitempty"` // идемпотентность: вердикт живёт в витрине под этим ключом
@@ -39,9 +41,9 @@ type ScoreRequest struct {
 	SeatsCount     int32                  `protobuf:"varint,4,opt,name=seats_count,json=seatsCount,proto3" json:"seats_count,omitempty"`
 	TotalRub       int32                  `protobuf:"varint,5,opt,name=total_rub,json=totalRub,proto3" json:"total_rub,omitempty"`                     // оценка чека на момент решения (места × цена)
 	AccountAgeDays int32                  `protobuf:"varint,6,opt,name=account_age_days,json=accountAgeDays,proto3" json:"account_age_days,omitempty"` // сколько дней счёту покупателя
-	Bookings_24H   int32                  `protobuf:"varint,7,opt,name=bookings_24h,json=bookings24h,proto3" json:"bookings_24h,omitempty"`            // броней за последние сутки (любых статусов)
-	Cancels_24H    int32                  `protobuf:"varint,8,opt,name=cancels_24h,json=cancels24h,proto3" json:"cancels_24h,omitempty"`               // отменённых и истёкших за сутки
-	Failed_24H     int32                  `protobuf:"varint,9,opt,name=failed_24h,json=failed24h,proto3" json:"failed_24h,omitempty"`                  // отказов оплаты за сутки
+	Bookings24H    int32                  `protobuf:"varint,7,opt,name=bookings24h,proto3" json:"bookings24h,omitempty"`                               // броней за последние сутки (любых статусов)
+	Cancels24H     int32                  `protobuf:"varint,8,opt,name=cancels24h,proto3" json:"cancels24h,omitempty"`                                 // отменённых и истёкших за сутки
+	Failed24H      int32                  `protobuf:"varint,9,opt,name=failed24h,proto3" json:"failed24h,omitempty"`                                   // отказов оплаты за сутки
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -118,23 +120,23 @@ func (x *ScoreRequest) GetAccountAgeDays() int32 {
 	return 0
 }
 
-func (x *ScoreRequest) GetBookings_24H() int32 {
+func (x *ScoreRequest) GetBookings24H() int32 {
 	if x != nil {
-		return x.Bookings_24H
+		return x.Bookings24H
 	}
 	return 0
 }
 
-func (x *ScoreRequest) GetCancels_24H() int32 {
+func (x *ScoreRequest) GetCancels24H() int32 {
 	if x != nil {
-		return x.Cancels_24H
+		return x.Cancels24H
 	}
 	return 0
 }
 
-func (x *ScoreRequest) GetFailed_24H() int32 {
+func (x *ScoreRequest) GetFailed24H() int32 {
 	if x != nil {
-		return x.Failed_24H
+		return x.Failed24H
 	}
 	return 0
 }
@@ -315,7 +317,7 @@ var File_detective_proto protoreflect.FileDescriptor
 
 const file_detective_proto_rawDesc = "" +
 	"\n" +
-	"\x0fdetective.proto\x12\x11cine.detective.v1\"\xb0\x02\n" +
+	"\x0fdetective.proto\x12\x11cine.detective.v1\"\xad\x02\n" +
 	"\fScoreRequest\x12\x1d\n" +
 	"\n" +
 	"booking_id\x18\x01 \x01(\tR\tbookingId\x12\x17\n" +
@@ -325,12 +327,12 @@ const file_detective_proto_rawDesc = "" +
 	"\vseats_count\x18\x04 \x01(\x05R\n" +
 	"seatsCount\x12\x1b\n" +
 	"\ttotal_rub\x18\x05 \x01(\x05R\btotalRub\x12(\n" +
-	"\x10account_age_days\x18\x06 \x01(\x05R\x0eaccountAgeDays\x12!\n" +
-	"\fbookings_24h\x18\a \x01(\x05R\vbookings24h\x12\x1f\n" +
-	"\vcancels_24h\x18\b \x01(\x05R\n" +
-	"cancels24h\x12\x1d\n" +
+	"\x10account_age_days\x18\x06 \x01(\x05R\x0eaccountAgeDays\x12 \n" +
+	"\vbookings24h\x18\a \x01(\x05R\vbookings24h\x12\x1e\n" +
 	"\n" +
-	"failed_24h\x18\t \x01(\x05R\tfailed24h\"Y\n" +
+	"cancels24h\x18\b \x01(\x05R\n" +
+	"cancels24h\x12\x1c\n" +
+	"\tfailed24h\x18\t \x01(\x05R\tfailed24h\"Y\n" +
 	"\rScoreResponse\x12\x18\n" +
 	"\averdict\x18\x01 \x01(\tR\averdict\x12\x14\n" +
 	"\x05score\x18\x02 \x01(\x05R\x05score\x12\x18\n" +

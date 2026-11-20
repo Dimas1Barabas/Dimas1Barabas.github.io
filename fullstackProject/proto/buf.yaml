@@ -33,3 +33,10 @@ lint:
 breaking:
   use:
     - FILE
+  # ОДНОРАЗОВОЕ исключение (этап 36, снимается следующим пушем):
+  # переименование bookings_24h/cancels_24h/failed_24h в bookings24h/…
+  # до первого потребителя контракта — protoc-gen-go разрывает «24h»
+  # на «24_h»; клиенты ещё не написаны, поле удаляется формально.
+  ignore_only:
+    FIELD_NO_DELETE:
+      - detective.proto
