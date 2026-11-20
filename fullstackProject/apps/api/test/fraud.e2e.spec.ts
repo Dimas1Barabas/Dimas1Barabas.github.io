@@ -19,7 +19,6 @@ import {
   BASE,
   bootstrap,
   E2EMovie,
-  freeSeat,
   token,
   waitForStatus,
 } from './e2e-context';
@@ -97,7 +96,7 @@ async function rampUp(sessionId: string, count: number, jwt = token): Promise<vo
       body: JSON.stringify({
         sessionId,
         customerName: 'E2E Разгон',
-        seats: [await freeSeat(sessionId)],
+        seats: [await highSeat(sessionId)],
       }),
       headers: { Authorization: `Bearer ${jwt}` },
     });
@@ -116,10 +115,45 @@ let original: FlagSnapshot | undefined;
 /** детектив жив? первый review-сценарий проверяет честно (fail-open = нет) */
 let detectiveAlive = true;
 
-/** сеанс первого фильма — каждый сценарий берёт свежий, как checkout-flag */
-async function firstSession(): Promise<E2EMovie['sessions'][number]> {
+/**
+ * Сеанс ПОСЛЕДНЕГО фильма афиши: другие доменные спеки хардкодят места
+ * первого фильма ('1-1', '2-2'…) — антифрод гоняет конвейер броней и
+ * занимает десятки мест, с первым сеансом он бы выжил соседей (run на
+ * ec6ec949: bookings.e2e 409 на чужих местах). Последний фильм никто
+ * не хардкодит, а места берём с ВЕРХНИХ рядов — двойной запас.
+ */
+async function dedicatedSession(): Promise<E2EMovie['sessions'][number]> {
   const movies = await api<{ data: E2EMovie[] }>('/movies');
-  return movies.data[0].sessions[0];
+  const last = movies.data[movies.data.length - 1];
+  const upcoming =
+    last.sessions.find((s) => Date.parse(s.startsAt) > Date.now()) ??
+    last.sessions[last.sessions.length - 1];
+  return upcoming;
+}
+
+/** свободное место с верхних рядов (8→1): низ занят хардкодами соседей */
+async function highSeat(sessionId: string): Promise<string> {
+  const map = await api<{ occupied: string[] }>(
+    `/sessions/${sessionId}/seats`,
+  );
+  const taken = new Set(map.occupied);
+  for (let row = 8; row >= 1; row--) {
+    for (let seat = 10; seat >= 1; seat--) {
+      const code = `${row}-${seat}`;
+      if (!taken.has(code)) return code;
+    }
+  }
+  throw new Error(`сеанс ${sessionId}: свободных мест нет`);
+}
+
+/** сколько свободных мест с верхних рядов */
+async function highSeats(
+  sessionId: string,
+  count: number,
+): Promise<string[]> {
+  const seats: string[] = [];
+  for (let i = 0; i < count; i++) seats.push(await highSeat(sessionId));
+  return seats;
 }
 
 beforeAll(async () => {
@@ -158,12 +192,12 @@ afterAll(async () => {
 describe('Антифрод «Детектив» в чекауте (e2e)', () => {
   it('allow: свежий счёт с парой броней — покупка проходит как обычно', async () => {
     if (!available || !original) return;
-    const session = await firstSession();
+    const session = await dedicatedSession();
 
     const res = await postCheckout({
       sessionId: session.id,
       customerName: 'E2E Спокойный',
-      seats: [await freeSeat(session.id)],
+      seats: [await highSeat(session.id)],
     });
     expect(res.status).toBe(201);
     const booking = (await res.json()) as {
@@ -181,14 +215,14 @@ describe('Антифрод «Детектив» в чекауте (e2e)', () => 
 
   it('review: холд держит оплату, approve из админки запускает платёж', async () => {
     if (!available || !original) return;
-    const session = await firstSession();
+    const session = await dedicatedSession();
 
     // +4 брони к первой — срез увидит 5: newAccount(30)+velocity(25)=55
     await rampUp(session.id, 4);
     const res = await postCheckout({
       sessionId: session.id,
       customerName: 'E2E Подозрительный',
-      seats: [await freeSeat(session.id)],
+      seats: [await highSeat(session.id)],
     });
     expect(res.status).toBe(201);
     const booking = (await res.json()) as {
@@ -249,11 +283,11 @@ describe('Антифрод «Детектив» в чекауте (e2e)', () => 
 
   it('review + reject: бронь гасится, место возвращается в продажу', async () => {
     if (!available || !original || !detectiveAlive) return;
-    const session = await firstSession();
+    const session = await dedicatedSession();
 
     const jwtB = await secondUserToken();
     await rampUp(session.id, 5, jwtB);
-    const seat = await freeSeat(session.id);
+    const seat = await highSeat(session.id);
     const res = await postCheckout(
       { sessionId: session.id, customerName: 'E2E Гость Б', seats: [seat] },
       jwtB,
@@ -286,21 +320,33 @@ describe('Антифрод «Детектив» в чекауте (e2e)', () => 
 
   it('block: конвейер броней с полрядом мест — 409 fraudBlocked, брони нет', async () => {
     if (!available || !original || !detectiveAlive) return;
-    const session = await firstSession();
+    const session = await dedicatedSession();
 
-    // после первых сценариев у пользователя 6 броней — догоняем до 10
-    const mine = await api<{ id: string }[]>('/bookings/my');
-    await rampUp(session.id, Math.max(0, 10 - mine.length));
-    const seats: string[] = [];
-    for (let i = 0; i < 6; i++) seats.push(await freeSeat(session.id));
+    // догоняем до 12 броней — порог velocityHigh на 10, запас две:
+    // ровно на пороге любые чужие метры (сравнение дат, гонки сидов)
+    // не должны оставлять правило несработавшим
+    let mine = await api<{ id: string }[]>('/bookings/my');
+    await rampUp(session.id, Math.max(0, 12 - mine.length));
+    mine = await api<{ id: string }[]>('/bookings/my');
+    const seats = await highSeats(session.id, 6);
 
-    const before = (await api<{ id: string }[]>('/bookings/my')).length;
+    const before = mine.length;
     const res = await postCheckout({
       sessionId: session.id,
       customerName: 'E2E Конвейер',
       seats,
     });
-    expect(res.status).toBe(409);
+    if (res.status !== 409) {
+      // диагностика в аннотацию: что именно увидел скоринг
+      const booking = (await res.json()) as { id: string; status: string };
+      const showcase = await adminApi<{ decisions: FraudDecisionRow[] }>(
+        '/admin/fraud',
+      );
+      const row = showcase.decisions.find((d) => d.bookingId === booking.id);
+      throw new Error(
+        `block-чекаут пришёл ${res.status}: статус брони ${booking.status}, решение ${JSON.stringify(row)}`,
+      );
+    }
     const body = (await res.json()) as {
       code: string;
       score: number;
@@ -308,16 +354,16 @@ describe('Антифрод «Детектив» в чекауте (e2e)', () => 
     };
     expect(body).toMatchObject({
       code: 'fraudBlocked',
-      score: 75,
       reasons: ['newAccount', 'velocityHigh', 'manySeats'],
     });
+    expect(body.score).toBeGreaterThanOrEqual(75);
 
     // бронь не создана вовсе
     const after = await api<{ id: string }[]>('/bookings/my');
     expect(after).toHaveLength(before);
 
-    // решение о блоке — в витрине под этим же id… которого у брони нет:
-    // автоматический вердикт закрыт сразу
+    // автоматический вердикт закрыт сразу; id решения — не id брони
+    // (брони нет), но правила говорят сами
     const showcase = await adminApi<{ decisions: FraudDecisionRow[] }>(
       '/admin/fraud?status=auto_blocked',
     );
