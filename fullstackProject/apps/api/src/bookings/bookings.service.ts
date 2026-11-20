@@ -495,6 +495,24 @@ export class BookingsService {
       });
     }
     const { movie, session } = await this.contextOf(booking);
+    return this.payLoaded(booking, movie, session, promoCode, useBonuses, giftCode);
+  }
+
+  /**
+   * Общее ядро оплаты после проверок доступа: транзакция переключения
+   * статуса со всеми средствами платежа и пост-обработка. Вызывают
+   * pay() (клиентский путь — с промокодом/бонусами/сертификатом) и
+   * payReviewed() (системный — одобрение антифрода платит как есть).
+   */
+  private async payLoaded(
+    booking: Booking,
+    movie: Movie,
+    session: Session,
+    promoCode?: string,
+    useBonuses?: number,
+    giftCode?: string,
+  ): Promise<BookingDto> {
+    const id = booking.id;
     const code = promoCode ? normalizePromoCode(promoCode) : null;
     const gift = giftCode ? normalizeGiftCode(giftCode) : null;
 
@@ -677,6 +695,31 @@ export class BookingsService {
     );
     await this.push(booking, movie, session);
     return toBookingDto(booking, movie, session);
+  }
+
+  /**
+   * Системная оплата брони с холдом антифрода — решение человека
+   * «approve» из админ-витрины. Проверку холда не проходит намеренно:
+   * её снимает именно это действие. Прочие гонки решаются как у всякой
+   * оплаты: истёкшая бронь ответит 409 со статусом (холд окно резерва
+   * не продлевает), вердикт воркера придёт обычным путём.
+   */
+  async payReviewed(id: string): Promise<BookingDto> {
+    const booking = await this.bookings.findOneByOrFail({ id });
+    const { movie, session } = await this.contextOf(booking);
+    return this.payLoaded(booking, movie, session);
+  }
+
+  /**
+   * Системная отмена брони с холдом — решение человека «reject».
+   * Неоплаченная гасится сразу, места свободны; null — бронь уже ушла
+   * из PENDING_PAYMENT (истекла по таймауту или оплачена после approve):
+   * решение в витрине остаётся честным, конфликт разрешает админка.
+   */
+  async cancelReviewed(id: string): Promise<BookingDto | null> {
+    const booking = await this.bookings.findOneByOrFail({ id });
+    const { movie, session } = await this.contextOf(booking);
+    return this.cancelUnpaid(booking, movie, session);
   }
 
   /**

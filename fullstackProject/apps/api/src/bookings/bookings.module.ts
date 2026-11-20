@@ -64,7 +64,8 @@ import { SeatStream } from './seat-stream';
   // BookingStream нужен и waitlist-консьюмеру: тот же SSE-эндпоинт,
   // второй канал событий — см. waitlist.module; RemindersClient —
   // вердиктным хукам (schedule/cancel), а RemindersModule импортирует
-  // нас однонаправленно: цикл модулей не возникает
-  exports: [BookingStream, RemindersClient],
+  // нас однонаправленно: цикл модулей не возникает; BookingsService —
+  // системные пути антифрода (payReviewed/cancelReviewed) для админки
+  exports: [BookingStream, RemindersClient, BookingsService],
 })
 export class BookingsModule {}
