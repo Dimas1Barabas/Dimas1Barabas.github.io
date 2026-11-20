@@ -145,9 +145,17 @@ describe('гифт-сертификаты: покупка → трата → в�
     expect(spent).toBeGreaterThan(0);
     const balanceBefore = (await api<GiftsMy>('/gifts/my')).totals.availableRub;
 
-    // сага возврата: CONFIRMED → CANCELLING → CANCELLED, деньги — на карту
-    await api<BookingDto>(`/bookings/${booking.id}/cancel`, { method: 'POST' });
-    const verdict = await waitForStatus(booking.id, 'CANCELLING');
+    // сага возврата: CONFIRMED → CANCELLING → CANCELLED, деньги — на карту.
+    // Возврат вероятностен (~10% «отказ банка», как в bookings.e2e): при
+    // REFUND_FAILED бронь откатывается в CONFIRMED — сагу можно запускать
+    // снова, пока деньги не вернутся (без ретрая спека флейкала, run 393)
+    let verdict = await waitForStatus(booking.id, 'CANCELLING');
+    for (let attempt = 0; attempt < 4 && verdict.status !== 'CANCELLED'; attempt++) {
+      await api<BookingDto>(`/bookings/${booking.id}/cancel`, {
+        method: 'POST',
+      });
+      verdict = await waitForStatus(booking.id, 'CANCELLING');
+    }
     expect(verdict.status).toBe('CANCELLED');
 
     const balanceAfter = (await api<GiftsMy>('/gifts/my')).totals.availableRub;
