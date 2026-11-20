@@ -47,6 +47,13 @@ import type {
 } from '@/shared/api/types';
 import { ApiError } from '@/shared/api/client';
 import {
+  initialStatus as fraudInitialStatus,
+  scoreFraud,
+  type FraudDecision,
+  type FraudDecisionStatus,
+  type FraudFacts,
+} from '@/shared/lib/fraud';
+import {
   generateBackupCode,
   generateTotpSecret,
   normalizeBackupCode,
@@ -504,6 +511,7 @@ function seedBookings(): Booking[] {
       bonusSpent: null,
       giftCode: null,
       giftSpent: null,
+      fraudHold: false,
       status: s.status,
       expiresAt: null,
       message: verdictMessage,
@@ -673,6 +681,12 @@ class DemoEngine {
   private giftSeq = 1;
   /** траты карт (журнал gift_spends в миниатюре) */
   private giftSpends: DemoGiftSpend[] = [];
+  /** решения антифрода «Детектива»: зеркало витрины сервиса, свежими сверху */
+  private fraudDecisions: FraudDecision[] = [];
+  /** счётчик id решений block — брони под ними не создаётся вовсе */
+  private fraudSeq = 0;
+  /** счёт гостя демо: сессия страницы = новый счёт (правило newAccount честно) */
+  private readonly guestSince = new Date();
 
   /** «access-токен» демо-сессии — не JWT, просто маркер для стора */
   static readonly SESSION_TOKEN = 'demo-session';
@@ -1560,6 +1574,7 @@ class DemoEngine {
       bonusSpent: null,
       giftCode: null,
       giftSpent: null,
+      fraudHold: false,
       status: 'PENDING_PAYMENT',
       expiresAt: new Date(Date.now() + DEMO_PAYMENT_TIMEOUT_MS).toISOString(),
       message: null,
@@ -1603,15 +1618,97 @@ class DemoEngine {
    * вердикт вынесет «воркер». Отказ оплаты (промокод/бонусы) не
    * разворачивает бронь: она честно ждёт в PENDING_PAYMENT, старый
    * поток дооплатит отдельно. Гонку мест решает create (409 seatsTaken).
+   *
+   * Этап 36: перед бронёй — скоринг «Детектива» (зеркало правил Go).
+   * block — 409 fraudBlocked, брони нет; review — бронь с fraudHold,
+   * оплата не запускается, решение принимает человек в витрине админки;
+   * allow — как раньше. Срез фактов — те же поля, что API шлёт по gRPC.
    */
   checkout(payload: CheckoutPayload): Booking {
+    // оценка чека по базовой цене: для правил важен порядок величины
+    const found = this.findSession(payload.sessionId);
+    if (!found) throw new Error('Сеанс не найден');
+    const seats = [...new Set(payload.seats)];
+    const facts = this.fraudFacts(
+      seats.length,
+      found.movie.priceRub * seats.length,
+    );
+    const scored = scoreFraud(facts);
+
+    if (scored.verdict === 'block') {
+      // брони нет — решение в витрине под синтетическим id
+      this.fraudSeq += 1;
+      this.recordFraudDecision(`demo-fraud-${this.fraudSeq}`, facts, scored);
+      this.notify();
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Антифрод отказал в покупке — обратитесь в поддержку',
+        code: 'fraudBlocked',
+        score: scored.score,
+        reasons: scored.reasons,
+      }));
+    }
+
     const booking = this.create(payload);
+    this.recordFraudDecision(booking.id, facts, scored);
+
+    if (scored.verdict === 'review') {
+      booking.fraudHold = true;
+      booking.message =
+        'Бронь на ручной проверке антифрода — оплата после решения';
+      this.notify();
+      return booking;
+    }
+
     return this.pay(
       booking.id,
       payload.promoCode,
       payload.useBonuses,
       payload.giftCode,
     );
+  }
+
+  /** срез истории гостя для скоринга — зеркало fraudSnapshotOf в API */
+  private fraudFacts(seatsCount: number, totalRub: number): FraudFacts {
+    const dayAgo = Date.now() - 24 * 3_600_000;
+    // брони гостя (userId null): сид-«другие зрители» не в счёте
+    const own = this.bookings.filter(
+      (b) => b.userId === null && Date.parse(b.createdAt) > dayAgo,
+    );
+    return {
+      seatsCount,
+      totalRub,
+      accountAgeDays: Math.floor(
+        (Date.now() - this.guestSince.getTime()) / 86_400_000,
+      ),
+      bookings24h: own.length,
+      cancels24h: own.filter(
+        (b) => b.status === 'CANCELLED' || b.status === 'EXPIRED',
+      ).length,
+      failed24h: own.filter((b) => b.status === 'FAILED').length,
+    };
+  }
+
+  /** записать решение в витрину (свежими сверху), вернуть копию */
+  private recordFraudDecision(
+    bookingId: string,
+    facts: FraudFacts,
+    scored: ReturnType<typeof scoreFraud>,
+  ): FraudDecision {
+    const decision: FraudDecision = {
+      bookingId,
+      score: scored.score,
+      verdict: scored.verdict,
+      reasons: [...scored.reasons],
+      facts: { ...facts },
+      status: fraudInitialStatus(scored.verdict),
+      resolvedBy: null,
+      resolvedAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    this.fraudDecisions.unshift(decision);
+    return { ...decision, facts: { ...decision.facts } };
   }
 
   /**
@@ -1623,15 +1720,28 @@ class DemoEngine {
    * остаётся payable, активация не списана). Бонусы списываются после
    * скидки: лимит «половина чека» — от остатка; карта — последней,
    * деньгами: закрывает хвост частично или целиком.
+   *
+   * Бронь на холде антифрода (fraudHold) плату не принимает — 409
+   * fraudReview, как pay() в API; system-вызов (одобрение ревью) холд
+   * обходит намеренно: его и снимает.
    */
   pay(
     id: string,
     promoCode?: string,
     useBonuses?: number,
     giftCode?: string,
+    system = false,
   ): Booking {
     const booking = this.bookings.find((b) => b.id === id);
     if (!booking) throw new Error('Бронь не найдена');
+    if (booking.fraudHold && booking.status === 'PENDING_PAYMENT' && !system) {
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Бронь на ручной проверке антифрода — дождитесь решения',
+        code: 'fraudReview',
+      }));
+    }
     if (booking.status !== 'PENDING_PAYMENT') {
       // как условный UPDATE … WHERE status='PENDING_PAYMENT' в API
       throw new ApiError('HTTP 409', 409, JSON.stringify({
@@ -1864,6 +1974,80 @@ class DemoEngine {
   /** отправленные напоминания — копии, свежими сверху (стор витрины) */
   reminders(): ReminderStreamEvent[] {
     return this.remindersSent.map((r) => ({ ...r, seats: [...r.seats] }));
+  }
+
+  /**
+   * Витрина решений антифрода — зеркало GET /admin/fraud: свежими
+   * сверху, опциональный статус-фильтр (pending_review — рабочая
+   * очередь). Копии: витрина не мутирует движок.
+   */
+  fraudDecisionsList(status?: FraudDecisionStatus): FraudDecision[] {
+    const rows = status
+      ? this.fraudDecisions.filter((d) => d.status === status)
+      : this.fraudDecisions;
+    return rows.map((d) => ({ ...d, facts: { ...d.facts } }));
+  }
+
+  /**
+   * Решение человека по брони из очереди ревью — зеркало POST
+   * /admin/fraud/:bookingId/resolve: сначала аудит (статус решения),
+   * затем бизнес-шаг. approve — системная оплата (холд снимает само
+   * действие), reject — отмена с возвратом мест. Гонку двух кликов
+   * решает статус решения, бронь вне PENDING_PAYMENT — честный 409
+   * fraudResolveConflict при зафиксированном решении.
+   */
+  resolveFraud(
+    bookingId: string,
+    action: 'approve' | 'reject',
+    by: string,
+  ): { resolved: string; booking: Booking } {
+    const decision = this.fraudDecisions.find(
+      (d) => d.bookingId === bookingId,
+    );
+    if (!decision) {
+      throw new ApiError('HTTP 404', 404, JSON.stringify({
+        statusCode: 404,
+        error: 'Not Found',
+        message: 'Решение антифрода не найдено',
+        code: 'fraudDecisionNotFound',
+        bookingId,
+      }));
+    }
+    if (decision.status !== 'pending_review') {
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Решение уже закрыто',
+        code: 'fraudAlreadyResolved',
+        bookingId,
+      }));
+    }
+
+    // аудит решения — до бизнес-шага: конфликт ниже его не откатывает
+    decision.status = action === 'approve' ? 'approved' : 'rejected';
+    decision.resolvedBy = by;
+    decision.resolvedAt = new Date().toISOString();
+
+    const booking = this.bookings.find((b) => b.id === bookingId);
+    if (!booking || booking.status !== 'PENDING_PAYMENT') {
+      this.notify();
+      throw new ApiError('HTTP 409', 409, JSON.stringify({
+        statusCode: 409,
+        error: 'Conflict',
+        message:
+          'Решение зафиксировано, но бронь уже закрыта иначе (таймаут резерва)',
+        code: 'fraudResolveConflict',
+        bookingId,
+      }));
+    }
+
+    if (action === 'approve') {
+      // системная оплата: pay с system=true обходит проверку холда
+      const paid = this.pay(bookingId, undefined, undefined, undefined, true);
+      return { resolved: 'approved', booking: paid };
+    }
+    const cancelled = this.cancel(bookingId);
+    return { resolved: 'rejected', booking: cancelled };
   }
 
   /**

@@ -123,6 +123,8 @@ export interface Booking {
   giftCode: string | null;
   /** сколько рублей снято с сертификата при оплате */
   giftSpent: number | null;
+  /** бронь на ручной проверке антифрода — оплата ждёт решения (этап 36) */
+  fraudHold: boolean;
   status: BookingStatus;
   /** дедлайн оплаты (актуален для PENDING_PAYMENT), ISO */
   expiresAt: string | null;
