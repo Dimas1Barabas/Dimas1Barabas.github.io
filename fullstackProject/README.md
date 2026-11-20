@@ -54,9 +54,10 @@ docker compose up --build
 | analytics (Go) | http://localhost:18092/insights | «Аналитик»: витрина «Поведение» — воронка, фильмы, страницы, места, модалка |
 | flags (Go, gRPC) | localhost:18095 (gRPC, reflection); http://localhost:18096/flags | «Суфлёр»: витрина тумблеров фич и аудит правок |
 | barman (Go) | http://localhost:18097/bar | «Бармен»: экран бара — доска очереди кинобара (new/preparing/ready/recent) и кнопки «в работу / готов / выдан» |
+| detective (Go, gRPC) | localhost:18098 (gRPC, reflection); http://localhost:18099/decisions | «Детектив»: антифрод — витрина решений скоринга и очередь ревью (18092/18093 заняты соседями) |
 | Prometheus | http://localhost:19090 | UI скрейпера: таргеты, метрики, TSDB |
 | Grafana | http://localhost:19000 | дашборды без логина (Viewer); admin — вход для правок |
-| PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications + cine_recommendations + cine_reminders + cine_prices + cine_ratekeeper + cine_analytics + cine_flags + cine_bar |
+| PostgreSQL | localhost:15432 | cine / cine, БД cine + cine_notifications + cine_recommendations + cine_reminders + cine_prices + cine_ratekeeper + cine_analytics + cine_flags + cine_bar + cine_detective |
 | Redis | localhost:6379 | кэш фильмов, TTL 60 c |
 | SeaweedFS (S3) | localhost:18333 | постеры: S3-шлюз (SigV4, identity `cine`), бакет `cine-posters` создаётся сам; витрина не-здорового S3 — градиентный фолбэк |
 | Meilisearch | http://localhost:17700 | полнотекстовый поиск афиши: индекс `movies_v1` пересобирается при старте API, `/` — мини-дашборд; движок молчит — подсказки уходят на ILIKE-фолбэк в Postgres |
@@ -136,7 +137,7 @@ docker compose exec postgres dropdb -U cine cine_empty
 Пять уровней, фронт и бэк:
 
 ```bash
-# фронт: vitest (523 теста) — форматтеры, зал, sha256/HMAC (векторы FIPS/RFC
+# фронт: vitest (548 тестов) — форматтеры, зал, sha256/HMAC (векторы FIPS/RFC
 # и сверка с node:crypto), зеркальная логика QR-билетов и раскладка
 # Тарификатора (векторы сверены с Go-доменом), демо-движок
 # (включая отзывы, сид-брони аналитики, симуляцию аккаунта, промокоды,
@@ -182,7 +183,7 @@ docker compose exec postgres dropdb -U cine cine_empty
 # среза (eslint-plugin-boundaries, политика — в eslint.config.js)
 cd apps/web && npm run lint && npm test
 
-# фронт: браузерные UI-тесты Playwright (21 тест) против демо-режима —
+# фронт: браузерные UI-тесты Playwright (24 теста) против демо-режима —
 # сборка build:demo-test (--mode demo-test) детерминирует вероятности
 # витрины: вердикты оплаты/возврата всегда успешны, таймер «других
 # зрителей» молчит, движок открыт на window.__cineDemo — тест сам
@@ -206,7 +207,7 @@ cd apps/web && npm run lint && npm test
 # кода с галочкой доверия → «это устройство» → отзыв возвращает шаг)
 cd apps/web && npm run test:ui
 
-# API: юнит (547 тестов) — логика брони, места/конфликт, pay/expire/cancel,
+# API: юнит (567 тестов) — логика брони, места/конфликт, pay/expire/cancel,
 # SSE, кэш, расписание сеансов, health, пользователи/посев админа,
 # JWT-логин, retry/parking, отзывы (право/дубль/агрегаты/удаление),
 # промокоды (скидка-математика, превью, атомарное списание в оплате,
@@ -271,7 +272,7 @@ cd apps/web && npm run test:ui
 # со слайдингом и отзывом, recovery-сброс) и 2FA-ветки логина
 cd apps/api && npm test
 
-# API: интеграционные (249) — полный HTTP-стек Nest (роутинг, ValidationPipe,
+# API: интеграционные (252) — полный HTTP-стек Nest (роутинг, ValidationPipe,
 # контроллеры → сервисы → фейковые Postgres/RabbitMQ/Redis на Map),
 # включая 409-конфликт мест, изоляцию мест между сеансами, контракт /pay,
 # экспирацию резерва, сагу отмены, SSE-стрим по живому HTTP,
@@ -402,6 +403,10 @@ cd apps/api && npm run test:live-int
 # с неверным/верным кодом и реплеем → backup-код с галочкой доверия
 # (cine.device в Set-Cookie, вход без кода, отзыв возвращает шаг) →
 # выключение с гашением устройств — всё на живой базе и настоящих cookie;
+# антифрод: свежий счёт — allow с вердиктом воркера, пять броней —
+# review (холд, pay 409 fraudReview, очередь витрины, approve —
+# системная оплата), reject возвращает место, конвейер 10+ броней
+# с шестью местами — 409 fraudBlocked со скором и причинами;
 # если стек не поднят — корректно пропускается с предупреждением;
 # в CI стенд поднимает и прогоняет джоба e2e)
 cd apps/api && npm run test:e2e
@@ -1595,6 +1600,52 @@ recovery-канал.
   web (`TwoFactorSection.spec`, `AuthView.spec`, `demo-twofactor.spec`,
   `e2e/2fa.spec.ts`) — TC-TFA-001…009, чек-лист CL-36.
 
+### Антифрод «Детектив»
+
+Скоринг чекаута перед созданием брони: Go-сервис по лекалу Привратника
+(синхронный gRPC, брокер не нужен) считает риск по фактам брони и
+срезу истории покупателя — allow / review / block.
+
+- **Правила** (`detective-service/internal/domain/rules.go`): newAccount
+  +30 (счёт моложе суток), velocity +25 (5–9 броней за 24 ч) /
+  velocityHigh +35 (10+), cancelAbuse +20 (3+ отмен), failedPayments
+  +15 (3+ отказов оплаты), bigCheck +20 (от 15 000 ₽), manySeats +10
+  (6+ мест), trusted −15 (счёт старше полугода — скор не ниже нуля).
+  Пороги — окружение: review от 40, block от 70 (`FRAUD_REVIEW_SCORE` /
+  `FRAUD_BLOCK_SCORE`). Веса проверены векторами в Go и web-зеркале.
+- **Вердикты в чекауте**: `block` — 409 `fraudBlocked` со скором и
+  кодами причин, бронь не создаётся вовсе; `review` — бронь с
+  `fraud_hold` и без запуска оплаты (конверсия эксперимента не
+  считается, окно резерва не продлевается — не решили вовремя, таймаут
+  вернёт места); `allow` — как раньше. id брони генерируется до
+  скоринга: решение в витрине и бронь живут под одним ключом.
+- **Холд честный**: `pay()` брони с холдом — 409 `fraudReview`, старый
+  поток ревью не обходит. Срез фактов — один параметризованный SQL
+  (возраст счёта, темп броней, шторм отмен/отказов); сбой сбора или
+  детектива — fail-open: покупка проходит без скоринга (паритет с
+  гвардом Привратника), срез — спокойный дефолт.
+- **Решения и ревью**: Score идемпотентен по `booking_id` — задним
+  числом вердикт не пересматривается. Решения — в памяти (дефолт) или
+  Postgres `cine_detective` (базу и схему адаптер создаёт сам),
+  HTTP-витрина `/decisions` со статус-фильтром. Админка API:
+  `GET /admin/fraud` (fail-soft) и `POST /admin/fraud/:bookingId/resolve`
+  — аудит решения в детективе ДО бизнес-шага, approve запускает
+  системную оплату (холд снимает само действие), reject отменяет бронь
+  и возвращает места; гонка админов — 409 `fraudAlreadyResolved`,
+  истёкший резерв — 409 `fraudResolveConflict` при зафиксированном
+  решении.
+- **Web**: секция админки «Детектив» — очередь ревью со скором,
+  причинами и фактами, кнопки Одобрить/Отклонить, история за фильтром
+  «только очередь»; модалка покупки при отказе показывает скор и коды
+  правил. Демо-режим зеркалит правила (`shared/lib/fraud.ts`, векторы =
+  Go-домену), скорит чекаут движком и живёт подпиской onChange.
+- **Проверки**: Go (домен-векторы, memory/postgres-live, grpc bufconn)
+  + unit (checkout-ветки трёх вердиктов, fail-open, срез, холд pay,
+  админ-контроллер) + int (HTTP-стек с фейк-детективом) + e2e
+  (`fraud.e2e` — полный цикл на живом стенде; k8s без детектива —
+  честный скип по fail-open признаку) + playwright (`fraud.spec` —
+  витрина и резолвы демо) — TC-FRD-001…009, чек-лист CL-37.
+
 ### Мониторинг: Prometheus + Grafana
 
 Метрики собирает Prometheus (скрейп `/metrics` всех сервисов раз в 5 с +
@@ -2038,6 +2089,15 @@ Compose поднимает SeaweedFS (`seaweedfs:8333` внутри сети, ho
 `MEILI_API_KEY` — мастер-ключ движка (production требует от 16 байт).
 Compose поднимает Meilisearch v1.56.2 (`meilisearch:7700` внутри сети,
 host-порт `:17700`) с ключом `MEILI_MASTER_KEY` из той же пары.
+
+Антифрод: чекаут спрашивает вердикт у «Детектива» по
+`GRPC_DETECTIVE_URL` (compose — `detective:8092`, dev-дефолт
+`localhost:18098`) с дедлайном `GRPC_DETECTIVE_TIMEOUT_MS` (1 c —
+скоринг стоит на пути каждой покупки); недоступность — fail-open,
+покупка проходит без скоринга. Админка читает витрину решений по
+`DETECTIVE_HTTP_URL` (compose — `http://detective:8093`, dev-дефолт
+`http://localhost:18099`); сбой — пустая очередь (fail-soft). Пороги
+вердиктов — `FRAUD_REVIEW_SCORE` (40) и `FRAUD_BLOCK_SCORE` (70).
 
 Тумблеры фич: API ходит к «Суфлёру» по `GRPC_FLAGS_URL` (compose —
 `flags:8095`, dev-дефолт `localhost:18095`) с дедлайном
