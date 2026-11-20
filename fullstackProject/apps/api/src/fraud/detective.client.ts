@@ -120,7 +120,7 @@ export class DetectiveClient {
 
 /** Куда ходить за вердиктом: dev — хост-порт стенда, compose — сеть */
 function grpcUrl(): string {
-  return process.env.GRPC_DETECTIVE_URL ?? 'localhost:18092';
+  return process.env.GRPC_DETECTIVE_URL ?? 'localhost:18098';
 }
 
 /** Дедлайн gRPC-вызова: скоринг не стоит долгого ожидания */

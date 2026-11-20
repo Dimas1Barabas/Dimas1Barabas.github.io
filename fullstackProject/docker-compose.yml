@@ -293,8 +293,8 @@ services:
       # OpenTelemetry: OTLP gRPC-эндпоинт Jaeger; без переменной — no-op
       OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
     ports:
-      - '18092:8092' # gRPC Detective (API ходит внутри сети; хост-порт — для grpcurl)
-      - '18093:8093' # /health, /decisions — витрина решений антифрода
+      - '18098:8092' # gRPC Detective (18092 занят витриной Аналитика; API ходит внутри сети)
+      - '18099:8093' # /health, /decisions — витрина решений антифрода (18093 занят gRPC Курьера)
     depends_on:
       postgres:
         condition: service_healthy

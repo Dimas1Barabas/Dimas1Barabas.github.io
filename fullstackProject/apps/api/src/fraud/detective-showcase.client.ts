@@ -67,5 +67,5 @@ export class DetectiveShowcaseClient {
 
 /** Витрина «Детектива»: dev — хост-порт стенда, compose — сеть */
 function base(): string {
-  return process.env.DETECTIVE_HTTP_URL ?? 'http://localhost:18093';
+  return process.env.DETECTIVE_HTTP_URL ?? 'http://localhost:18099';
 }
