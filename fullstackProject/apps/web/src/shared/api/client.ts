@@ -40,6 +40,7 @@ import type {
   WaitlistEntry,
   MyWaitlistEntry,
 } from '@/shared/api/types';
+import type { FraudDecision } from '@/shared/lib/fraud';
 
 /** Базовый URL API. По умолчанию — тот же origin (vite-proxy / nginx) */
 const BASE: string = import.meta.env.VITE_API_URL ?? '/api';
@@ -411,6 +412,23 @@ export const api = {
     }),
   /** админ-аналитика: агрегаты дашборда (403 без роли admin) */
   adminStats: () => request<AdminStatsEnvelope>('/admin/stats'),
+  /** витрина решений антифрода «Детектива» (этап 36): статус-фильтр
+   *  опционален (pending_review — рабочая очередь ревью); 403 без admin */
+  adminFraud: (status?: string) =>
+    request<{ decisions: FraudDecision[] }>(
+      `/admin/fraud${status ? `?status=${encodeURIComponent(status)}` : ''}`,
+    ),
+  /** решение человека по брони из очереди ревью: approve — системная
+   *  оплата, reject — отмена с возвратом мест */
+  resolveFraud: (bookingId: string, action: 'approve' | 'reject') =>
+    request<{ resolved: string; booking: Booking }>(
+      `/admin/fraud/${encodeURIComponent(bookingId)}/resolve`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      },
+    ),
   behaviorInsights: () =>
     request<BehaviorInsightsEnvelope>('/analytics/insights'),
   /** список промокодов для админки (403 без роли admin) */

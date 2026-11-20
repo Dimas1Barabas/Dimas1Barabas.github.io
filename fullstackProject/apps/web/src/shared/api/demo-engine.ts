@@ -793,6 +793,8 @@ class DemoEngine {
     this.gifts = seedGifts();
     this.giftSeq = 1;
     this.giftSpends = [];
+    this.fraudDecisions = [];
+    this.fraudSeq = 0;
     this.signals = seedSignals();
     DEMO_MOVIES.forEach((m) => this.recomputeMovie(m.id));
     this.firstLoad = true;

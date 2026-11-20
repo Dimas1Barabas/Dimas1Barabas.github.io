@@ -5,9 +5,11 @@ import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
 import { usePromosStore } from '@/entities/promo/model/promos.store';
+import { useFraudStore } from '@/entities/fraud/model/store';
 import MoviePoster from '@/entities/movie/ui/MoviePoster.vue';
 import type { Movie, Promo } from '@/shared/api/types';
 import type { PromoKind } from '@/shared/lib/promo';
+import type { FraudDecision } from '@/shared/lib/fraud';
 
 const appStore = useAppStore();
 const authStore = useAuthStore();
@@ -250,6 +252,72 @@ async function submit(): Promise<void> {
   } finally {
     submitting.value = false;
   }
+}
+
+// ── Антифрод «Детектив» (этап 36) ─────────────────────────────────
+
+const fraudStore = useFraudStore();
+
+/** очередь ревью и история вердиктов: демо — всем, live — админу */
+const fraudAllowed = computed(
+  () => appStore.mode === 'demo' || (appStore.mode === 'live' && authStore.isAdmin),
+);
+
+/** только очередь ревью или вся история — переключатель витрины */
+const fraudOnlyPending = ref(true);
+
+const fraudDecisions = computed<FraudDecision[]>(() =>
+  fraudOnlyPending.value
+    ? fraudStore.decisions.filter((d) => d.status === 'pending_review')
+    : fraudStore.decisions,
+);
+
+/** резолв в полёте — блокируем кнопки строки */
+const resolvingId = ref<string | null>(null);
+
+/** словесные ярлыки вердиктов и статусов — витрина читаема людьми */
+const FRAUD_STATUS_LABELS: Record<string, string> = {
+  auto_allowed: 'пропущено',
+  auto_blocked: 'отказ',
+  pending_review: 'на ревью',
+  approved: 'одобрено',
+  rejected: 'отклонено',
+};
+const FRAUD_VERDICT_LABELS: Record<string, string> = {
+  allow: 'пропуск',
+  review: 'ревью',
+  block: 'отказ',
+};
+
+/** режим мог прийти после монта — следим, как у промокодов */
+watch(
+  fraudAllowed,
+  (ok) => {
+    if (ok) void fraudStore.refresh();
+  },
+  { immediate: true },
+);
+
+/** смена фильтра тянет список заново только в live (демо хранит всё) */
+watch(fraudOnlyPending, () => {
+  if (appStore.mode !== 'demo') void fraudStore.refresh();
+});
+
+async function resolveFraud(bookingId: string, action: 'approve' | 'reject'): Promise<void> {
+  if (resolvingId.value) return;
+  resolvingId.value = bookingId;
+  try {
+    await fraudStore.resolve(bookingId, action);
+  } finally {
+    resolvingId.value = null;
+  }
+}
+
+function fraudTimeOf(d: FraudDecision): string {
+  return new Date(d.createdAt).toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 </script>
 
@@ -579,6 +647,96 @@ async function submit(): Promise<void> {
         по кэшу браузера (≤5 минут), здесь — сразу.
       </p>
     </section>
+
+    <!-- антифрод: решения «Детектива» и рука человека (этап 36) -->
+    <section v-if="fraudAllowed" class="admin-fraud">
+      <div class="admin-promos__head">
+        <h2 class="admin-promos__title">
+          Детектив — антифрод
+          <span v-if="fraudStore.pendingCount > 0" class="admin-fraud__count">
+            на ревью: {{ fraudStore.pendingCount }}
+          </span>
+        </h2>
+        <span v-if="appStore.mode === 'demo'" class="admin-promos__badge">
+          демо-данные
+        </span>
+      </div>
+
+      <label class="admin-fraud__toggle">
+        <input v-model="fraudOnlyPending" type="checkbox">
+        только очередь ревью
+      </label>
+
+      <p v-if="fraudStore.loading" class="admin-note">Загружаем решения…</p>
+      <p v-else-if="fraudStore.error" class="admin-error">
+        {{ fraudStore.error }}
+      </p>
+      <p v-else-if="!fraudDecisions.length" class="admin-note">
+        {{
+          fraudOnlyPending
+            ? 'Очередь ревью пуста — скоринг не нашёл подозрительных.'
+            : 'Решений пока нет — оформите покупку в витрине.'
+        }}
+      </p>
+      <ul v-else class="admin-fraud__list">
+        <li
+          v-for="d in fraudDecisions"
+          :key="d.bookingId"
+          class="admin-fraud__row"
+          :class="`admin-fraud__row--${d.verdict}`"
+        >
+          <div class="admin-fraud__main">
+            <span class="admin-fraud__score">{{ d.score }}</span>
+            <div class="admin-fraud__what">
+              <strong>
+                {{ FRAUD_VERDICT_LABELS[d.verdict] ?? d.verdict }}
+                · {{ FRAUD_STATUS_LABELS[d.status] ?? d.status }}
+              </strong>
+              <span class="admin-fraud__meta">
+                {{ d.facts.seatsCount }} мес. · {{ d.facts.totalRub }} ₽ ·
+                скоринг {{ fraudTimeOf(d) }}
+              </span>
+              <span v-if="d.reasons.length" class="admin-fraud__reasons">
+                {{ d.reasons.join(', ') }}
+              </span>
+              <span
+                v-if="d.status === 'approved' || d.status === 'rejected'"
+                class="admin-fraud__meta"
+              >
+                решение: {{ d.resolvedBy ?? '—' }}
+              </span>
+            </div>
+          </div>
+          <div v-if="d.status === 'pending_review'" class="admin-fraud__actions">
+            <button
+              class="btn btn--sm"
+              type="button"
+              :disabled="resolvingId !== null"
+              @click="resolveFraud(d.bookingId, 'approve')"
+            >
+              Одобрить
+            </button>
+            <button
+              class="btn btn--ghost btn--sm"
+              type="button"
+              :disabled="resolvingId !== null"
+              @click="resolveFraud(d.bookingId, 'reject')"
+            >
+              Отклонить
+            </button>
+          </div>
+        </li>
+      </ul>
+
+      <p v-if="fraudStore.error" class="admin-error">{{ fraudStore.error }}</p>
+
+      <p class="admin-note">
+        Чекаут спрашивает вердикт у Go-сервиса «Детектив»: скоринг фактов
+        брони и истории покупателя (allow / review / block). Review-брони
+        копятся в очереди: «Одобрить» запускает системную оплату,
+        «Отклонить» возвращает места. Пороги: review от 40, block от 70.
+      </p>
+    </section>
   </section>
 </template>
 
@@ -789,6 +947,83 @@ async function submit(): Promise<void> {
 .admin-success {
   color: #7dd87d;
   margin: 0;
+}
+
+/* ── Детектив (антифрод, этап 36) ── */
+.admin-fraud__count {
+  color: #e0b34c;
+  font-size: 0.85rem;
+  margin-left: 8px;
+}
+
+.admin-fraud__toggle {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-muted, #9aa4b2);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.admin-fraud__list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-fraud__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-fraud__row--review,
+.admin-fraud__row--block {
+  border-color: rgba(224, 179, 76, 0.45);
+}
+
+.admin-fraud__main {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.admin-fraud__score {
+  min-width: 40px;
+  text-align: center;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 6px 4px;
+  background: rgba(224, 179, 76, 0.16);
+}
+
+.admin-fraud__what {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-fraud__meta {
+  color: var(--text-muted, #9aa4b2);
+  font-size: 0.85rem;
+}
+
+.admin-fraud__reasons {
+  color: #e0b34c;
+  font-size: 0.85rem;
+}
+
+.admin-fraud__actions {
+  display: flex;
+  gap: 8px;
 }
 
 .admin-note {

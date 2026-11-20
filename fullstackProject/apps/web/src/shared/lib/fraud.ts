@@ -86,6 +86,9 @@ export type FraudDecisionStatus =
 
 export interface FraudDecision {
   bookingId: string;
+  /** витрина API всегда несёт владельца и сеанс; демо-движок тоже */
+  userId?: string;
+  sessionId?: string;
   score: number;
   verdict: FraudVerdict;
   reasons: string[];

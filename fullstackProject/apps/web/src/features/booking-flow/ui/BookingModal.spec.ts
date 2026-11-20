@@ -144,6 +144,7 @@ describe('BookingModal', () => {
       bonusSpent: null,
       giftCode: null,
       giftSpent: null,
+      fraudHold: false,
       status: 'PENDING', // мгновенный чекаут: платёж уже запущен
       expiresAt: null,
       message: null,
@@ -206,6 +207,7 @@ describe('BookingModal', () => {
       bonusSpent: null,
       giftCode: null,
       giftSpent: null,
+      fraudHold: false,
       status: 'PENDING_PAYMENT',
       expiresAt: new Date(Date.now() + 120_000).toISOString(),
       message: null,
@@ -443,6 +445,44 @@ describe('BookingModal: мгновенная покупка за флагом (l
     const primary = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
     expect(primary.text()).toBe('Забронировать');
     expect(wrapper.text()).not.toContain('Купить за');
+    flagSpy.mockRestore();
+  });
+
+  it('409 fraudBlocked: антифрод отказал — причины решения на экране, брони нет', async () => {
+    const flagSpy = vi
+      .spyOn(api, 'flag')
+      .mockReturnValue(verdict(true) as never);
+    const { wrapper } = mountModalLive({ authed: true });
+    const bookingsStore = useBookingsStore();
+    bookingsStore.checkout = vi.fn().mockRejectedValue(
+      new ApiError(
+        'HTTP 409',
+        409,
+        JSON.stringify({
+          statusCode: 409,
+          error: 'Conflict',
+          message: 'Антифрод отказал в покупке — обратитесь в поддержку',
+          code: 'fraudBlocked',
+          score: 75,
+          reasons: ['newAccount', 'velocityHigh', 'manySeats'],
+        }),
+      ),
+    );
+    await flushPromises();
+
+    await wrapper
+      .findAll('button.hall__seat:not([disabled])')[0]
+      .trigger('click');
+    const buy = wrapper.find('.modal__actions .btn:not(.btn--ghost)');
+    await buy.trigger('click');
+    await flushPromises();
+
+    // честный отказ: скор и коды правил — прямо в сообщении
+    expect(wrapper.text()).toContain('Антифрод отказал');
+    expect(wrapper.text()).toContain('скор 75');
+    expect(wrapper.text()).toContain('newAccount, velocityHigh, manySeats');
+    // брони не существует — события created нет
+    expect(wrapper.emitted('created')).toBeUndefined();
     flagSpy.mockRestore();
   });
 

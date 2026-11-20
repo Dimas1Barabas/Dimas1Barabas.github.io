@@ -369,9 +369,22 @@ async function buyNow(): Promise<void> {
         'Мгновенная покупка сейчас недоступна — забронируйте обычным способом';
       return;
     }
+    // антифрод отказал (этап 36): брони не существует, повтора нет —
+    // честно показываем причины решения (скор и коды правил)
+    const refusal = apiCodeOf(err);
+    if (refusal === 'fraudBlocked') {
+      const body = JSON.parse((err as ApiError).body) as {
+        score?: number;
+        reasons?: string[];
+      };
+      const reasons = (body.reasons ?? []).join(', ');
+      error.value =
+        'Антифрод отказал в покупке — обратитесь в поддержку' +
+        (reasons ? ` (скор ${body.score ?? '?'}: ${reasons})` : '');
+      return;
+    }
     // отказ оплаты не прячет бронь (FR-115): она уже создана и ждёт
     // PENDING_PAYMENT — подсказываем путь к дооплате, списки тянем
-    const refusal = apiCodeOf(err);
     if (refusal && PROMO_HINTS[refusal]) {
       promoError.value = `${PROMO_HINTS[refusal]} — бронь уже создана и ждёт оплаты, дооплатите её в «Моих билетах»`;
       void syncListsAfterPaymentRefusal();
