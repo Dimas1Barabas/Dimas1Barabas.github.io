@@ -26,6 +26,7 @@ import { SearchModule } from './search/search.module';
 import { UsersModule } from './users/users.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
 import { FlagsModule } from './flags/flags.module';
+import { FraudModule } from './fraud/fraud.module';
 import { GiftsModule } from './gifts/gifts.module';
 import { TwoFactorModule } from './twofactor/twofactor.module';
 
@@ -77,6 +78,9 @@ import { TwoFactorModule } from './twofactor/twofactor.module';
     // тумблеры фич: локальный кэш состояний «Суфлёра», @FeatureFlag на
     // маршрутах и админка /admin/flags (этап флагов)
     FlagsModule,
+    // антифрод «Детектив»: скоринг чекаута (gRPC) и витрина решений
+    // для админки; админ-маршруты — в AdminModule (этап 36)
+    FraudModule,
 
     // пользователи и авторизация: регистрация сейчас, логин+JWT дальше
     UsersModule,

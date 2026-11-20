@@ -28,6 +28,10 @@
       {
         "include": "flags/proto/*.proto",
         "outDir": "dist"
+      },
+      {
+        "include": "fraud/proto/*.proto",
+        "outDir": "dist"
       }
     ]
   }
