@@ -684,6 +684,7 @@ function fraudTimeOf(d: FraudDecision): string {
           :key="d.bookingId"
           class="admin-fraud__row"
           :class="`admin-fraud__row--${d.verdict}`"
+          :data-testid="`fraud-row-${d.bookingId}`"
         >
           <div class="admin-fraud__main">
             <span class="admin-fraud__score">{{ d.score }}</span>
@@ -711,6 +712,7 @@ function fraudTimeOf(d: FraudDecision): string {
             <button
               class="btn btn--sm"
               type="button"
+              :data-testid="`fraud-approve-${d.bookingId}`"
               :disabled="resolvingId !== null"
               @click="resolveFraud(d.bookingId, 'approve')"
             >
@@ -719,6 +721,7 @@ function fraudTimeOf(d: FraudDecision): string {
             <button
               class="btn btn--ghost btn--sm"
               type="button"
+              :data-testid="`fraud-reject-${d.bookingId}`"
               :disabled="resolvingId !== null"
               @click="resolveFraud(d.bookingId, 'reject')"
             >

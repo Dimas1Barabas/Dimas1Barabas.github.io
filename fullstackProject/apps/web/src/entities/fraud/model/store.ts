@@ -8,8 +8,9 @@ import type { FraudDecision } from '@/shared/lib/fraud';
 /**
  * Витрина решений антифрода «Детектива» (этап 36): очередь ревью и
  * решения человека. Live — админ-маршруты API (за JWT и ролью admin),
- * демо — движок Pages (открыт всем, как промокоды). Сбой витрины —
- * пустой список: это не критичный путь (fail-soft, как у аудита флагов).
+ * демо — движок Pages (открыт всем, как промокоды): движок не реактивен,
+ * новые решения и вердикты подтягиваем подпиской onChange (как бар).
+ * Сбой витрины — пустой список: это не критичный путь (fail-soft).
  */
 export const useFraudStore = defineStore('fraud', () => {
   /** решения свежими сверху; статус-фильтр последнего запроса — для бейджа */
@@ -23,6 +24,8 @@ export const useFraudStore = defineStore('fraud', () => {
     resolved: string;
     status: string;
   } | null>(null);
+  /** отписка от движка (демо); живёт до конца приложения */
+  let unsubscribe: (() => void) | null = null;
 
   async function refresh(status?: string): Promise<void> {
     const app = useAppStore();
@@ -33,6 +36,10 @@ export const useFraudStore = defineStore('fraud', () => {
         decisions.value = demoEngine.fraudDecisionsList(
           status as FraudDecision['status'] | undefined,
         );
+        if (!unsubscribe) {
+          // новые решения и резолвы приходят мимо нас — слушаем движок
+          unsubscribe = demoEngine.onChange(() => void refresh(status));
+        }
       } else {
         const res = await api.adminFraud(status);
         decisions.value = res.decisions ?? [];
