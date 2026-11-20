@@ -146,13 +146,31 @@ async function highSeat(sessionId: string): Promise<string> {
   throw new Error(`сеанс ${sessionId}: свободных мест нет`);
 }
 
-/** сколько свободных мест с верхних рядов */
+/**
+ * `count` РАЗНЫХ свободных мест с верхних рядов, одной картой. Карту
+ * нельзя опрашивать по одному месту между вызовами: занятость меняется
+ * только созданием брони, и наизусть один и тот же «первый свободный»
+ * вернулся бы шесть раз — API дедуплицировал Set'ом до одного, и блок
+ * недобирал manySeats (run на bcf683ec: seatsCount=1 в решении).
+ */
 async function highSeats(
   sessionId: string,
   count: number,
 ): Promise<string[]> {
+  const map = await api<{ occupied: string[] }>(
+    `/sessions/${sessionId}/seats`,
+  );
+  const taken = new Set(map.occupied);
   const seats: string[] = [];
-  for (let i = 0; i < count; i++) seats.push(await highSeat(sessionId));
+  for (let row = 8; row >= 1 && seats.length < count; row--) {
+    for (let seat = 10; seat >= 1 && seats.length < count; seat--) {
+      const code = `${row}-${seat}`;
+      if (!taken.has(code)) seats.push(code);
+    }
+  }
+  if (seats.length < count) {
+    throw new Error(`сеанс ${sessionId}: свободных мест меньше ${count}`);
+  }
   return seats;
 }
 
