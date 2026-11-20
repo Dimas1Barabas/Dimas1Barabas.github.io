@@ -72,6 +72,23 @@ describe('BookingsService: оплата: pay и промокоды (unit)', () =
       expect(outboxInsert).not.toHaveBeenCalled();
     });
 
+    it('409 fraudReview: холд антифрода держит оплату до решения человека', async () => {
+      bookingsRepo.findOneByOrFail.mockResolvedValue({
+        ...bookingFixture(),
+        status: 'PENDING_PAYMENT',
+        fraudHold: true,
+      });
+
+      const promise = service.pay('booking-1', authUser);
+
+      await expect(promise).rejects.toBeInstanceOf(ConflictException);
+      const err = (await promise.catch((e: unknown) => e)) as ConflictException;
+      expect(err.getResponse()).toMatchObject({ code: 'fraudReview' });
+      // платёж не запускался вовсе — ни переключения, ни события
+      expect(emUpdate).not.toHaveBeenCalled();
+      expect(outboxInsert).not.toHaveBeenCalled();
+    });
+
     it('403: чужую бронь оплатить нельзя', async () => {
       const promise = service.pay('booking-1', {
         ...authUser,

@@ -51,6 +51,7 @@ function bookingFixture(): Booking {
     bonusSpent: null,
     giftCode: null,
     giftSpent: null,
+    fraudHold: false,
     status: 'PENDING_PAYMENT',
     expiresAt: null,
     message: null,

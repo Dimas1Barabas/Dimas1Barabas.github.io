@@ -114,4 +114,93 @@ describe('POST /api/bookings/checkout за флагом checkout.new_flow (int)'
     // оплата не состоялась — конверсии эксперимента нет
     expect(ctx.flagsEvaluator.reportConversion).not.toHaveBeenCalled();
   });
+
+  // ── Антифрод «Детектив» (этап 36) ────────────────────────────────
+
+  it('вердикт block: 409 fraudBlocked, бронь не создаётся вовсе', async () => {
+    ctx.flagsEvaluator.isEnabled.mockResolvedValue({
+      enabled: true,
+      reason: 'on',
+      percentage: 100,
+      variant: '',
+    });
+    ctx.detective.score.mockResolvedValueOnce({
+      verdict: 'block',
+      score: 75,
+      reasons: ['newAccount', 'velocityHigh', 'manySeats'],
+    });
+    const rowsBefore = ctx.bookingsRepo.rows.length;
+    const outboxBefore = ctx.outboxRows.length;
+
+    const res = await request(app.getHttpServer())
+      .post('/api/bookings/checkout')
+      .set('Authorization', bearer)
+      .send({ sessionId: session.id, seats: ['7-7'] });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      code: 'fraudBlocked',
+      score: 75,
+      reasons: ['newAccount', 'velocityHigh', 'manySeats'],
+    });
+    expect(ctx.bookingsRepo.rows).toHaveLength(rowsBefore);
+    expect(ctx.outboxRows).toHaveLength(outboxBefore);
+  });
+
+  it('вердикт review: 201, бронь в PENDING_PAYMENT с холдом; pay даёт 409 fraudReview', async () => {
+    ctx.flagsEvaluator.reportConversion.mockClear();
+    ctx.flagsEvaluator.isEnabled.mockResolvedValue({
+      enabled: true,
+      reason: 'on',
+      percentage: 100,
+      variant: '',
+    });
+    ctx.detective.score.mockResolvedValueOnce({
+      verdict: 'review',
+      score: 55,
+      reasons: ['newAccount', 'velocity'],
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/api/bookings/checkout')
+      .set('Authorization', bearer)
+      .send({ sessionId: session.id, seats: ['8-8'] });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      status: 'PENDING_PAYMENT',
+      fraudHold: true,
+      seats: ['8-8'],
+    });
+    // таймер резерва заведён, платежа нет; конверсия не считается
+    expect(ctx.outboxRows.at(-1)?.routingKey).toBe('booking.payment.wait');
+    expect(ctx.flagsEvaluator.reportConversion).not.toHaveBeenCalled();
+
+    // владелец не может обойти холд старым флоу оплаты
+    const payRes = await request(app.getHttpServer())
+      .post(`/api/bookings/${res.body.id}/pay`)
+      .set('Authorization', bearer)
+      .send({});
+
+    expect(payRes.status).toBe(409);
+    expect(payRes.body).toMatchObject({ code: 'fraudReview' });
+  });
+
+  it('Детектив упал: fail-open — чекаут проходит как при allow', async () => {
+    ctx.flagsEvaluator.isEnabled.mockResolvedValue({
+      enabled: true,
+      reason: 'on',
+      percentage: 100,
+      variant: '',
+    });
+    ctx.detective.score.mockRejectedValueOnce(new Error('unavailable'));
+
+    const res = await request(app.getHttpServer())
+      .post('/api/bookings/checkout')
+      .set('Authorization', bearer)
+      .send({ sessionId: session.id, seats: ['3-3'] });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ status: 'PENDING' });
+  });
 });

@@ -14,6 +14,7 @@ import { Movie } from '../movies/movie.entity';
 import { Promo } from '../promos/promo.entity';
 import { PricingClient } from '../pricing/pricing.client';
 import { RemindersClient } from '../reminders/reminders.client';
+import { DetectiveClient } from '../fraud/detective.client';
 import { FlagsEvaluator } from '../flags/flags.evaluator';
 import { GiftsService } from '../gifts/gifts.service';
 import { User } from '../users/user.entity';
@@ -74,6 +75,7 @@ export function bookingFixture(): Booking {
     bonusSpent: null,
     giftCode: null,
     giftSpent: null,
+    fraudHold: false,
     status: 'PENDING',
     expiresAt: new Date('2026-09-03T12:15:00Z'),
     message: null,
@@ -109,6 +111,9 @@ export interface BookingsHarness {
   reminders: { schedule: jest.Mock; cancel: jest.Mock };
   /** gRPC-клиент Тарификатора: по умолчанию отвечает базовой ценой */
   pricing: { quote: jest.Mock };
+  /** gRPC-клиент «Детектива»: по умолчанию вердикт allow — спеки
+   *  чекаута переключают на review/block точечно */
+  detective: { score: jest.Mock; resolve: jest.Mock };
   /** что enqueueOutbox записал в outbox внутри транзакций */
   outboxInsert: jest.Mock;
   /** будильник Курьера: poke() после каждого коммита с outbox-записью */
@@ -223,6 +228,12 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
       capacity: 80,
     })),
   };
+  // Детектив по умолчанию всё разрешает: скоринг не должен мешать
+  // остальным кейсам чекаута; fraud-спеки переключают мок точечно
+  const detective: BookingsHarness['detective'] = {
+    score: jest.fn(async () => ({ verdict: 'allow', score: 0, reasons: [] })),
+    resolve: jest.fn(async () => ({ resolved: true, status: 'approved' })),
+  };
   // outbox-записи бизнес-событий (booking.payment.wait, booking.created):
   // enqueueOutbox идёт через em.getRepository(OutboxMessage).insert
   const outboxInsert = jest.fn(async () => undefined);
@@ -239,6 +250,12 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
   // фейковых bonusRows (SUM в pg — bigint, драйвер отдаёт строкой),
   // UPDATE … RETURNING промокода — кортеж [строки, число затронутых]
   const emQuery = jest.fn(async (sql: string, params: unknown[]) => {
+    // срез истории для скоринга: пустая выборка → спокойный дефолт
+    // (fraud-спеки наполняют точечно, остальным достаточно дефолта);
+    // SQL многострочный — матчим без привязки к переводу строки
+    if (/FROM users u\b/.test(sql) && /WHERE u\.id/.test(sql)) {
+      return [];
+    }
     if (/FROM bonus_transactions WHERE user_id/.test(sql)) {
       const balance = bonusRows
         .filter((r) => r.userId === params[0])
@@ -345,10 +362,12 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
       BookingsService,
       {
         provide: DataSource,
-        // manager — для перечитывания баланса в сообщении отказа
+        // manager — для перечитывания баланса в сообщении отказа;
+        // query — срез истории покупателя для антифрод-скоринга
         useValue: {
           transaction: (cb: (e: typeof em) => unknown) => cb(em),
           manager: { query: emQuery },
+          query: emQuery,
         },
       },
       { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
@@ -362,6 +381,7 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
       { provide: getRepositoryToken(User), useValue: usersRepo },
       { provide: RemindersClient, useValue: reminders },
       { provide: PricingClient, useValue: pricing },
+      { provide: DetectiveClient, useValue: detective },
       { provide: OutboxRelayClient, useValue: { poke: outboxPoke } },
       { provide: BookingStream, useValue: stream },
       { provide: SeatStream, useValue: seatStream },
@@ -381,6 +401,7 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
     usersRepo,
     reminders,
     pricing,
+    detective,
     outboxInsert,
     outboxPoke,
     stream,

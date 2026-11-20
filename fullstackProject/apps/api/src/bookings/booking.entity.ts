@@ -81,6 +81,14 @@ export class Booking {
   @Column({ name: 'gift_spent', type: 'int', nullable: true })
   giftSpent: number | null;
 
+  /**
+   * Бронь задержана антифродом (этап 36): чекаут со скорингом review
+   * создал бронь, но оплату не запускал — pay() отказывает 409
+   * fraudReview, решение принимает человек в админ-витрине.
+   */
+  @Column({ name: 'fraud_hold', type: 'boolean', default: false })
+  fraudHold: boolean;
+
   /** lifecycle: ждёт оплаты → проводится → вердикт; не оплачена вовремя — истекла */
   @Column({ length: 24, default: 'PENDING_PAYMENT' })
   status: BookingStatus;
@@ -185,6 +193,13 @@ export class BookingDto {
   })
   giftSpent!: number | null;
 
+  @ApiProperty({
+    example: false,
+    description:
+      'бронь на ручной проверке антифрода — оплата ждёт решения человека',
+  })
+  fraudHold!: boolean;
+
   /** union-тип в reflect-metadata неразличим — перечисляем явно */
   @ApiProperty({
     enum: BOOKING_STATUSES,
@@ -238,6 +253,7 @@ export function toBookingDto(
     bonusSpent: booking.bonusSpent ?? null,
     giftCode: booking.giftCode ?? null,
     giftSpent: booking.giftSpent ?? null,
+    fraudHold: booking.fraudHold ?? false,
     status: booking.status,
     expiresAt: booking.expiresAt?.toISOString() ?? null,
     message: booking.message,

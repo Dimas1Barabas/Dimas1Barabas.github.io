@@ -57,7 +57,10 @@ export async function fraudSnapshotOf(
       }[]
     >(SNAPSHOT_SQL, [userId]);
     const row = rows[0];
-    if (!row) {
+    // пустая выборка (счёт не нашли) или неожиданная форма ответа —
+    // спокойный срез: правило newAccount не должно срабатывать из-за
+    // нашей же инфраструктуры
+    if (!row || Array.isArray(row)) {
       return calmSnapshot();
     }
     return {

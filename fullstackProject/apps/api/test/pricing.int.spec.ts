@@ -21,6 +21,7 @@ import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Promo } from '../src/promos/promo.entity';
 import { PricingClient } from '../src/pricing/pricing.client';
+import { DetectiveClient } from '../src/fraud/detective.client';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
 import { User } from '../src/users/user.entity';
@@ -135,6 +136,8 @@ describe('Pricing (integration)', () => {
         // цикл траты/возврата гифта — gifts.int/gifts.e2e
         { provide: GiftsService, useValue: { spendInTx: jest.fn(), findByCode: jest.fn(async () => null), reverseForBooking: jest.fn(async () => undefined) } },
         { provide: PricingClient, useValue: pricing },
+        // Детектив (этап 36): чекауту хватает вердикта allow по умолчанию
+        { provide: DetectiveClient, useValue: { score: jest.fn(async () => ({ verdict: 'allow', score: 0, reasons: [] })), resolve: jest.fn(async () => ({ resolved: true, status: 'approved' })) } },
         { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
         // «Суфлёр» для @FeatureFlag-маршрута чекаута: вердикты фейка (все скрыты)
         { provide: FlagsEvaluator, useValue: { isEnabled: jest.fn(async () => ({ enabled: false, reason: 'off' })) } },

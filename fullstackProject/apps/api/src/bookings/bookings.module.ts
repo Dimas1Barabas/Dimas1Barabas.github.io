@@ -4,6 +4,7 @@ import { BonusTransaction } from '../bonus/bonus-transaction.entity';
 import { GiftsModule } from '../gifts/gifts.module';
 import { Movie } from '../movies/movie.entity';
 import { OutboxModule } from '../outbox/outbox.module';
+import { FraudModule } from '../fraud/fraud.module';
 import { Promo } from '../promos/promo.entity';
 import { Session } from '../movies/session.entity';
 import { PricingClient } from '../pricing/pricing.client';
@@ -50,6 +51,8 @@ import { SeatStream } from './seat-stream';
     // FlagsModule — FeatureFlagGuard на POST /bookings/checkout
     // (new_flow): модуль-синглтон, кэш состояний делится с админкой
     FlagsModule,
+    // FraudModule — скоринг чекаута у «Детектива» (gRPC-клиент общий)
+    FraudModule,
     // OutboxModule — будильник Курьера после коммита outbox-записей
     OutboxModule,
     rabbitMqModule,

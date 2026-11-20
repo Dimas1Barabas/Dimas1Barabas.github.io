@@ -33,6 +33,7 @@ import { Movie } from '../src/movies/movie.entity';
 import { Session } from '../src/movies/session.entity';
 import { Promo } from '../src/promos/promo.entity';
 import { PricingClient } from '../src/pricing/pricing.client';
+import { DetectiveClient } from '../src/fraud/detective.client';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
 import { User } from '../src/users/user.entity';
@@ -316,6 +317,7 @@ describe('WS живая карта мест: HTTP+socket-интеграция (�
       { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
         // Тарификатор: базовая цена без факторов (ценовые кейсы — в pricing.int)
         { provide: PricingClient, useValue: { quote: jest.fn(async (input: { basePriceRub: number }) => ({ priceRub: input.basePriceRub, basePriceRub: input.basePriceRub, factors: [], occupied: 0, capacity: 80 })) } },
+        { provide: DetectiveClient, useValue: { score: jest.fn(async () => ({ verdict: 'allow', score: 0, reasons: [] })), resolve: jest.fn(async () => ({ resolved: true, status: 'approved' })) } },
         { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },
         { provide: AmqpConnection, useValue: { publish: jest.fn(), connected: true } },
         {

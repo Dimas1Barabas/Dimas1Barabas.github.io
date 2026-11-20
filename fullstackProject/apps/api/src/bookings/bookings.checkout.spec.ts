@@ -2,7 +2,8 @@
  * BookingsService (unit): мгновенный чекаут — композиция create + pay
  * за флагом checkout.new_flow. Хап-кейсы самих шагов живут в
  * bookings.create/pay-спеках; здесь — только склейка: одна цепочка
- * событий и поведение при отказе оплаты (бронь не прячется).
+ * событий, поведение при отказе оплаты (бронь не прячется) и вердикты
+ * антифрода «Детектива» (этап 36): block/review/allow и fail-open.
  */
 import { ConflictException } from '@nestjs/common';
 import {
@@ -19,9 +20,12 @@ describe('BookingsService: мгновенный чекаут (unit)', () => {
   let outboxInsert: BookingsHarness['outboxInsert'];
   let emInsert: BookingsHarness['emInsert'];
   let emUpdate: BookingsHarness['emUpdate'];
+  let detective: BookingsHarness['detective'];
+  let emQuery: BookingsHarness['emQuery'];
+  let flagsEvaluator: BookingsHarness['flagsEvaluator'];
 
   beforeEach(async () => {
-    ({ service, bookingsRepo, promosRepo, outboxInsert, emInsert, emUpdate } =
+    ({ service, bookingsRepo, promosRepo, outboxInsert, emInsert, emUpdate, detective, emQuery, flagsEvaluator } =
       await buildBookingsHarness());
     // pay() перечитывает бронь, созданную этим же вызовом, — эхо по id:
     // места и сумма как у созданной (1 место × 400 ₽ базовой цены)
@@ -82,5 +86,125 @@ describe('BookingsService: мгновенный чекаут (unit)', () => {
       (call: unknown[]) => (call[0] as { routingKey: string }).routingKey,
     );
     expect(keys).toEqual(['booking.payment.wait']);
+  });
+
+  // ── Антифрод «Детектив» (этап 36) ────────────────────────────────
+
+  it('вердикт allow: скоринг прошёл — покупка как обычно', async () => {
+    detective.score.mockResolvedValueOnce({
+      verdict: 'allow',
+      score: 30,
+      reasons: ['newAccount'],
+    });
+
+    const result = await service.checkout(
+      { sessionId: 'session-1', seats: ['5-7'] },
+      authUser,
+    );
+
+    expect(result.status).toBe('PENDING');
+    // факты уехали в скоринг: срез истории одним параметризованным SQL
+    expect(detective.score).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: authUser.id,
+        sessionId: 'session-1',
+        seatsCount: 1,
+        totalRub: 400, // оценка чека: места × базовая цена афиши
+        accountAgeDays: 365, // пустой срез → спокойный дефолт
+        bookings24h: 0,
+      }),
+    );
+    expect(flagsEvaluator.reportConversion).toHaveBeenCalledTimes(1);
+  });
+
+  it('вердикт block: бронь не создаётся — 409 fraudBlocked со скором и причинами', async () => {
+    detective.score.mockResolvedValueOnce({
+      verdict: 'block',
+      score: 75,
+      reasons: ['newAccount', 'velocityHigh', 'manySeats'],
+    });
+
+    const promise = service.checkout(
+      { sessionId: 'session-1', seats: ['5-8'] },
+      authUser,
+    );
+
+    await expect(promise).rejects.toBeInstanceOf(ConflictException);
+    const err = (await promise.catch((e: unknown) => e)) as ConflictException;
+    expect(err.getResponse()).toMatchObject({
+      code: 'fraudBlocked',
+      score: 75,
+      reasons: ['newAccount', 'velocityHigh', 'manySeats'],
+    });
+    // места не занимались, таймер не заводился — транзакции не было
+    expect(emInsert).not.toHaveBeenCalled();
+    expect(outboxInsert).not.toHaveBeenCalled();
+  });
+
+  it('вердикт review: бронь с холдом, оплата не запускается, конверсии нет', async () => {
+    detective.score.mockResolvedValueOnce({
+      verdict: 'review',
+      score: 55,
+      reasons: ['newAccount', 'velocity'],
+    });
+
+    const result = await service.checkout(
+      { sessionId: 'session-1', seats: ['5-9'] },
+      authUser,
+    );
+
+    expect(result.status).toBe('PENDING_PAYMENT');
+    expect(result.fraudHold).toBe(true);
+    expect(result.message).toContain('антифрода');
+    // места заняты и таймер заведён, платежа нет
+    expect(emInsert).toHaveBeenCalledTimes(1);
+    const keys = outboxInsert.mock.calls.map(
+      (call: unknown[]) => (call[0] as { routingKey: string }).routingKey,
+    );
+    expect(keys).toEqual(['booking.payment.wait']);
+    // покупка не состоялась — конверсия эксперимента не считается
+    expect(flagsEvaluator.reportConversion).not.toHaveBeenCalled();
+  });
+
+  it('вердикт review бронирует под тем же id, что ушёл в скоринг', async () => {
+    detective.score.mockResolvedValueOnce({
+      verdict: 'review',
+      score: 55,
+      reasons: ['newAccount', 'velocity'],
+    });
+
+    await service.checkout({ sessionId: 'session-1', seats: ['5-9'] }, authUser);
+
+    const scoredId = detective.score.mock.calls[0][0].bookingId;
+    expect(bookingsRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ id: scoredId, fraudHold: true }),
+    );
+  });
+
+  it('Детектив недоступен: fail-open — покупка проходит без скоринга', async () => {
+    detective.score.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+
+    const result = await service.checkout(
+      { sessionId: 'session-1', seats: ['5-7'] },
+      authUser,
+    );
+
+    expect(result.status).toBe('PENDING');
+    expect(outboxInsert).toHaveBeenCalledTimes(2);
+  });
+
+  it('срез истории не собрался: спокойный дефолт, скоринг продолжается', async () => {
+    emQuery.mockImplementationOnce(async (sql: string) => {
+      if (/FROM users u\b/.test(sql) && /WHERE u\.id/.test(sql)) {
+        throw new Error('connection reset');
+      }
+      return [[], 0];
+    });
+
+    await service.checkout({ sessionId: 'session-1', seats: ['5-7'] }, authUser);
+
+    expect(detective.score).toHaveBeenCalledWith(
+      expect.objectContaining({ accountAgeDays: 365, bookings24h: 0 }),
+    );
   });
 });

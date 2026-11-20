@@ -43,6 +43,12 @@ import {
 import { PricingClient } from '../pricing/pricing.client';
 import { RemindersClient } from '../reminders/reminders.client';
 import { FlagsEvaluator } from '../flags/flags.evaluator';
+import {
+  DetectiveClient,
+  ScoreGrpcResponse,
+  ScoreInput,
+} from '../fraud/detective.client';
+import { fraudSnapshotOf } from '../fraud/fraud-snapshot';
 import { User } from '../users/user.entity';
 import {
   WaitlistReleaseReason,
@@ -199,6 +205,9 @@ export class BookingsService {
     // гифт-сертификаты: списание в pay и возвраты в вердиктах —
     // транзакционные методы GiftsService (модуль импортирован ниже)
     private readonly gifts: GiftsService,
+    // Детектив: вердикт антифрода перед чекаутом; сбой сервиса —
+    // fail-open (покупка проходит без скоринга, как будто его нет)
+    private readonly detective: DetectiveClient,
   ) {}
 
   /**
@@ -327,7 +336,11 @@ export class BookingsService {
    * констрейнт (session_id, seat) не пускает двух клиентов на одно место:
    * проигравший в гонке получает 409 со списком занятых мест.
    */
-  async create(dto: CreateBookingDto, user: AuthUser): Promise<BookingDto> {
+  async create(
+    dto: CreateBookingDto,
+    user: AuthUser,
+    opts?: { id?: string; fraudHold?: boolean; message?: string },
+  ): Promise<BookingDto> {
     const seats = normalizeSeats(dto.seats);
     const customerName = (dto.customerName ?? user.name).trim();
 
@@ -353,7 +366,9 @@ export class BookingsService {
           id: foundSession.movieId,
         });
         const toSave = em.create(Booking, {
-          id: randomUUID(), // нужен до сохранения — на него ссылаются места
+          // id нужен до сохранения — на него ссылаются места; чекаут
+          // генерирует заранее (вердикт антифрода идемпотентен по нему)
+          id: opts?.id ?? randomUUID(),
           movieId: found.id,
           movie: found,
           sessionId: foundSession.id,
@@ -362,6 +377,8 @@ export class BookingsService {
           userId: user.id,
           seats,
           totalRub: computeTotal(quote.priceRub, seats),
+          fraudHold: opts?.fraudHold ?? false,
+          message: opts?.message ?? null,
           status: 'PENDING_PAYMENT',
           expiresAt: new Date(Date.now() + paymentTimeoutMs()),
         });
@@ -468,6 +485,14 @@ export class BookingsService {
     const booking = await this.bookings.findOneByOrFail({ id });
     if (booking.userId && booking.userId !== user.id) {
       throw new ForbiddenException('Это не ваша бронь');
+    }
+    if (booking.fraudHold && booking.status === 'PENDING_PAYMENT') {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Бронь на ручной проверке антифрода — дождитесь решения',
+        code: 'fraudReview',
+      });
     }
     const { movie, session } = await this.contextOf(booking);
     const code = promoCode ? normalizePromoCode(promoCode) : null;
@@ -662,9 +687,70 @@ export class BookingsService {
    * статус решает БД, как раньше. Отказ оплаты (промокод/бонусы/статус)
    * летит клиенту как есть — бронь к тому моменту создана и честно ждёт
    * оплаты в PENDING_PAYMENT, старый флоу вытащит её оплатой отдельно.
+   *
+   * Этап 36: перед созданием брони чекаут спрашивает вердикт у
+   * «Детектива» (антифрод-скоринг по фактам брони и срезу истории
+   * покупателя). block — бронь не создаётся вовсе (409 fraudBlocked
+   * со скором и причинами); review — бронь создаётся с холдом
+   * (fraud_hold), оплата не запускается: решение принимает человек в
+   * админ-витрине, окно резерва не продлевается (не решили вовремя —
+   * обычный таймаут вернёт места). Сбой детектива — fail-open: покупка
+   * проходит без скоринга, как будто сервиса нет (паритет с гвардом
+   * Привратника).
    */
   async checkout(dto: CheckoutDto, user: AuthUser): Promise<BookingDto> {
-    const booking = await this.create(dto, user);
+    // факты для скоринга: id брони генерируем заранее — вердикт живёт
+    // в витрине детектива под этим ключом, create() создаст бронь с ним
+    // (и ревью-резолв, и витрина говорят об одной и той же брони)
+    const bookingId = randomUUID();
+    const seats = normalizeSeats(dto.seats);
+    const session = await this.sessions.findOneByOrFail({
+      id: dto.sessionId,
+    });
+    const movie = await this.movies.findOneByOrFail({
+      id: session.movieId,
+    });
+    const snapshot = await fraudSnapshotOf(this.dataSource, user.id);
+    const verdict = await this.fraudVerdict({
+      bookingId,
+      userId: user.id,
+      sessionId: dto.sessionId,
+      seatsCount: seats.length,
+      // оценка чека на момент решения: порядок величины для правил
+      // bigCheck/manySeats, точная цена — дело Тарификатора в create()
+      totalRub: seats.length * movie.priceRub,
+      ...snapshot,
+    });
+
+    if (verdict.verdict === 'block') {
+      this.logger.warn(
+        `Антифрод отказал в покупке (user ${user.id}, скор ${verdict.score ?? '?'}: ${(verdict.reasons ?? []).join(', ')})`,
+      );
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Антифрод отказал в покупке — обратитесь в поддержку',
+        code: 'fraudBlocked',
+        score: verdict.score ?? 0,
+        reasons: verdict.reasons ?? [],
+      });
+    }
+
+    if (verdict.verdict === 'review') {
+      // бронь с холдом: места честно резервируются (гонка за них
+      // остаётся честной), но оплата ждёт решения человека
+      const held = await this.create(dto, user, {
+        id: bookingId,
+        fraudHold: true,
+        message: 'Бронь на ручной проверке антифрода — оплата после решения',
+      });
+      this.logger.log(
+        `Чекаут брони ${held.id} задержан антифродом (скор ${verdict.score ?? '?'}: ${(verdict.reasons ?? []).join(', ')}) — ждёт решения в очереди ревью`,
+      );
+      return held;
+    }
+
+    const booking = await this.create(dto, user, { id: bookingId });
     const paid = await this.pay(
       booking.id,
       user,
@@ -673,9 +759,28 @@ export class BookingsService {
       dto.giftCode,
     );
     // конверсия эксперимента: покупка за флагом состоялась — вариант
-    // пересчитает «Суфлёр» по тому же бакетингу, что пропустил гвард
+    // пересчитает «Суфлёр» по тому же бакетингу, что пропустил гвард.
+    // Ревью-холд конверсией не считается: покупка ещё не состоялась
     this.flagsEvaluator.reportConversion('checkout.new_flow', user.id);
     return paid;
+  }
+
+  /**
+   * Вердикт антифрода с fail-open: недоступность «Детектива» не должна
+   * валить покупку — отвечаем allow без скоринга (как будто сервиса
+   * нет), срез фактов уже собран fail-soft тем же принципом.
+   */
+  private async fraudVerdict(
+    input: ScoreInput,
+  ): Promise<ScoreGrpcResponse> {
+    try {
+      return await this.detective.score(input);
+    } catch (err) {
+      this.logger.warn(
+        `Детектив недоступен — чекаут без скоринга (fail-open): ${String(err)}`,
+      );
+      return { verdict: 'allow', score: 0, reasons: [] };
+    }
   }
 
   /** баланс бонусного счёта: SUM(accrual) − SUM(spend) от источника-ledger */

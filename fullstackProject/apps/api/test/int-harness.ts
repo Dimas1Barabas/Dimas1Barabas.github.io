@@ -45,6 +45,7 @@ import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { Promo } from '../src/promos/promo.entity';
 import { PricingClient } from '../src/pricing/pricing.client';
+import { DetectiveClient } from '../src/fraud/detective.client';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
 import { PostersService } from '../src/posters/posters.service';
@@ -66,6 +67,21 @@ export function remindersFake() {
 export function pricingFake() {
   return {
     quote: jest.fn(async (input: { basePriceRub: number }) => ({ priceRub: input.basePriceRub, basePriceRub: input.basePriceRub, factors: [], occupied: 0, capacity: 80 })),
+  };
+}
+
+/** gRPC-клиент «Детектива»: антифрод всё разрешает (fraud-кейсы — в
+ *  bookings-checkout.int переключают вердикт точечно) */
+export function detectiveFake() {
+  return {
+    score: jest.fn(
+      async (): Promise<{ verdict: string; score: number; reasons: string[] }> => ({
+        verdict: 'allow',
+        score: 0,
+        reasons: [],
+      }),
+    ),
+    resolve: jest.fn(async () => ({ resolved: true, status: 'approved' })),
   };
 }
 
@@ -373,6 +389,8 @@ export interface IntAppContext {
   bookingsService: BookingsService;
   /** вердикты флагов для @FeatureFlag-маршрутов (по умолчанию выключены) */
   flagsEvaluator: ReturnType<typeof flagsEvaluatorFake>;
+  /** антифрод «Детектив»: вердикты чекаута (по умолчанию allow) */
+  detective: ReturnType<typeof detectiveFake>;
   /** постеры: in-memory бакет + моки upload/poster/remove */
   posters: ReturnType<typeof postersServiceFake>;
   /** Authorization: владелец брони, чужак и администратор */
@@ -401,6 +419,8 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
   const rabbitPublish = jest.fn();
   // вердикты флагов: по умолчанию всё скрыто (0% раскатки)
   const flagsEvaluator = flagsEvaluatorFake();
+  // антифрод: по умолчанию всё разрешено (как при 0 скоринга)
+  const detective = detectiveFake();
   // постеры: in-memory бакет (S3 — уровень live-int/e2e)
   const posters = postersServiceFake();
   // outbox-записи create/pay: enqueueOutbox пишет через em-транзакцию
@@ -552,6 +572,7 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
       { provide: getRepositoryToken(User), useValue: { findOneByOrFail: jest.fn() } },
       { provide: RemindersClient, useValue: remindersFake() },
       { provide: PricingClient, useValue: pricingFake() },
+      { provide: DetectiveClient, useValue: detective },
       // будильник Курьера — мок: poke() в int-тестах неинтересен
       { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
       // гифт-сертификаты: BookingsService инжектит GiftsService (этап 33),
@@ -653,6 +674,7 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
     outboxRows,
     bookingsService: moduleRef.get(BookingsService),
     flagsEvaluator,
+    detective,
     posters,
     bearer: `Bearer ${await sign('user-a', 'Анна Тест', 'user')}`,
     bearerB: `Bearer ${await sign('user-b', 'Борис Чужой', 'user')}`,
