@@ -229,10 +229,12 @@ jobs:
           # расти можно, падать нет (main/cmd и pb-генерат без тестов тянут
           # цифру вниз); пороги 51/39/39/43/43 подняты 30.09 по факту
           # live-PG прогона адаптеров на testcontainers (52.2/40.2/39.7/
-          # 44.2/44.1), worker без БД — прежние 19/20.0
+          # 44.2/44.1); 21.11 по факту зелёного run 401 подняты пять
+          # отставших — worker/flags/analytics/barman/detective
+          # (27.4/39.9/56.7/52.5/46.3)
           - name: worker
             dir: ticket-worker
-            threshold: 19
+            threshold: 26
           - name: notification
             dir: notification-service
             threshold: 51
@@ -249,39 +251,37 @@ jobs:
             dir: ratelimiter-service
             threshold: 43
           # Суфлёр (этап флагов фич): локально без PG 26.7 (постгрес-адаптер
-          # скипается); CI с testcontainers раскроет адаптер живым прогоном —
-          # поднять порог по факту зелёного (число — в notice-аннотации шага)
+          # скипается); live-PG адаптер раскрыт CI — 39.9 в run 401,
+          # порог поднят 21.11 с локальных 24
           - name: flags
             dir: flags-service
-            threshold: 24
-          # 39.4 локально (без live-PG); CI с testcontainers выше —
-          # postgres-адаптер раскрывается живым прогоном
+            threshold: 39
+          # Локально без live-PG было 39.4; в CI postgres-адаптер раскрыт
+          # живым прогоном — 56.7 в run 401, порог поднят 21.11
           - name: analytics
             dir: analytics-service
-            threshold: 39
+            threshold: 56
           # Курьер (этап транзакционного outbox): покрытие дают домен,
           # use-case и live-PG стора; адаптеры amqp/gRPC/HTTP без тестов,
           # как у соседей. Модуль 423 стейтмента, из них 70 — repository.go:
           # даже при 100% живого прогона потолок ~24%, порог 30 был
-          # недостижим (первый прогон 29.10); 19 — уровень worker,
-          # поднять по факту зелёного (число — в notice-аннотации шага)
+          # недостижим (первый прогон 29.10); факт run 401 — 20.3,
+          # порог 19 соответствует правилу round(факт)-1
           - name: outbox-relay
             dir: outbox-relay
             threshold: 19
           # Бармен (этап 32, кинобар): домен/use-cases/memory/витрина и
-          # парсер с тестами; в CI testcontainers раскрывает live-PG
-          # адаптер. Первый прогон 17.11 — порог по локальной цифре,
-          # поднять по факту зелёного (число — в notice-аннотации шага)
+          # парсер с тестами; live-PG адаптер раскрыт CI — 52.5 в
+          # run 401, порог поднят 21.11 с локальных 35
           - name: barman
             dir: barman-service
-            threshold: 35
+            threshold: 52
           # Детектив (этап 36, антифрод): домен 100%, память/витрина/gRPC
-          # под тестами; локально без PG 29.8 — CI с testcontainers
-          # раскрывает live-PG адаптер решений (первый прогон 20.11 —
-          # порог по локальной цифре, поднять по факту зелёного)
+          # под тестами; live-PG адаптер решений раскрыт CI — 46.3 в
+          # run 401, порог поднят 21.11 с локальных 29
           - name: detective
             dir: detective-service
-            threshold: 29
+            threshold: 45
     defaults:
       run:
         working-directory: fullstackProject/services/${{ matrix.dir }}
