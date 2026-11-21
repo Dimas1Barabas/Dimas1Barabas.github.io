@@ -288,7 +288,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: fullstackProject/services/${{ matrix.dir }}/go.mod
           cache-dependency-path: fullstackProject/services/${{ matrix.dir }}/go.sum
@@ -299,7 +299,7 @@ jobs:
 
       # статический анализ шире go vet: errcheck/staticcheck/unused/ineffassign;
       # конфиг общий на все сервисы (fullstackProject/.golangci.yml, набор standard)
-      - uses: golangci/golangci-lint-action@v7
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.14.0  # как локально — замечания не расходятся с машиной;
           # v2.14 первый, собранный с go1.26 — модули с директивой 1.26
