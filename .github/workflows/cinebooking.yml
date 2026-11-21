@@ -229,27 +229,27 @@ jobs:
           # расти можно, падать нет (main/cmd и pb-генерат без тестов тянут
           # цифру вниз); пороги 51/39/39/43/43 подняты 30.09 по факту
           # live-PG прогона адаптеров на testcontainers (52.2/40.2/39.7/
-          # 44.2/44.1); 21.11 по факту зелёного run 401 подняты пять
-          # отставших — worker/flags/analytics/barman/detective
-          # (27.4/39.9/56.7/52.5/46.3)
+          # 44.2/44.1); 21.11 ревизия по run 401+402 (go-цифры совпали
+          # дважды): десять порогов = round(факт)-1, outbox-relay остался
+          # 19 (факт 20.3)
           - name: worker
             dir: ticket-worker
             threshold: 26
           - name: notification
             dir: notification-service
-            threshold: 51
+            threshold: 55
           - name: recommendation
             dir: recommendation-service
-            threshold: 39
+            threshold: 41
           - name: reminder
             dir: reminder-service
-            threshold: 39
+            threshold: 41
           - name: pricing
             dir: pricing-service
-            threshold: 43
+            threshold: 45
           - name: ratelimiter
             dir: ratelimiter-service
-            threshold: 43
+            threshold: 44
           # Суфлёр (этап флагов фич): локально без PG 26.7 (постгрес-адаптер
           # скипается); live-PG адаптер раскрыт CI — 39.9 в run 401,
           # порог поднят 21.11 с локальных 24
