@@ -98,6 +98,11 @@ services:
       # уходит на ILIKE-фолбэк — стенд не падает в обоих случаях
       MEILI_HOST: http://meilisearch:7700
       MEILI_API_KEY: ${MEILI_MASTER_KEY:-cine-meili-master-secret}
+      # Внешний кино-справочник (этап 37): метаданные афиши (рейтинг/год/
+      # трейлер/постер) с timeout/ретраями/breaker. Без переменной модуль
+      # спит: каталог без внешнего блока, синк 503; молчащий справочник —
+      # синк 502, каталог не задет
+      EXTERNAL_MOVIES_URL: http://kinoapi:8100
       # OpenTelemetry: OTLP/HTTP-эндпоинт Jaeger; без переменной
       # SDK не поднимается вовсе (CI-e2e без observability)
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
@@ -138,6 +143,8 @@ services:
       seaweedfs:
         condition: service_healthy
       meilisearch:
+        condition: service_healthy
+      kinoapi:
         condition: service_healthy
 
   worker:
@@ -453,6 +460,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 24
+
+  # Мок внешнего кино-справочника (этап 37): играет роль чужого HTTP-API,
+  # из которого афиша подтягивает метаданные. Один server.js без зависимостей:
+  # поиск по названию, PNG-постеры (zlib-энкодер), chaos-режимы (ok/slow/
+  # 500/429/off) и счётчики /__stats — e2e доказывает resilience-поведение
+  # API: ретраи, breaker, честную деградацию каталога. /health от chaos
+  # не зависит — healthcheck стенда остаётся зелёным
+  kinoapi:
+    build: ./mocks/kinoapi
+    ports:
+      - '18100:8100'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8100/health >/dev/null 2>&1 || exit 1']
+      interval: 5s
+      timeout: 3s
+      retries: 12
 
   web:
     build: ./apps/web
