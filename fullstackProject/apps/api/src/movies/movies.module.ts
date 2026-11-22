@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { EnrichmentModule } from '../enrichment/enrichment.module';
 import { PostersModule } from '../posters/posters.module';
 import { SearchModule } from '../search/search.module';
 import { Movie } from './movie.entity';
@@ -10,11 +11,13 @@ import { Session } from './session.entity';
 @Module({
   // PostersModule — постеры фильмов: GET-раздача с кэшем и админские
   // upload/delete живут в MoviesController (эндпоинты /movies/:id/poster);
-  // SearchModule — новый фильм уходит в индекс подсказок (этап 30)
+  // SearchModule — новый фильм уходит в индекс подсказок (этап 30);
+  // EnrichmentModule — decorate каталога внешним блоком (этап 37)
   imports: [
     TypeOrmModule.forFeature([Movie, Session]),
     PostersModule,
     SearchModule,
+    EnrichmentModule,
   ],
   controllers: [MoviesController],
   providers: [MoviesService],

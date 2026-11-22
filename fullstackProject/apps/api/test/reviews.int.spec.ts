@@ -16,6 +16,7 @@ import { Movie } from '../src/movies/movie.entity';
 import { MoviesController } from '../src/movies/movies.controller';
 import { SearchService } from '../src/search/search.service';
 import { MoviesService } from '../src/movies/movies.service';
+import { EnrichmentService } from '../src/enrichment/enrichment.service';
 import { PostersService } from '../src/posters/posters.service';
 import { RedisService } from '../src/redis/redis.service';
 import { REDIS_CLIENT } from '../src/redis/redis.tokens';
@@ -215,6 +216,12 @@ describe('Отзывы и рейтинги: HTTP-интеграция (фейк�
         // poster-эндпоинты MoviesController: спека отзывов их не зовёт —
         // пустышка, лишь бы DI собрал контроллер
         { provide: PostersService, useValue: {} },
+        // внешний блок каталога (этап 37): спека отзывов его не зовёт —
+        // decorate-тождество, лишь бы DI собрал контроллер
+        {
+          provide: EnrichmentService,
+          useValue: { decorate: async (x: unknown) => x },
+        },
         // поиск (этап 30): индексация после create/отзыва — мок
         {
           provide: SearchService,

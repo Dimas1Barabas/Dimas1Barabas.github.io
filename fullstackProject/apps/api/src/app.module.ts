@@ -23,6 +23,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { RedisModule } from './redis/redis.module';
 import { ReferralsModule } from './referrals/referrals.module';
 import { SearchModule } from './search/search.module';
+import { EnrichmentModule } from './enrichment/enrichment.module';
 import { UsersModule } from './users/users.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
 import { FlagsModule } from './flags/flags.module';
@@ -60,6 +61,9 @@ import { TwoFactorModule } from './twofactor/twofactor.module';
     ReviewsModule,
     // полнотекстовый поиск афиши: Meilisearch с ILIKE-фолбэком (этап 30)
     SearchModule,
+    // внешние метаданные афиши: кино-справочник с breaker'ом, decorate
+    // каталога и админский синк (этап 37); инжектится и в MoviesController
+    EnrichmentModule,
     // реферальная программа: код приглашения + статистика (этап 31)
     ReferralsModule,
     // кинобар: каталог с остатками и предзаказы к сеансу (этап 32)

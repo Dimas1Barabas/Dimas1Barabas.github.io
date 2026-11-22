@@ -21,6 +21,7 @@ import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsService } from '../src/bookings/bookings.service';
 import { SeatsController } from '../src/bookings/seats.controller';
 import { HealthController } from '../src/health/health.controller';
+import { EnrichmentService } from '../src/enrichment/enrichment.service';
 import { MoviesController } from '../src/movies/movies.controller';
 import { MoviesService } from '../src/movies/movies.service';
 import { PostersService } from '../src/posters/posters.service';
@@ -66,6 +67,12 @@ describe('Swagger UI /api/docs (integration)', () => {
         // POST/DELETE /movies/:id/poster в MoviesController инжектят
         // сервис постеров — спеке достаточно пустышки (маршруты не зовутся)
         { provide: PostersService, useValue: {} },
+        // внешний блок каталога (этап 37): decorate-тождество — DI
+        // собирает MoviesController, сами маршруты спека не зовёт
+        {
+          provide: EnrichmentService,
+          useValue: { decorate: async (x: unknown) => x },
+        },
         { provide: AdminStatsService, useValue: {} },
         { provide: BookingsService, useValue: {} },
         { provide: BookingStream, useValue: {} },

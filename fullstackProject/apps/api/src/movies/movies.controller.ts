@@ -35,6 +35,7 @@ import {
 import type { Request, Response } from 'express';
 import { Public } from '../auth/public.decorator';
 import { Roles } from '../auth/roles.decorator';
+import { EnrichmentService } from '../enrichment/enrichment.service';
 import { PostersService } from '../posters/posters.service';
 import { MovieDto } from './movie.entity';
 import { CreateMovieDto } from './dto/create-movie.dto';
@@ -53,6 +54,9 @@ export class MoviesController {
   constructor(
     private readonly movies: MoviesService,
     private readonly posters: PostersService,
+    // внешний блок каталога (этап 37): decorate поверх кэша Redis,
+    // строки нет — карточка как была (деградация, не сбой)
+    private readonly enrichment: EnrichmentService,
   ) {}
 
   /** витрина: каталог доступен без авторизации */
@@ -63,11 +67,13 @@ export class MoviesController {
     description:
       'Афиша, отсортированная по ближайшему будущему сеансу. Ответ-обёртка: ' +
       '`{ source: "cache" | "db", data: MovieDto[] }` — источник виден во ' +
-      'фронте бейджем «из кэша» (Redis, TTL 60 c).',
+      'фронте бейджем «из кэша» (Redis, TTL 60 c). Фильмы после синка со ' +
+      'внешним справочником несут опциональный блок `external` (этап 37).',
   })
   @ApiOkResponse({ description: 'Каталог с сеансами и рейтингами' })
-  findAll() {
-    return this.movies.findAll();
+  async findAll() {
+    const res = await this.movies.findAll();
+    return { ...res, data: await this.enrichment.decorate(res.data) };
   }
 
   @Public()
@@ -75,8 +81,9 @@ export class MoviesController {
   @ApiOperation({ summary: 'Фильм по id' })
   @ApiOkResponse({ type: MovieDto })
   @ApiNotFoundResponse({ description: 'Фильм не найден' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.movies.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    const dto = await this.movies.findOne(id);
+    return (await this.enrichment.decorate([dto]))[0];
   }
 
   /** новый сеанс — только администратору */

@@ -26,6 +26,8 @@ import { BookingsController } from '../src/bookings/bookings.controller';
 import { BookingStream } from '../src/bookings/booking-stream';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { BookingsService } from '../src/bookings/bookings.service';
+import { EnrichmentController } from '../src/enrichment/enrichment.controller';
+import { EnrichmentService } from '../src/enrichment/enrichment.service';
 import { GiftsService } from '../src/gifts/gifts.service';
 import { FeatureFlagGuard } from '../src/flags/feature-flag.guard';
 import { FlagsEvaluator } from '../src/flags/flags.evaluator';
@@ -159,6 +161,39 @@ export function postersServiceFake() {
       objects.delete(`posters/${movieId}`),
     ),
     objects,
+  };
+}
+
+/** фейк внешних метаданных (этап 37): Map строк вместо external_movies,
+ *  decorate/sync повторяют семантику настоящего сервиса — int-спеки
+ *  проверяют HTTP-контракт; живой SQL — live-int и e2e. exists — сверка
+ *  с фейковым каталогом, чтобы 404 несуществующего фильма работал как
+ *  в настоящем сервисе (до похода в справочник) */
+export function enrichmentFake(exists: (id: string) => boolean = () => true) {
+  const rows = new Map<
+    string,
+    { rating: number; year: number; syncedAt: string }
+  >();
+  return {
+    enabled: true,
+    rows,
+    decorate: jest.fn(
+      async <T extends { id: string }>(dtos: T[]) =>
+        dtos.map((d) =>
+          rows.has(d.id) ? { ...d, external: rows.get(d.id) } : d,
+        ),
+    ),
+    syncMovie: jest.fn(async (movieId: string) => {
+      if (!exists(movieId)) throw new NotFoundException('Фильм не найден');
+      const external = { rating: 8.3, year: 2025, syncedAt: new Date().toISOString() };
+      rows.set(movieId, external);
+      return { movieId, matched: true, external, posterSynced: false };
+    }),
+    status: jest.fn(async () => ({
+      enabled: true,
+      breaker: { state: 'closed', failures: 0 },
+      enrichedMovies: rows.size,
+    })),
   };
 }
 
@@ -393,6 +428,8 @@ export interface IntAppContext {
   detective: ReturnType<typeof detectiveFake>;
   /** постеры: in-memory бакет + моки upload/poster/remove */
   posters: ReturnType<typeof postersServiceFake>;
+  /** внешние метаданные: Map строк + моки decorate/sync/status */
+  enrichment: ReturnType<typeof enrichmentFake>;
   /** Authorization: владелец брони, чужак и администратор */
   bearer: string;
   bearerB: string;
@@ -423,6 +460,8 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
   const detective = detectiveFake();
   // постеры: in-memory бакет (S3 — уровень live-int/e2e)
   const posters = postersServiceFake();
+  // внешние метаданные: Map строк (справочник — live-int/e2e)
+  const enrichment = enrichmentFake((id) => moviesRepo.rows.some((m) => m.id === id));
   // outbox-записи create/pay: enqueueOutbox пишет через em-транзакцию
   const outboxRows: { routingKey: string; payload: object }[] = [];
 
@@ -547,6 +586,7 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
       BookingsController,
       SeatsController,
       HealthController,
+      EnrichmentController,
     ],
     providers: [
       MoviesService,
@@ -638,6 +678,9 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
         provide: SearchService,
         useValue: { indexMovie: jest.fn(async () => undefined) },
       },
+      // внешние метаданные (этап 37): decorate каталога и синк — фейк,
+      // живой справочник — уровень live-int/e2e
+      { provide: EnrichmentService, useValue: enrichment },
       // как в AppModule: все эндпоинты за JWT, витрина — @Public(),
       // следом RolesGuard сверяет @Roles(...) с ролью из токена
       { provide: APP_GUARD, useClass: JwtAuthGuard },
@@ -676,6 +719,7 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
     flagsEvaluator,
     detective,
     posters,
+    enrichment,
     bearer: `Bearer ${await sign('user-a', 'Анна Тест', 'user')}`,
     bearerB: `Bearer ${await sign('user-b', 'Борис Чужой', 'user')}`,
     bearerAdmin: `Bearer ${await sign('admin-1', 'Админ Тестов', 'admin')}`,

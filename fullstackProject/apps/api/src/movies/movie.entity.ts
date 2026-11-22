@@ -6,6 +6,7 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { ExternalMovieInfoDto } from '../enrichment/external-movie.entity';
 import { Session, SessionDto, toSessionDtos } from './session.entity';
 
 @Entity('movies')
@@ -84,6 +85,15 @@ export class MovieDto {
 
   @ApiProperty({ example: 128 })
   ratingCount!: number;
+
+  /** внешний блок (этап 37): появляется после синка со справочником;
+   *  нет строки external_movies — поля нет вовсе, витрина живёт как жила */
+  @ApiProperty({
+    type: ExternalMovieInfoDto,
+    required: false,
+    description: 'внешние метаданные (рейтинг/год/трейлер) — после синка',
+  })
+  external?: ExternalMovieInfoDto;
 
   /** отсортированы по startsAt */
   @ApiProperty({ type: [SessionDto] })
