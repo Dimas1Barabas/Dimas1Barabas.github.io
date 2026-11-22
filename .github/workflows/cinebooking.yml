@@ -376,12 +376,14 @@ jobs:
       # --build: образы api/воркера/Go-сервисов собираются из Dockerfile'ов
       # стенда; --wait: пока api не пройдёт healthcheck (миграции + брокер),
       # --wait-timeout: страховка от вечного ожидания
+      # kinoapi — мок внешнего кино-справочника (этап 37): e2e синкает
+      # метаданные и доказывает breaker через его chaos-ручки (:18100)
       - name: docker compose up --wait
         run: |
           docker compose up --build --wait --wait-timeout 300 -d \
             postgres redis rabbitmq \
             worker notification recommendation reminder pricing ratelimiter flags analytics \
-            outbox-relay meilisearch detective api
+            outbox-relay meilisearch detective kinoapi api
         working-directory: fullstackProject
 
       # страховка на случай, если --wait пропустил (healthcheck-флейк):

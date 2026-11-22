@@ -101,8 +101,11 @@ services:
       # Внешний кино-справочник (этап 37): метаданные афиши (рейтинг/год/
       # трейлер/постер) с timeout/ретраями/breaker. Без переменной модуль
       # спит: каталог без внешнего блока, синк 503; молчащий справочник —
-      # синк 502, каталог не задет
+      # синк 502, каталог не задет. Порог/кулдаун у стенда дешевле продовых
+      # дефолтов (5/30 c) — e2e-сценарий breaker'а ждёт кулдаун по-настоящему
       EXTERNAL_MOVIES_URL: http://kinoapi:8100
+      EXTERNAL_MOVIES_BREAKER_THRESHOLD: '3'
+      EXTERNAL_MOVIES_BREAKER_COOLDOWN_MS: '5000'
       # OpenTelemetry: OTLP/HTTP-эндпоинт Jaeger; без переменной
       # SDK не поднимается вовсе (CI-e2e без observability)
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
