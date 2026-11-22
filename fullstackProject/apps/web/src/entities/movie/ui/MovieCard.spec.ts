@@ -95,4 +95,61 @@ describe('MovieCard', () => {
     expect(wrapper.emitted('reviews')).toHaveLength(1);
     expect(wrapper.emitted('reviews')![0][0]).toEqual(movie);
   });
+
+  // ── внешний блок справочника (этап 37) ─────────────────────────────
+
+  const external = {
+    rating: 8.3,
+    votes: 120450,
+    year: 2025,
+    genres: ['фантастика'],
+    country: 'Россия',
+    director: 'А. Режиссёр',
+    actors: ['И. Актёр', 'Е. Актриса', 'Кто-то третий'],
+    ageRating: '16+',
+    trailerUrl: 'https://trailers.example/x',
+    syncedAt: '2026-11-22T10:00:00.000Z',
+  };
+
+  it('внешний блок: бейдж рейтинга, метаданные, команда и трейлер', () => {
+    const wrapper = mount(MovieCard, {
+      props: { movie: { ...movie, external } },
+    });
+
+    // бейдж на постере — рейтинг по шкале справочника
+    expect(wrapper.find('.movie-card__kp').text()).toContain('8.3');
+    // год · страна · возраст
+    expect(wrapper.find('.movie-card__external').text()).toContain('2025');
+    expect(wrapper.find('.movie-card__external').text()).toContain('Россия');
+    expect(wrapper.find('.movie-card__external').text()).toContain('16+');
+    // режиссёр и первые ДВА актёра (третьего режем)
+    expect(wrapper.find('.movie-card__external').text()).toContain('А. Режиссёр');
+    expect(wrapper.find('.movie-card__external').text()).toContain('И. Актёр');
+    expect(wrapper.find('.movie-card__external').text()).not.toContain(
+      'Кто-то третий',
+    );
+    // трейлер — внешняя ссылка в новой вкладе
+    const trailer = wrapper.find('a.movie-card__trailer');
+    expect(trailer.attributes('href')).toBe(external.trailerUrl);
+    expect(trailer.attributes('target')).toBe('_blank');
+    expect(trailer.attributes('rel')).toBe('noopener');
+  });
+
+  it('нет внешнего блока — карточка как была: без бейджа, меты и трейлера', () => {
+    const wrapper = mount(MovieCard, { props: { movie } });
+
+    expect(wrapper.find('.movie-card__kp').exists()).toBe(false);
+    expect(wrapper.find('.movie-card__external').exists()).toBe(false);
+    expect(wrapper.find('a.movie-card__trailer').exists()).toBe(false);
+  });
+
+  it('рейтинг 0 у справочника — бейдж не показываем (пустых звёзд не надо)', () => {
+    const wrapper = mount(MovieCard, {
+      props: { movie: { ...movie, external: { ...external, rating: 0 } } },
+    });
+
+    expect(wrapper.find('.movie-card__kp').exists()).toBe(false);
+    // но остальные внешние поля на месте
+    expect(wrapper.find('.movie-card__external').text()).toContain('2025');
+  });
 });

@@ -14,6 +14,7 @@ import type {
   CreateMoviePayload,
   CreatePromoPayload,
   CreateReviewPayload,
+  ExternalSyncResult,
   FlagVerdict,
   Gift,
   GiftsMy,
@@ -395,6 +396,21 @@ export const api = {
     request<void>(`/movies/${encodeURIComponent(movieId)}/poster`, {
       method: 'DELETE',
     }),
+  /** синк внешних метаданных фильма (админ, этап 37): справочник может
+   *  молчать (502 — ретраи/breaker) и не знать фильма (matched:false) */
+  syncExternalMovie: (movieId: string) =>
+    request<ExternalSyncResult>(
+      `/movies/${encodeURIComponent(movieId)}/external-sync`,
+      { method: 'POST' },
+      30_000, // ретраи с backoff могут занять секунды — не режем раньше API
+    ),
+  /** состояние модуля внешних метаданных (админ): гейт/цепь/счётчик */
+  enrichmentStatus: () =>
+    request<{
+      enabled: boolean;
+      breaker: { state: string; failures: number };
+      enrichedMovies: number | null;
+    }>('/admin/external-movies/status'),
   /** отзывы фильма — публичный список, свежие сверху */
   movieReviews: (movieId: string) =>
     request<Review[]>(`/movies/${movieId}/reviews`),

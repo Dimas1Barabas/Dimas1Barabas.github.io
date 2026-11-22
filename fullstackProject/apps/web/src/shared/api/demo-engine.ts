@@ -16,6 +16,7 @@ import type {
   CreateBookingPayload,
   CreatePromoPayload,
   CreateReviewPayload,
+  ExternalMovieInfo,
   FlagVerdict,
   Gift,
   GiftsMy,
@@ -369,10 +370,71 @@ function seedSignals(): RecSignal[] {
   ];
 }
 
+/**
+ * Внешние метаданные демо-афиши (этап 37): зеркало каталога мока kinoapi
+ * (mocks/kinoapi/server.js) — те же рейтинги/годы/трейлеры. Два фильма
+ * без блока: «Госпожа Кэш» (справочник не знает) и «Сорок девятый
+ * поток» (синк не гоняли) — деградация видна рядом с обогащением.
+ */
+const DEMO_EXTERNAL: Record<string, Omit<ExternalMovieInfo, 'syncedAt'>> = {
+  'demo-milky-way': {
+    rating: 8.3,
+    votes: 120450,
+    year: 2025,
+    genres: ['фантастика', 'драма'],
+    country: 'Россия',
+    director: 'А. Режиссёр',
+    actors: ['И. Актёр', 'Е. Актриса', 'Ю. Второйплан'],
+    ageRating: '16+',
+    trailerUrl: 'https://trailers.example/milky-way-nebula',
+  },
+  'demo-last-debug': {
+    rating: 7.1,
+    votes: 42100,
+    year: 2024,
+    genres: ['триллер', 'детектив'],
+    country: 'Россия',
+    director: 'Б. Постановщик',
+    actors: ['Д. Джуниор', 'С. Сеньор'],
+    ageRating: '12+',
+    trailerUrl: 'https://trailers.example/last-debug',
+  },
+  'demo-recursion': {
+    rating: 7.9,
+    votes: 65300,
+    year: 2025,
+    genres: ['хоррор', 'фантастика'],
+    country: 'Россия',
+    director: 'А. Режиссёр',
+    actors: ['Ф. Функция', 'Б. Базовыйслучай'],
+    ageRating: '18+',
+    trailerUrl: 'https://trailers.example/recursion',
+  },
+  'demo-old-repo': {
+    rating: 7.4,
+    votes: 15800,
+    year: 2022,
+    genres: ['приключения'],
+    country: 'Россия',
+    director: 'Г. Археологов',
+    actors: ['Л. Легаси', 'К. Коммитов'],
+    ageRating: '6+',
+    trailerUrl: 'https://trailers.example/old-repo-secret',
+  },
+};
+
+/** фиксированный момент синка — демо детерминирован, часы не участвуют */
+const DEMO_SYNCED_AT = '2026-11-22T10:00:00.000Z';
+
 const DEMO_MOVIES: Movie[] = DEMO_MOVIE_SEEDS.map((m) => ({
   ...m,
   ratingAvg: 0,
   ratingCount: 0,
+  // внешний блок (этап 37) — у части фильмов, как после неполного синка:
+  // витрина демо честно показывает ОБА состояния карточки (с блоком и без)
+  ...(DEMO_EXTERNAL[m.id]
+    ? { external: { ...DEMO_EXTERNAL[m.id], syncedAt: DEMO_SYNCED_AT } }
+    : {}),
 }));
 
 /** «текущий пользователь» демо: авторизации нет, все его отзывы — гостевые */

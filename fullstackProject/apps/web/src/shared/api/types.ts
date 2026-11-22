@@ -7,6 +7,33 @@ export interface MovieSession {
   startsAt: string;
 }
 
+/** внешний блок фильма (этап 37): появился — карточка синкнута
+ *  с кино-справочником; поля нет — витрина живёт как жила (деградация) */
+export interface ExternalMovieInfo {
+  /** рейтинг справочника по его шкале 0..10 */
+  rating: number;
+  votes: number;
+  year: number;
+  genres: string[];
+  country: string;
+  director: string;
+  actors: string[];
+  ageRating: string;
+  trailerUrl: string;
+  /** ISO-время последнего успешного синка */
+  syncedAt: string;
+}
+
+/** результат админского синка POST /movies/:id/external-sync */
+export interface ExternalSyncResult {
+  movieId: string;
+  matched: boolean;
+  reason?: 'not_found';
+  external?: ExternalMovieInfo;
+  /** постер перезалит в S3 этим синком (false — был свой/не скачался) */
+  posterSynced: boolean;
+}
+
 export interface Movie {
   id: string;
   title: string;
@@ -20,6 +47,8 @@ export interface Movie {
   /** средняя оценка отзывов (0 — отзывов ещё нет) */
   ratingAvg: number;
   ratingCount: number;
+  /** внешний блок — опционален: нет синка, нет поля */
+  external?: ExternalMovieInfo;
   /** расписание фильма, отсортировано по времени */
   sessions: MovieSession[];
 }

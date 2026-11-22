@@ -213,6 +213,72 @@ function bumpPoster(movieId: string): void {
   };
 }
 
+// ── Внешние метаданные (этап 37) ───────────────────────────────────
+// Синк с кино-справочником за POST /movies/:id/external-sync: рейтинг/
+// год/трейлер в карточки, постер — в S3, если своего нет. Результат
+// честный: matched:false — справочник фильма не знает, 502 — молчит
+// (ретраи исчерпаны или breaker открыт).
+
+const syncBusyId = ref<string | null>(null);
+const syncError = ref<string | null>(null);
+const syncSuccess = ref<string | null>(null);
+/** витрина состояния модуля: гейт/цепь/счётчик */
+const externalStatus = ref<{
+  enabled: boolean;
+  breaker: { state: string; failures: number };
+  enrichedMovies: number | null;
+} | null>(null);
+
+async function refreshExternalStatus(): Promise<void> {
+  try {
+    externalStatus.value = await api.enrichmentStatus();
+  } catch {
+    externalStatus.value = null; // модуль выключен или сеть — просто без витрины
+  }
+}
+
+// статус грузим, когда раздел стал виден (live+admin)
+watch(
+  allowed,
+  (ok) => {
+    if (ok) void refreshExternalStatus();
+  },
+  { immediate: true },
+);
+
+async function syncExternal(movie: Movie): Promise<void> {
+  if (syncBusyId.value) return;
+  syncBusyId.value = movie.id;
+  syncError.value = null;
+  syncSuccess.value = null;
+  try {
+    const res = await api.syncExternalMovie(movie.id);
+    if (res.matched) {
+      syncSuccess.value =
+        `«${movie.title}»: рейтинг ${res.external?.rating.toFixed(1)}` +
+        (res.posterSynced ? ', постер залит в S3' : '');
+    } else {
+      syncSuccess.value = `«${movie.title}»: справочник не знает фильма`;
+    }
+    // витрина подхватила внешний блок? каталог в сторе перезагрузим
+    await moviesStore.load();
+    bumpPoster(movie.id); // постер мог приехать из справочника
+    await refreshExternalStatus();
+  } catch (err) {
+    syncError.value = posterFailText(err, 'Синк не удался');
+    await refreshExternalStatus(); // 502 мог открыть breaker — покажем цепь
+  } finally {
+    syncBusyId.value = null;
+  }
+}
+
+/** подпись состояния фильма: внешний блок есть или нет */
+function externalLabel(movie: Movie): string {
+  return movie.external
+    ? `★ ${movie.external.rating.toFixed(1)} · ${movie.external.year}`
+    : 'нет данных';
+}
+
 async function submit(): Promise<void> {
   const filled = sessions.value.filter((s) => s.startsAt);
   if (submitting.value || !filled.length) return;
@@ -648,6 +714,55 @@ function fraudTimeOf(d: FraudDecision): string {
       </p>
     </section>
 
+    <!-- внешние метаданные афиши: синк с кино-справочником (этап 37) -->
+    <section v-if="allowed" class="admin-external">
+      <h2 class="admin-movies-title">Внешние метаданные</h2>
+
+      <p
+        v-if="externalStatus"
+        class="admin-note"
+      >
+        Справочник {{ externalStatus.enabled ? 'подключён' : 'выключен (нет EXTERNAL_MOVIES_URL)' }} ·
+        breaker: {{ externalStatus.breaker.state }} (неудач подряд:
+        {{ externalStatus.breaker.failures }}) · внешних блоков в афише:
+        {{ externalStatus.enrichedMovies ?? '—' }}
+      </p>
+
+      <ul v-if="moviesStore.movies.length" class="admin-external-list">
+        <li
+          v-for="m in moviesStore.movies"
+          :key="m.id"
+          class="admin-external-row"
+        >
+          <span class="admin-external-name" :title="m.title">{{ m.title }}</span>
+          <span
+            class="admin-external-state"
+            :class="{ 'admin-external-state--ok': m.external }"
+          >
+            {{ externalLabel(m) }}
+          </span>
+          <button
+            class="btn btn--ghost btn--sm"
+            type="button"
+            :disabled="syncBusyId !== null"
+            @click="syncExternal(m)"
+          >
+            {{ syncBusyId === m.id ? 'Синк…' : 'Синк' }}
+          </button>
+        </li>
+      </ul>
+
+      <p v-if="syncError" class="admin-error">{{ syncError }}</p>
+      <p v-if="syncSuccess" class="admin-success">{{ syncSuccess }}</p>
+
+      <p class="admin-note">
+        POST /api/movies/:id/external-sync — ищет фильм в справочнике по
+        названию: нашёл — рейтинг/год/трейлер в карточку и постер в S3,
+        если своего нет; не нашёл — «нет данных»; молчит — 502 с ретраями
+        и breaker'ом, витрина не страдает.
+      </p>
+    </section>
+
     <!-- антифрод: решения «Детектива» и рука человека (этап 36) -->
     <section v-if="fraudAllowed" class="admin-fraud">
       <div class="admin-promos__head">
@@ -868,6 +983,47 @@ function fraudTimeOf(d: FraudDecision): string {
 }
 
 /* ── Постеры (этап 29): мини-постер + управление ─────────────────── */
+
+/* ── Внешние метаданные (этап 37): строка на фильм + синк ─────────── */
+
+.admin-external {
+  margin-top: 8px;
+}
+
+.admin-external-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.admin-external-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.6fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.admin-external-name {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-external-state {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.admin-external-state--ok {
+  color: #ffd166;
+}
 
 .admin-posters {
   margin-top: 8px;

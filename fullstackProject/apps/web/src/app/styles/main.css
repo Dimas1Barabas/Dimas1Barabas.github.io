@@ -523,6 +523,45 @@ main.container {
   color: #fff;
 }
 
+/* внешний рейтинг справочника (этап 37): бейдж-звезда вверху постера */
+.movie-card__kp {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(15, 13, 10, 0.72);
+  color: #ffd166;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
+}
+
+/* внешние метаданные (этап 37): год · страна · возраст + команда */
+.movie-card__external {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.movie-card__external-meta {
+  color: var(--muted);
+}
+
+.movie-card__external-crew {
+  display: block;
+  color: var(--muted);
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.movie-card__trailer {
+  text-decoration: none;
+}
+
 .movie-card__body {
   display: flex;
   flex-direction: column;
