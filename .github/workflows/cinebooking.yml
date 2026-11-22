@@ -74,7 +74,7 @@ jobs:
       - run: npm run typecheck
 
       # юниты с покрытием: пороги в vitest.config.ts ниже текущего
-      # (89/79/84/90) — падать нельзя
+      # (88/78/84/89) — падать нельзя
       - run: npm run test:cov
 
       - run: npm run build
