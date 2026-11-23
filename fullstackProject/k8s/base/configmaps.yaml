@@ -45,6 +45,12 @@ data:
   # Полнотекстовый поиск (этап 30): Meilisearch в кластере; ключ
   # доступа — MEILI_API_KEY в секрете cine-secrets
   MEILI_HOST: http://meilisearch:7700
+  # Внешний кино-справочник (этап 37): как в compose — гейт модуля и
+  # дешевле продовых дефолтов (5/30 c), чтобы e2e breaker'а ждал
+  # кулдаун по-настоящему. Service kinoapi — см. kinoapi.yaml
+  EXTERNAL_MOVIES_URL: http://kinoapi:8100
+  EXTERNAL_MOVIES_BREAKER_THRESHOLD: '3'
+  EXTERNAL_MOVIES_BREAKER_COOLDOWN_MS: '5000'
 ---
 apiVersion: v1
 kind: ConfigMap

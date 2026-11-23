@@ -586,7 +586,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 8 образов стенда: тег kind-ci зашит в overlays/ci — kind-кластер
+      # 9 образов стенда: тег kind-ci зашит в overlays/ci — kind-кластер
       # эфемерный, иммутабельность тега не нужна; build идёт последовательно,
       # логи читаются сверху вниз
       - name: docker build (образы стенда)
@@ -600,6 +600,7 @@ jobs:
           docker build -t cine-booking-pricing:kind-ci ./services/pricing-service
           docker build -t cine-booking-ratelimiter:kind-ci ./services/ratelimiter-service
           docker build -t cine-booking-outbox-relay:kind-ci ./services/outbox-relay
+          docker build -t cine-booking-kinoapi:kind-ci ./mocks/kinoapi
         working-directory: fullstackProject
 
       # Инфра-образы стенда (PG/Redis/RabbitMQ) нода не должна тянуть
@@ -634,7 +635,7 @@ jobs:
               cine-booking-worker:kind-ci cine-booking-notification:kind-ci \
               cine-booking-recommendation:kind-ci cine-booking-reminder:kind-ci \
               cine-booking-pricing:kind-ci cine-booking-ratelimiter:kind-ci \
-              cine-booking-outbox-relay:kind-ci \
+              cine-booking-outbox-relay:kind-ci cine-booking-kinoapi:kind-ci \
               postgres:16-alpine redis:7-alpine rabbitmq:3.13-management-alpine \
               chrislusf/seaweedfs:4.53 getmeili/meilisearch:v1.56.2 \
               --name cine; then
@@ -730,7 +731,7 @@ jobs:
                           statefulset/seaweedfs \
                           deploy/ratelimiter deploy/pricing deploy/recommendation \
                           deploy/reminder deploy/notification deploy/outbox-relay \
-                          deploy/worker deploy/api deploy/api-canary deploy/web; do
+                          deploy/kinoapi deploy/worker deploy/api deploy/api-canary deploy/web; do
             echo "⏳ $resource"
             if kubectl -n cine-booking rollout status "$resource" --timeout=180s; then
               echo "| \`$resource\` | ok |" >> "$summary"
@@ -796,6 +797,23 @@ jobs:
       - run: npm ci
         working-directory: fullstackProject/apps/api
 
+      # kinoapi моку — транспорт наружу: кластерные Service'ы извне не
+      # адресуются, а chaos-ручки и /__stats спека зовёт с раннера
+      # (порт тот же 18100, что у compose-стенда — KINOAPI_URL из
+      # дефолта спеки менять не нужно). port-forward живёт до конца
+      # джобы, e2e-шаг ниже обращается на localhost:18100
+      - name: kinoapi port-forward (18100)
+        run: |
+          nohup kubectl -n cine-booking port-forward svc/kinoapi 18100:8100 \
+            >/tmp/kinoapi-pf.log 2>&1 &
+          for i in $(seq 1 20); do
+            if curl -fsS http://localhost:18100/health >/dev/null 2>&1; then
+              echo "kinoapi доступен через port-forward (проба $i)"; exit 0
+            fi
+            sleep 1
+          done
+          echo "port-forward не ожил за 20с"; cat /tmp/kinoapi-pf.log; exit 1
+
       # вывод дублируем в файл: при падении упавшие спеки уходят
       # error-аннотацией (публично видна), а не только в лог шага;
       # ●-блоки jest дают имя теста с дельтой ассерта — grep'аем их
@@ -828,6 +846,9 @@ jobs:
           # сверяет паритет stable/canary без примеси распределения
           E2E_STABLE_BASE_URL: http://localhost:30100/api
           E2E_CANARY_BASE_URL: http://localhost:30101/api
+          # мок-справочник через port-forward (шаг выше) — тот же порт,
+          # что и у compose-стенда
+          KINOAPI_URL: http://localhost:18100
 
       # ── Канареечный конвейер после зелёного e2e ─────────────────────
       # e2e выше гонял полный сьют по СМЕШАННОМУ трафику (90/10) — это

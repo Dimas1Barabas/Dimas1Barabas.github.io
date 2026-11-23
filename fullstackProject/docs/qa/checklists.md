@@ -397,4 +397,4 @@
 - [ ] стенд без EXTERNAL_MOVIES_URL (юнит-прогон/демо-Pages): синк 503 «модуль выключен», статус enabled:false, витрина без external — стенд жив
 - [ ] ✋ глазами: витрина :18100 (поиск `/v1/movies/search?title=Млечный`, постер-PNG, /__stats) и админка → «Внешние метаданные» (состояние на фильм, кнопка «Синк», breaker-витрина)
 - [ ] ✋ глазами на Pages-демке: 4 карточки из 6 с бейджем и трейлером, остальные — прежние; звёзды своих отзывов из 5 не слиплись со шкалой справочника
-- [ ] CI: api unit/int/live-int, enrichment.e2e (compose-стенд с kinoapi), playwright external-badge зелёные
+- [ ] CI: api unit/int/live-int, enrichment.e2e (compose-стенд и k8s-стенд с kinoapi — мок манифестом `k8s/base/kinoapi.yaml`, chaos-ручки через port-forward :18100), playwright external-badge зелёные

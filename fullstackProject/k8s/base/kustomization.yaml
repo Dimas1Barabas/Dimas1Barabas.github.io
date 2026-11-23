@@ -22,6 +22,7 @@ resources:
   - rabbitmq.yaml
   - seaweedfs.yaml
   - meilisearch.yaml
+  - kinoapi.yaml
   - api.yaml
   - worker.yaml
   - notification.yaml

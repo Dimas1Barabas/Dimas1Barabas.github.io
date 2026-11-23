@@ -1,0 +1,52 @@
+# Мок внешнего кино-справочника (этап 37): «чужой» HTTP-API, из которого
+# афиша тянет метаданные (рейтинг/год/трейлер/постер). Stateless, зависимостей
+# нет — как в compose-стенде, только Service вместо docker-DNS. e2e-спека
+# enrichment управляет chaos-режимами через port-forward раннера (:18100)
+apiVersion: v1
+kind: Service
+metadata:
+  name: kinoapi
+spec:
+  selector:
+    app: kinoapi
+  ports:
+    - name: http
+      port: 8100
+      targetPort: 8100
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kinoapi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kinoapi
+  template:
+    metadata:
+      labels:
+        app: kinoapi
+    spec:
+      containers:
+        - name: kinoapi
+          image: cine-booking-kinoapi
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8100
+          # /health не зависит от chaos-режима (ломаем только бизнес-ручки) —
+          # готовность мока остаётся честной картой живости
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8100
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
