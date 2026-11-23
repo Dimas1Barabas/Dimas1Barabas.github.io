@@ -12,6 +12,16 @@ jest.setTimeout(60_000);
 /** мок-справочник на хосте (compose публикует 18100) */
 const KINOAPI = process.env.KINOAPI_URL ?? 'http://localhost:18100';
 
+/**
+ * breaker-сценарий бьёт в ОДИН инстанс API: цепь живёт в процессе
+ * клиента, а k8s-стенд делит трафик шлюза между api и api-canary
+ * (веса 90/10) — три неудачных синка раскидываются по двум независимым
+ * цепям, ни одна не набирает порог (run 413: state closed). На k8s
+ * джоба даёт E2E_STABLE_BASE_URL (NodePort стабильной версии), в
+ * compose переменной нет — сценарий идёт по общему BASE.
+ */
+const STABLE = process.env.E2E_STABLE_BASE_URL ?? BASE;
+
 interface MovieDto {
   id: string;
   title: string;
@@ -33,11 +43,11 @@ async function kinoapiSearchHits(): Promise<number> {
   return stats.search;
 }
 
-/** POST синка от имени админа — статус и тело */
+/** POST синка от имени админа — статус и тело; в стабильный инстанс */
 async function syncAsAdmin(
   movieId: string,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  const res = await fetch(`${BASE}/movies/${movieId}/external-sync`, {
+  const res = await fetch(`${STABLE}/movies/${movieId}/external-sync`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${await adminToken()}` },
   });
@@ -48,11 +58,14 @@ async function syncAsAdmin(
  * GET статуса модуля от имени админа. Оба эндпоинта этапа — админские
  * (@Roles('admin')): статус-вызовы через api() с токеном e2e-юзера
  * ловили 403 (run 411 — падение «стенд знает справочник» ещё до синка).
+ * Читаем тот же стабильный инстанс, куда бьёт breaker-сценарий.
  */
 async function statusAsAdmin<T>(): Promise<T> {
-  return api<T>('/admin/external-movies/status', {
+  const res = await fetch(`${STABLE}/admin/external-movies/status`, {
     headers: { Authorization: `Bearer ${await adminToken()}` },
   });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return (await res.json()) as T;
 }
 
 describe('внешние метаданные афиши (e2e-стенд + kinoapi-мок)', () => {
