@@ -253,6 +253,24 @@ describe('ExternalMoviesClient.findByTitle', () => {
     expect(client.breaker.failureCount).toBe(1);
   });
 
+  it('сетевой отказ раскрывает cause: код ошибки виден в сообщении 502', async () => {
+    // undici заворачивает причину: TypeError «fetch failed» с cause
+    // { code: 'ECONNREFUSED' } — без разворота 502-тело и warn-лог не
+    // отличают «контейнер умер» от «имя не резолвится» (run 411)
+    const refused: FetchLike = () =>
+      Promise.reject(
+        new Error('fetch failed', {
+          cause: Object.assign(new Error('connect ECONNREFUSED 10.0.0.5:8100'), {
+            code: 'ECONNREFUSED',
+          }),
+        }),
+      );
+    const { client } = buildClient(refused, { retries: 0 });
+    await expect(client.findByTitle('Млечный Путь')).rejects.toThrow(
+      /fetch failed \(ECONNREFUSED\)/,
+    );
+  });
+
   it('breaker открыт — вызов отпихивается БЕЗ похода в сеть', async () => {
     const fetch = fakeFetch(async () => jsonRes({ items: [] }, 503));
     const { client } = buildClient(fetch.impl, { breakerThreshold: 2 });

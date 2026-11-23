@@ -63,6 +63,25 @@ export class ExternalMoviesUnavailableError extends Error {
 /** провайдер ответил, но не тем статусом, который мы умеем — не ретраить */
 class PermanentHttpError extends Error {}
 
+/**
+ * Сетевая ошибка одним сообщением: undici заворачивает причину в
+ * err.cause («fetch failed» без кода — ECONNREFUSED от ENOTFOUND не
+ * отличить, run 411: синк на compose-стенде отдавал 502 «fetch failed»
+ * без зацепки). Разворачиваем cause: код (ECONNREFUSED, ENOTFOUND…)
+ * или сообщение.
+ */
+export function describeNetworkError(err: unknown): string {
+  const base = err instanceof Error ? err.message : String(err);
+  const cause = (err as { cause?: unknown } | null | undefined)?.cause;
+  if (cause === undefined || cause === null) return base;
+  if (typeof cause === 'string') return `${base} (${cause})`;
+  if (cause instanceof Error) {
+    const code = (cause as NodeJS.ErrnoException).code;
+    return `${base} (${code ?? cause.message})`;
+  }
+  return base;
+}
+
 /** ретраебельные статусы: спросили слишком часто или у провайдера пятисотые */
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
@@ -312,7 +331,7 @@ export class ExternalMoviesClient {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new Error(`таймаут ${this.config.timeoutMs} мс`);
       }
-      throw new Error(err instanceof Error ? err.message : String(err));
+      throw new Error(describeNetworkError(err));
     } finally {
       clearTimeout(timer);
     }

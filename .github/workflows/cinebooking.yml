@@ -449,7 +449,27 @@ jobs:
             encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' | head -c 3500)
             echo "::error::title=meilisearch diagnose (compose-e2e)::$encoded"
           fi
-          docker compose logs --tail 300 api worker notification recommendation reminder pricing ratelimiter flags outbox-relay meilisearch
+          # kinoapi — подозреваемый №1 красных прогонов этапа 37 (run 411:
+          # синк отдавал 502 «fetch failed» без причины). Диагноз: жив ли
+          # контейнер, проба health ВНУТРИ api-контейнера (та же docker-сеть,
+          # тот же путь, что у клиента API), warn-строки поиска из логов API
+          # и хвост логов мока — аннотацией, анонимно видимой
+          if docker ps -a --format '{{.Names}}' | grep -q '^cine-booking-kinoapi-1$'; then
+            msg="$(
+              echo 'СТАТУС:'
+              docker ps -a --filter name=cine-booking-kinoapi-1 --format '{{.Status}}'
+              echo 'ПРОБА ИЗ api-КОНТЕЙНЕРА (0 = прошёл):'
+              docker exec cine-booking-api-1 sh -c \
+                'wget -T 3 -qO- http://kinoapi:8100/health >/dev/null 2>&1; echo "kinoapi:8100 из api: $?"; wget -T 3 -qO- http://127.0.0.1:8100/health >/dev/null 2>&1; echo "внутри мока 127.0.0.1: $?"' || true
+              echo 'WARN ЛОГИ ПОИСКА API (последние):'
+              docker compose logs --tail 300 api 2>/dev/null | grep -E 'поиск|справочник|enrichment|ExternalMovies' | tail -12 || true
+              echo 'ЛОГИ МОКА:'
+              docker compose logs --tail 20 kinoapi || true
+            )"
+            encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' | head -c 3500)
+            echo "::error::title=kinoapi diagnose (compose-e2e)::$encoded"
+          fi
+          docker compose logs --tail 300 api worker notification recommendation reminder pricing ratelimiter flags outbox-relay meilisearch kinoapi
         working-directory: fullstackProject
 
   # Хаос-уровень (этап 24): событийный контур стенда, но между клиентами
