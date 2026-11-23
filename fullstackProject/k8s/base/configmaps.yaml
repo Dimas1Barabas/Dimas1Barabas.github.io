@@ -47,8 +47,11 @@ data:
   MEILI_HOST: http://meilisearch:7700
   # Внешний кино-справочник (этап 37): как в compose — гейт модуля и
   # дешевле продовых дефолтов (5/30 c), чтобы e2e breaker'а ждал
-  # кулдаун по-настоящему. Service kinoapi — см. kinoapi.yaml
+  # кулдаун по-настоящему. Таймаут 10 c — запас на холодный первый
+  # коннект (run 412), клиент прогревает маршрут на буте.
+  # Service kinoapi — см. kinoapi.yaml
   EXTERNAL_MOVIES_URL: http://kinoapi:8100
+  EXTERNAL_MOVIES_TIMEOUT_MS: '10000'
   EXTERNAL_MOVIES_BREAKER_THRESHOLD: '3'
   EXTERNAL_MOVIES_BREAKER_COOLDOWN_MS: '5000'
 ---

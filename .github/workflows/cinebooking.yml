@@ -1017,6 +1017,9 @@ jobs:
       - uses: bufbuild/buf-setup-action@v1
         with:
           version: 1.73.0  # как локально, генерат и проверки не расходятся
+          # токен — не анонимные запросы: run 412 упал на rate limit
+          # GitHub API с IP раннера ещё до buf lint
+          github_token: ${{ github.token }}
 
       - run: buf lint
 

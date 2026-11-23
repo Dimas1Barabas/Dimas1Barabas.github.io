@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -44,7 +45,7 @@ export interface EnrichmentStatus {
  * чтения и отдаёт карточки как были.
  */
 @Injectable()
-export class EnrichmentService {
+export class EnrichmentService implements OnModuleInit {
   private readonly logger = new Logger(EnrichmentService.name);
 
   constructor(
@@ -57,6 +58,11 @@ export class EnrichmentService {
     @InjectRepository(Movie) private readonly movies: Repository<Movie>,
     private readonly posters: PostersService,
   ) {}
+
+  /** прогрев коннекта к справочнику до первого синка (см. клиент.warmup) */
+  onModuleInit(): void {
+    this.client?.warmup();
+  }
 
   /** настроен ли справочник (нет EXTERNAL_MOVIES_URL — модуль спит) */
   get enabled(): boolean {

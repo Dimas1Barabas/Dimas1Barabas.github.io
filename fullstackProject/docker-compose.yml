@@ -104,6 +104,11 @@ services:
       # синк 502, каталог не задет. Порог/кулдаун у стенда дешевле продовых
       # дефолтов (5/30 c) — e2e-сценарий breaker'а ждёт кулдаун по-настоящему
       EXTERNAL_MOVIES_URL: http://kinoapi:8100
+      # холодный первый коннект к новому origin на CI-стенде не всегда
+      # укладывается в продовый дефолт 3 c (run 412: три попытки синка
+      # по «таймаут 3000 мс» при живом моке) — стенду даём запас,
+      # плюс клиент прогревает коннект на буте
+      EXTERNAL_MOVIES_TIMEOUT_MS: '10000'
       EXTERNAL_MOVIES_BREAKER_THRESHOLD: '3'
       EXTERNAL_MOVIES_BREAKER_COOLDOWN_MS: '5000'
       # OpenTelemetry: OTLP/HTTP-эндпоинт Jaeger; без переменной

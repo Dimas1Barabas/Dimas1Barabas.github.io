@@ -271,6 +271,20 @@ describe('ExternalMoviesClient.findByTitle', () => {
     );
   });
 
+  it('warmup ходит в сеть один раз и глотает любую неудачу', async () => {
+    // прогрев на буте: пустой поиск вхолостую, ошибки не всплывают
+    // (недоступный на старте справочник — не событие), бут не ждёт
+    let calls = 0;
+    const failing: FetchLike = () => {
+      calls += 1;
+      return Promise.reject(new Error('fetch failed'));
+    };
+    const { client } = buildClient(failing, { retries: 0 });
+    expect(() => client.warmup()).not.toThrow();
+    await new Promise((r) => setImmediate(r));
+    expect(calls).toBe(1);
+  });
+
   it('breaker открыт — вызов отпихивается БЕЗ похода в сеть', async () => {
     const fetch = fakeFetch(async () => jsonRes({ items: [] }, 503));
     const { client } = buildClient(fetch.impl, { breakerThreshold: 2 });
