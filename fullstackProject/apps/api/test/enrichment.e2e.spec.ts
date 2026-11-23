@@ -44,6 +44,17 @@ async function syncAsAdmin(
   return { status: res.status, body: (await res.json()) as Record<string, unknown> };
 }
 
+/**
+ * GET статуса модуля от имени админа. Оба эндпоинта этапа — админские
+ * (@Roles('admin')): статус-вызовы через api() с токеном e2e-юзера
+ * ловили 403 (run 411 — падение «стенд знает справочник» ещё до синка).
+ */
+async function statusAsAdmin<T>(): Promise<T> {
+  return api<T>('/admin/external-movies/status', {
+    headers: { Authorization: `Bearer ${await adminToken()}` },
+  });
+}
+
 describe('внешние метаданные афиши (e2e-стенд + kinoapi-мок)', () => {
   let milkyId: string;
 
@@ -57,10 +68,10 @@ describe('внешние метаданные афиши (e2e-стенд + kinoa
 
   it('стенд знает справочник: статус включён, breaker закрыт', async () => {
     if (!available) return;
-    const status = await api<{
+    const status = await statusAsAdmin<{
       enabled: boolean;
       breaker: { state: string };
-    }>('/admin/external-movies/status');
+    }>();
     expect(status.enabled).toBe(true);
     expect(status.breaker.state).toBe('closed');
   });
@@ -126,9 +137,9 @@ describe('внешние метаданные афиши (e2e-стенд + kinoa
       expect(res.status).toBe(502);
     }
 
-    const openStatus = await api<{
+    const openStatus = await statusAsAdmin<{
       breaker: { state: string; failures: number };
-    }>('/admin/external-movies/status');
+    }>();
     expect(openStatus.breaker.state).toBe('open');
 
     // открытая цепь: 502 мгновенно и БЕЗ походов к справочнику
@@ -149,9 +160,9 @@ describe('внешние метаданные афиши (e2e-стенд + kinoa
     expect(healed.status).toBe(200);
     expect(healed.body).toMatchObject({ matched: true });
 
-    const closedStatus = await api<{
+    const closedStatus = await statusAsAdmin<{
       breaker: { state: string };
-    }>('/admin/external-movies/status');
+    }>();
     expect(closedStatus.breaker.state).toBe('closed');
   });
 
