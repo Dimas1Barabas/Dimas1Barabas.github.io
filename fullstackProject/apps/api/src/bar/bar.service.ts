@@ -27,7 +27,8 @@ import {
   BarOrderCreatedEvent,
   BarOrderStatusEvent,
 } from './bar-events';
-import { BarOutOfStockError, barTotal, statusRank, validateBarOrder } from './bar.logic';
+import { BarOutOfStockError, barDiscountRub, barTotal, statusRank, validateBarOrder } from './bar.logic';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 import { CreateBarOrderDto } from './dto/create-bar-order.dto';
 
 /** строка UPDATE … RETURNING атомарного списания */
@@ -49,6 +50,8 @@ export class BarService implements OnModuleInit {
     private readonly orderItems: Repository<BarOrderItem>,
     private readonly dataSource: DataSource,
     private readonly outboxRelay: OutboxRelayClient,
+    // скидка уровня «Киноман» (этап 38) на итог заказа
+    private readonly loyalty: LoyaltyService,
   ) {}
 
   /** посев каталога в пустую таблицу (миграции создают схему раньше) */
@@ -130,12 +133,27 @@ export class BarService implements OnModuleInit {
           });
         }
 
+        // скидка уровня «Киноман» (этап 38): снимок перка на момент
+        // оформления. Сбой чтения трат не отменяет заказ — деградация
+        // в 0%, как tier 0 у квота при создании брони
+        const discountPercent = await this.loyalty
+          .barDiscountPercent(customer.id)
+          .catch((err: unknown) => {
+            this.logger.warn(
+              `уровень ${customer.id} не прочитан — заказ бара без скидки: ${String(err)}`,
+            );
+            return 0;
+          });
+        const gross = barTotal(positions);
+        const totalRub = gross - barDiscountRub(gross, discountPercent);
+
         const order = em.create(BarOrder, {
           id: randomUUID(), // нужен до сохранения — на него ссылаются позиции
           userId: customer.id,
           sessionId: session?.id ?? null,
           status: 'NEW',
-          totalRub: barTotal(positions),
+          totalRub,
+          loyaltyDiscountPercent: discountPercent,
         });
         const saved = await em.save(BarOrder, order);
         // relation для DTO (hall/sessionAt) — сеанс уже проверен выше
@@ -166,6 +184,7 @@ export class BarService implements OnModuleInit {
             qty,
           })),
           totalRub: saved.totalRub,
+          loyaltyDiscountPercent: saved.loyaltyDiscountPercent,
           createdAt: saved.createdAt.toISOString(),
         };
         await enqueueOutbox(em, 'bar.order.created', event);

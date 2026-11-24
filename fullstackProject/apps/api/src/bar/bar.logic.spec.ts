@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+  barDiscountRub,
   barTotal,
   BarOutOfStockError,
   MAX_QTY_PER_ITEM,
@@ -49,6 +50,30 @@ describe('barTotal', () => {
 
   it('пустой состав — 0', () => {
     expect(barTotal([])).toBe(0);
+  });
+});
+
+describe('barDiscountRub', () => {
+  it('скидка уровня — floor до целого рубля: 10% от 860 = 86', () => {
+    expect(barDiscountRub(860, 10)).toBe(86);
+  });
+
+  it('дробная скидка не чеканит копейки: 5% от 890 = 44,5 → 44', () => {
+    expect(barDiscountRub(890, 5)).toBe(44);
+  });
+
+  it('Новичок (0%) и мусорный минус — без пересчёта', () => {
+    expect(barDiscountRub(860, 0)).toBe(0);
+    expect(barDiscountRub(860, -5)).toBe(0);
+  });
+
+  it('сумма позиций минус скидка = итог к оплате (аудит заказа)', () => {
+    const positions = [
+      { priceRub: 320, qty: 2 },
+      { priceRub: 220, qty: 1 },
+    ];
+    const gross = barTotal(positions);
+    expect(gross - barDiscountRub(gross, 15)).toBe(731); // 860 − 129
   });
 });
 

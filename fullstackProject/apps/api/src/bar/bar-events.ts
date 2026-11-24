@@ -18,7 +18,10 @@ export interface BarOrderCreatedEvent {
   sessionAt: string | null;
   hall: string | null;
   items: { itemId: string; name: string; priceRub: number; qty: number }[];
+  /** итог к оплате — уже за вычетом скидки уровня «Киноман» (этап 38) */
   totalRub: number;
+  /** применённая скидка уровня, % (0 — Новичок); экрану бара для ценника */
+  loyaltyDiscountPercent: number;
   createdAt: string;
 }
 

@@ -74,6 +74,10 @@ export class BarOrder {
   @Column({ name: 'total_rub' })
   totalRub: number;
 
+  /** снимок скидки уровня «Киноман» на момент оформления, % (0 — Новичок) */
+  @Column({ name: 'loyalty_discount_percent', default: 0 })
+  loyaltyDiscountPercent: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
@@ -171,8 +175,16 @@ export class BarOrderDto {
   })
   sessionAt!: string | null;
 
-  @ApiProperty({ example: 1180, description: 'сумма позиций, ₽' })
+  @ApiProperty({ example: 1180, description: 'итог к оплате, ₽' })
   totalRub!: number;
+
+  @ApiProperty({
+    example: 10,
+    description:
+      'скидка уровня «Киноман», применённая при оформлении, % ' +
+      '(0 — Новичок); barTotal(items) − скидка = totalRub',
+  })
+  loyaltyDiscountPercent!: number;
 
   @ApiProperty({ type: [BarOrderItemDto] })
   items!: BarOrderItemDto[];
@@ -192,6 +204,7 @@ export function toBarOrderDto(
     hall: order.session?.hall ?? null,
     sessionAt: order.session?.startsAt?.toISOString() ?? null,
     totalRub: order.totalRub,
+    loyaltyDiscountPercent: order.loyaltyDiscountPercent ?? 0,
     items: items.map((i) => ({
       itemId: i.itemId,
       name: i.name,

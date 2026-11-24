@@ -15,6 +15,7 @@ import { BarItem } from '../src/bar/bar-item.entity';
 import { BarOrder, BarOrderItem } from '../src/bar/bar-order.entity';
 import { BarController } from '../src/bar/bar.controller';
 import { BarService } from '../src/bar/bar.service';
+import { LoyaltyService } from '../src/loyalty/loyalty.service';
 import { OutboxMessage } from '../src/outbox/outbox-message.entity';
 import { OutboxRelayClient } from '../src/outbox/outbox-relay.client';
 import { Session } from '../src/movies/session.entity';
@@ -134,6 +135,8 @@ describe('Кинобар: HTTP-интеграция каталога и зака
   let sessionId: string;
   let sessions: { [id: string]: Session };
   let users: { [id: string]: User };
+  /** скидка уровня «Киномана» юзера-а: кейсы переключают точечно */
+  let loyaltyPercent = 0;
 
   const line = (itemId: string, qty: number) => ({ itemId, qty });
 
@@ -236,6 +239,13 @@ describe('Кинобар: HTTP-интеграция каталога и зака
         { provide: getRepositoryToken(BarOrder), useValue: ordersRepo },
         { provide: getRepositoryToken(BarOrderItem), useValue: orderItemsRepo },
         { provide: OutboxRelayClient, useValue: { poke: jest.fn() } },
+        // уровень «Киномана» (этап 38): по умолчанию Новичок — 0%
+        {
+          provide: LoyaltyService,
+          useValue: {
+            barDiscountPercent: jest.fn(async () => loyaltyPercent),
+          },
+        },
         {
           provide: DataSource,
           useValue: {
@@ -288,6 +298,7 @@ describe('Кинобар: HTTP-интеграция каталога и зака
     ordersRepo.rows = [];
     orderItemsRepo.rows = [];
     outboxRows.length = 0;
+    loyaltyPercent = 0;
   });
 
   it('витрина меню публична: активные позиции по порядку категорий, снятых нет', async () => {
@@ -338,6 +349,29 @@ describe('Кинобар: HTTP-интеграция каталога и зака
       email: 'anna@test.local',
       hall: 'IMAX',
       totalRub: 860,
+    });
+  });
+
+  it('Киноман (10%): итог со скидкой, процент — снимок в заказе и событии', async () => {
+    loyaltyPercent = 10;
+    const res = await request(app.getHttpServer())
+      .post('/api/bar/orders')
+      .set('Authorization', bearer)
+      .send({ items: [line(ITEM.popcorn, 2), line(ITEM.cola, 1)] }); // 860
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      totalRub: 774, // 860 − 10% (floor до рубля)
+      loyaltyDiscountPercent: 10,
+    });
+    // позиции — полные снимки цен: барTotal(items) − скидка = итог
+    expect(res.body.items).toEqual([
+      { itemId: ITEM.popcorn, name: 'Попкорн солёный', priceRub: 320, qty: 2 },
+      { itemId: ITEM.cola, name: 'Кола 0,5 л', priceRub: 220, qty: 1 },
+    ]);
+    // Бармену едет итог к оплате и применённый процент
+    expect(outboxRows[0].payload).toMatchObject({
+      totalRub: 774,
+      loyaltyDiscountPercent: 10,
     });
   });
 

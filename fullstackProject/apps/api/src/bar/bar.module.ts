@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { BarItem } from './bar-item.entity';
 import { BarOrder, BarOrderItem } from './bar-order.entity';
@@ -14,7 +15,11 @@ import { BarService } from './bar.service';
  * (консьюмер ниже), «письмо» о готовности шлёт notification-service.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([BarItem, BarOrder, BarOrderItem]), OutboxModule],
+  imports: [
+    TypeOrmModule.forFeature([BarItem, BarOrder, BarOrderItem]),
+    LoyaltyModule, // скидка уровня «Киноман» на итог заказа (этап 38)
+    OutboxModule,
+  ],
   controllers: [BarController],
   providers: [BarService, BarConsumer],
 })

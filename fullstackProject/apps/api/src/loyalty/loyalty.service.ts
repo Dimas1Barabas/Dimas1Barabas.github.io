@@ -113,6 +113,12 @@ export class LoyaltyService {
     return tierIndexForSpent(await this.lifetimeSpentRub(userId));
   }
 
+  /** скидка кинобара уровня пользователя, % — оформление заказа бара */
+  async barDiscountPercent(userId: string): Promise<number> {
+    return this.tierForSpent(await this.lifetimeSpentRub(userId))
+      .barDiscountPercent;
+  }
+
   /** личный кабинет: уровень, перки, прогресс до следующей ступени */
   async my(user: AuthUser, baseCashbackPercent: number): Promise<LoyaltyStatusDto> {
     const tiers = loyaltyTiers();

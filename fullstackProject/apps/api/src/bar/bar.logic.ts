@@ -55,6 +55,20 @@ export function barTotal(
   return positions.reduce((sum, p) => sum + p.priceRub * p.qty, 0);
 }
 
+/**
+ * Скидка уровня «Киноман» (этап 38) на заказ бара: floor до целого
+ * рубля — итог к оплате в целых, как и снимки цен. Процент ≤ 0 — без
+ * пересчёта (Новичок); лестница ограничена 15%, перебора не бывает.
+ * Позиции хранят полные снимки цен: barTotal(items) − скидка = total_rub.
+ */
+export function barDiscountRub(
+  totalRub: number,
+  discountPercent: number,
+): number {
+  if (discountPercent <= 0) return 0;
+  return Math.floor((totalRub * discountPercent) / 100);
+}
+
 /** нехватка остатка: имя и сколько осталось — для честного 409 */
 export class BarOutOfStockError extends Error {
   constructor(
