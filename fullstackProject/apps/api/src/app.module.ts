@@ -24,6 +24,7 @@ import { RedisModule } from './redis/redis.module';
 import { ReferralsModule } from './referrals/referrals.module';
 import { SearchModule } from './search/search.module';
 import { EnrichmentModule } from './enrichment/enrichment.module';
+import { LoyaltyModule } from './loyalty/loyalty.module';
 import { UsersModule } from './users/users.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
 import { FlagsModule } from './flags/flags.module';
@@ -66,6 +67,9 @@ import { TwoFactorModule } from './twofactor/twofactor.module';
     EnrichmentModule,
     // реферальная программа: код приглашения + статистика (этап 31)
     ReferralsModule,
+    // уровни лояльности «Киноман»: кэшбэк/бар/надбавки спроса по тратам
+    // (этап 38); сервис инжектится в вердиктный цикл, кинобар и чекаут
+    LoyaltyModule,
     // кинобар: каталог с остатками и предзаказы к сеансу (этап 32)
     BarModule,
     // гифт-сертификаты: подарочные карты, списание в оплате брони (этап 33)
