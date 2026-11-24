@@ -22,6 +22,7 @@ const (
 	KindWaitlistSeat    Kind = "waitlist_seat"
 	KindSessionReminder Kind = "session_reminder"
 	KindBarReady        Kind = "bar_ready"
+	KindLoyaltyLevelUp  Kind = "loyalty_level_up"
 )
 
 // DeliveryStatus — судьба отправки.
@@ -86,6 +87,8 @@ func NewFromOutcome(o Outcome, now time.Time) (Notification, error) {
 		kind, title = KindSessionReminder, "Скоро сеанс"
 	case "BAR_READY":
 		kind, title = KindBarReady, "Заказ в кинобаре готов"
+	case "LOYALTY_LEVEL_UP":
+		kind, title = KindLoyaltyLevelUp, "Новый уровень"
 	default:
 		return Notification{}, fmt.Errorf("%w: %q", ErrUnknownVerdict, o.Verdict)
 	}

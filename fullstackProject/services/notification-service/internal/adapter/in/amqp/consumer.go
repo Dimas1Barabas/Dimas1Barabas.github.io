@@ -28,6 +28,7 @@ const (
 	keyWaitlistSeat    = "user.waitlist.seat"    // NestJS API: «место освободилось»
 	keySessionReminder = "user.session.reminder" // reminder-сервис: «скоро сеанс»
 	keyBarReady        = "bar.order.ready"       // бармен-сервис: «заказ кинобара готов»
+	keyLoyaltyLevelUp  = "loyalty.level.up"      // NestJS API: «новый уровень Киномана»
 )
 
 const (
@@ -77,7 +78,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 		return fmt.Errorf("consume: %w", err)
 	}
 
-	logging.Infof(ctx, "notification слушает %s / booking.processed + booking.refunded + booking.expired + user.password.reset + user.waitlist.seat + user.session.reminder + bar.order.ready", queueName)
+	logging.Infof(ctx, "notification слушает %s / booking.processed + booking.refunded + booking.expired + user.password.reset + user.waitlist.seat + user.session.reminder + bar.order.ready + loyalty.level.up", queueName)
 
 	for {
 		select {
@@ -136,7 +137,7 @@ func (c *Consumer) declareTopology(ch *amqp091.Channel) error {
 		return fmt.Errorf("очередь %s.parking: %w", queueName, err)
 	}
 
-	for _, key := range []string{keyProcessed, keyRefunded, keyExpired, keyPasswordReset, keyWaitlistSeat, keySessionReminder, keyBarReady} {
+	for _, key := range []string{keyProcessed, keyRefunded, keyExpired, keyPasswordReset, keyWaitlistSeat, keySessionReminder, keyBarReady, keyLoyaltyLevelUp} {
 		if err := ch.QueueBind(queueName, key, exchange, false, nil); err != nil {
 			return fmt.Errorf("бинд %s на %s: %w", queueName, key, err)
 		}

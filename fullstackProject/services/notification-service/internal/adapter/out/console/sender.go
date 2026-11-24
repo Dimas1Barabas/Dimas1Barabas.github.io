@@ -39,6 +39,10 @@ func (s *Sender) Send(_ context.Context, n domain.Notification) error {
 		// напоминание о сеансе шлётся на email зрителя (в BookingID)
 		to = n.BookingID
 		ref = "напоминание о сеансе"
+	case domain.KindLoyaltyLevelUp:
+		// письмо о новом уровне — на email зрителя (в BookingID)
+		to = n.BookingID
+		ref = "уровень лояльности"
 	}
 	s.logger.Printf("╭─ ✉ email → %s\n│ тема: %s\n│ тело: %s\n╰─ %s · %s",
 		to, n.Title, n.Body, ref, n.CreatedAt.Format("15:04:05"))

@@ -68,6 +68,26 @@ func TestToOutcome(t *testing.T) {
 		}
 	})
 
+	t.Run("loyalty.level.up — адресат-email едет в BookingID", func(t *testing.T) {
+		o, err := toOutcome(delivery(keyLoyaltyLevelUp,
+			`{"email":"cinephile@example.com","message":"Новый уровень «Киноман»: кэшбэк 10%"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.Verdict != "LOYALTY_LEVEL_UP" || o.BookingID != "cinephile@example.com" {
+			t.Fatalf("outcome = %+v", o)
+		}
+		if o.Message != "Новый уровень «Киноман»: кэшбэк 10%" {
+			t.Fatalf("message = %q", o.Message)
+		}
+	})
+
+	t.Run("loyalty.level.up без email — ядовитое", func(t *testing.T) {
+		if _, err := toOutcome(delivery(keyLoyaltyLevelUp, `{"message":"уровень есть, адресата нет"}`)); err == nil {
+			t.Fatal("ожидали ошибку: письмо без адресата")
+		}
+	})
+
 	t.Run("waitlist.seat — адресат-email едет в BookingID", func(t *testing.T) {
 		o, err := toOutcome(delivery(keyWaitlistSeat,
 			`{"email":"boris@example.com","userId":"u-9","movieTitle":"Дюна","message":"успей забронировать"}`))

@@ -46,6 +46,14 @@ func toOutcome(d amqp091.Delivery) (domain.Outcome, error) {
 		o.Verdict = "WAITLIST_SEAT"
 		// тот же приём: адресат письма — email из BookingID
 		o.BookingID = p.Email
+	case keyLoyaltyLevelUp:
+		if p.Email == "" {
+			return domain.Outcome{}, fmt.Errorf("loyalty.level.up без адресата (email)")
+		}
+		o.Verdict = "LOYALTY_LEVEL_UP"
+		// адресат едет в BookingID (приём писем без брони), текст —
+		// уровень и перки — API собрал в message
+		o.BookingID = p.Email
 	case keySessionReminder:
 		if p.Email == "" {
 			return domain.Outcome{}, fmt.Errorf("session.reminder без адресата (email)")
