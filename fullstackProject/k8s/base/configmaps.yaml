@@ -25,6 +25,10 @@ data:
   PAYMENT_TIMEOUT_MS: '120000'
   # кэшбэк бонусной программы, % от оплаченной суммы
   BONUS_CASHBACK_PERCENT: '5'
+  # лестница «Киномана» (этап 38), как в compose: копеечные пороги
+  # вместо продовых 3000/10000/30000 — e2e поднимает уровень парой
+  # броней; мусор в значении — тихий кодовый дефолт
+  LOYALTY_TIERS_RUB: '100,300,900'
   # gRPC-адреса сервисов — имена Service кластера (см. выше)
   GRPC_RECOMMENDATION_URL: recommendation:8084
   GRPC_REMINDER_URL: reminder:8086
