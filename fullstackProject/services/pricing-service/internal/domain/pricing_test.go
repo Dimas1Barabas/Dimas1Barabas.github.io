@@ -176,3 +176,77 @@ func TestRound10(t *testing.T) {
 		}
 	}
 }
+
+func TestComputeQuoteLoyalty(t *testing.T) {
+	t.Run("Киноман: аншлаг не дорожает, раскладка объясняет", func(t *testing.T) {
+		// 87% занятости анонимно = demand_full +25% (500); уровень 2
+		// гасит надбавку — цена базовая, вместо надбавки фактор loyalty
+		q, err := ComputeQuoteLoyalty(at(2026, time.September, 22, 14), 400, 70, 80, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if q.PriceRub != 400 {
+			t.Fatalf("цена = %d, want 400 — надбавка аншлага погашена", q.PriceRub)
+		}
+		if len(q.Factors) != 1 || q.Factors[0].Code != "loyalty" || q.Factors[0].Percent != 0 {
+			t.Fatalf("факторы = %v, want [loyalty 0 процент]", q.Factors)
+		}
+	})
+
+	t.Run("Легенда: высокий спрос не дорожает, пустой зал дешевеет", func(t *testing.T) {
+		q, err := ComputeQuoteLoyalty(at(2026, time.September, 22, 14), 400, 45, 80, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if q.PriceRub != 400 || len(q.Factors) != 1 || q.Factors[0].Code != "loyalty" {
+			t.Fatalf("цена/факторы = %d/%v", q.PriceRub, q.Factors)
+		}
+		// отрицательный фактор уровня не трогает: скидка пустого зала действует
+		q2, err := ComputeQuoteLoyalty(at(2026, time.September, 22, 14), 400, 10, 80, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if q2.PriceRub != 360 || q2.Factors[0].Code != "demand_low" {
+			t.Fatalf("цена/факторы = %d/%v, want 360/[demand_low]", q2.PriceRub, q2.Factors)
+		}
+	})
+
+	t.Run("Зритель (tier 1) платит как все — перк только с Киномана", func(t *testing.T) {
+		q, err := ComputeQuoteLoyalty(at(2026, time.September, 22, 14), 400, 70, 80, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if q.PriceRub != 500 || len(q.Factors) != 1 || q.Factors[0].Code != "demand_full" {
+			t.Fatalf("цена/факторы = %d/%v, want 500/[demand_full]", q.PriceRub, q.Factors)
+		}
+	})
+
+	t.Run("время и выходные уровня не касаются", func(t *testing.T) {
+		// вечер субботы с аншлагом: с-level гасит только спрос
+		q, err := ComputeQuoteLoyalty(at(2026, time.September, 26, 19), 450, 80, 80, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := round10(450 * 1.2 * 1.1)
+		if q.PriceRub != want {
+			t.Fatalf("цена = %d, want %d (вечер+выходной без спроса)", q.PriceRub, want)
+		}
+		codes := make([]string, 0, len(q.Factors))
+		for _, f := range q.Factors {
+			codes = append(codes, f.Code)
+		}
+		if len(codes) != 3 || codes[2] != "loyalty" {
+			t.Fatalf("факторы = %v, want [evening weekend loyalty]", codes)
+		}
+	})
+
+	t.Run("ComputeQuote без уровня — прежняя анонимная цена", func(t *testing.T) {
+		q, err := ComputeQuote(at(2026, time.September, 22, 14), 400, 70, 80)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if q.PriceRub != 500 || q.Factors[0].Code != "demand_full" {
+			t.Fatalf("цена/факторы = %d/%v — анонимный витринный путь не изменился", q.PriceRub, q.Factors)
+		}
+	})
+}

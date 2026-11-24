@@ -62,6 +62,8 @@ const (
 	demandLowBelow  = 0.2 // меньше 20% — зал пустоват
 	demandHighAbove = 0.5 // больше половины — спрос высокий
 	demandFullAbove = 0.8 // больше 80% — аншлаг
+	// лояльность: с этого уровня надбавки спроса не действуют (этап 38)
+	LoyaltyDemandWaivedTier = 2 // Киноман и выше
 )
 
 // факторы времени суток: код, подпись, процент
@@ -104,8 +106,18 @@ func demandFactor(occupied, capacity int) (Factor, bool) {
 
 // ComputeQuote — цена места: база × факторы, округление кратно 10 ₽.
 // Чистая функция от входов: одинаковым входам — одинаковая цена,
-// зеркало на вебе (shared/lib/pricing) считает так же.
+// зеркало на вебе (shared/lib/pricing) считает так же (без уровня —
+// анонимная витринная цена).
 func ComputeQuote(sessionAt time.Time, basePriceRub, occupied, capacity int) (Quote, error) {
+	return ComputeQuoteLoyalty(sessionAt, basePriceRub, occupied, capacity, 0)
+}
+
+// ComputeQuoteLoyalty — цена места с уровнем «Киномана» (этап 38):
+// tier ≥ LoyaltyDemandWaivedTier гасит ПОЛОЖИТЕЛЬНЫЕ надбавки спроса
+// (аншлаг/высокий спрос), отрицательные (пустой зал) действует как
+// прежде. Раскладка честна: вместо сработавшей надбавки приходит
+// фактор loyalty с нулевым вкладом — видно, почему цена ниже витринной.
+func ComputeQuoteLoyalty(sessionAt time.Time, basePriceRub, occupied, capacity, loyaltyTier int) (Quote, error) {
 	if basePriceRub <= 0 || capacity <= 0 {
 		return Quote{}, ErrInvalidQuote
 	}
@@ -135,7 +147,14 @@ func ComputeQuote(sessionAt time.Time, basePriceRub, occupied, capacity int) (Qu
 	}
 	apply(timeFactor(local))
 	apply(weekdayFactor(local))
-	apply(demandFactor(occupied, capacity))
+	demand, ok := demandFactor(occupied, capacity)
+	if ok && loyaltyTier >= LoyaltyDemandWaivedTier && demand.Percent > 0 {
+		// перк уровня: наценка за спрос не действует, вклад нулевой —
+		// множитель не трогаем, в раскладке объясняем понижение
+		apply(Factor{"loyalty", "уровень Киномана: надбавка спроса не действует", 0}, true)
+	} else {
+		apply(demand, ok)
+	}
 	quote.PriceRub = round10(float64(basePriceRub) * multiplier)
 	return quote, nil
 }

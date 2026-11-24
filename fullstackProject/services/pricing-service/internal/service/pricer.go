@@ -22,11 +22,14 @@ func NewPricer(store domain.DemandStore) *Pricer {
 
 // QuoteRequest — вход квота: кто спрашивает знает расписание и зал,
 // спрос знает только Тарификатор (события брони — его вход).
+// LoyaltyTier — уровень «Киномана» спрашивающего (0..3, этап 38):
+// витрина спрашивает без уровня, создание брони — с уровнем юзера.
 type QuoteRequest struct {
 	SessionID    string
 	SessionAt    time.Time
 	BasePriceRub int
 	Capacity     int
+	LoyaltyTier  int
 }
 
 // Quote — цена места сеанса. Спрос unavailable (сбой хранилища) —
@@ -36,7 +39,7 @@ func (p *Pricer) Quote(ctx context.Context, req QuoteRequest) (domain.Quote, err
 	if err != nil {
 		return domain.Quote{}, err
 	}
-	quote, err := domain.ComputeQuote(req.SessionAt, req.BasePriceRub, occupied, req.Capacity)
+	quote, err := domain.ComputeQuoteLoyalty(req.SessionAt, req.BasePriceRub, occupied, req.Capacity, req.LoyaltyTier)
 	if err != nil {
 		return domain.Quote{}, err
 	}

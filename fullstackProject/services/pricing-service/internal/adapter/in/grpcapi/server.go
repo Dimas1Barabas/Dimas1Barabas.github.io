@@ -40,11 +40,21 @@ func (s *Server) Quote(ctx context.Context, req *pb.QuoteRequest) (*pb.QuoteResp
 		return nil, status.Error(codes.InvalidArgument, "sessionId обязателен")
 	}
 	startedAt := time.Now()
+	// уровень «Киномана» зажимаем в лестницу: мусор в поле (минус,
+	// перебор) не должен ни упасть, ни дать незаслуженный перк
+	loyaltyTier := int(req.GetLoyaltyTier())
+	if loyaltyTier < 0 {
+		loyaltyTier = 0
+	}
+	if loyaltyTier > 3 {
+		loyaltyTier = 3
+	}
 	quote, err := s.svc.Quote(ctx, service.QuoteRequest{
 		SessionID:    req.GetSessionId(),
 		SessionAt:    sessionAt,
 		BasePriceRub: int(req.GetBasePriceRub()),
 		Capacity:     int(req.GetCapacity()),
+		LoyaltyTier:  loyaltyTier,
 	})
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidQuote) {

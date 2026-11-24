@@ -27,11 +27,16 @@ const (
 )
 
 type QuoteRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`             // uuid сеанса — ключ проекции спроса
-	SessionAt     string                 `protobuf:"bytes,2,opt,name=session_at,json=sessionAt,proto3" json:"session_at,omitempty"`             // момент сеанса, RFC3339 (правила времени)
-	BasePriceRub  int32                  `protobuf:"varint,3,opt,name=base_price_rub,json=basePriceRub,proto3" json:"base_price_rub,omitempty"` // базовая цена фильма из афиши, ₽/место
-	Capacity      int32                  `protobuf:"varint,4,opt,name=capacity,proto3" json:"capacity,omitempty"`                               // ёмкость зала (геометрия общая, 8×10)
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	SessionId    string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`             // uuid сеанса — ключ проекции спроса
+	SessionAt    string                 `protobuf:"bytes,2,opt,name=session_at,json=sessionAt,proto3" json:"session_at,omitempty"`             // момент сеанса, RFC3339 (правила времени)
+	BasePriceRub int32                  `protobuf:"varint,3,opt,name=base_price_rub,json=basePriceRub,proto3" json:"base_price_rub,omitempty"` // базовая цена фильма из афиши, ₽/место
+	Capacity     int32                  `protobuf:"varint,4,opt,name=capacity,proto3" json:"capacity,omitempty"`                               // ёмкость зала (геометрия общая, 8×10)
+	// уровень «Киномана» спрашивающего (этап 38): 0 Новичок … 3 Легенда
+	// экрана. tier ≥ 2 (Киноман, Легенда) — положительные надбавки спроса
+	// (demand_high/demand_full) не действуют; витринные запросы идут
+	// без уровня (tier 0) — анонимная цена остаётся всеобщей
+	LoyaltyTier   int32 `protobuf:"varint,5,opt,name=loyalty_tier,json=loyaltyTier,proto3" json:"loyalty_tier,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -90,6 +95,13 @@ func (x *QuoteRequest) GetBasePriceRub() int32 {
 func (x *QuoteRequest) GetCapacity() int32 {
 	if x != nil {
 		return x.Capacity
+	}
+	return 0
+}
+
+func (x *QuoteRequest) GetLoyaltyTier() int32 {
+	if x != nil {
+		return x.LoyaltyTier
 	}
 	return 0
 }
@@ -235,14 +247,15 @@ var File_pricing_proto protoreflect.FileDescriptor
 
 const file_pricing_proto_rawDesc = "" +
 	"\n" +
-	"\rpricing.proto\x12\x0fcine.pricing.v1\"\x8e\x01\n" +
+	"\rpricing.proto\x12\x0fcine.pricing.v1\"\xb1\x01\n" +
 	"\fQuoteRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
 	"\n" +
 	"session_at\x18\x02 \x01(\tR\tsessionAt\x12$\n" +
 	"\x0ebase_price_rub\x18\x03 \x01(\x05R\fbasePriceRub\x12\x1a\n" +
-	"\bcapacity\x18\x04 \x01(\x05R\bcapacity\"Q\n" +
+	"\bcapacity\x18\x04 \x01(\x05R\bcapacity\x12!\n" +
+	"\floyalty_tier\x18\x05 \x01(\x05R\vloyaltyTier\"Q\n" +
 	"\vPriceFactor\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x18\n" +
