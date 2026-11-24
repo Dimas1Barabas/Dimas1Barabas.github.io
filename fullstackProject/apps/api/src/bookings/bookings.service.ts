@@ -18,6 +18,12 @@ import {
 } from '../bonus/bonus.logic';
 import { cashbackPercent } from '../bonus/cashback-percent';
 import {
+  cashbackBonusPercent,
+  loyaltyTiers,
+  tierIndexForSpent,
+} from '../loyalty/loyalty.levels';
+import { LOYALTY_SPENT_SQL, LoyaltyService } from '../loyalty/loyalty.service';
+import {
   referralBonusFriend,
   referralBonusInviter,
 } from '../referrals/referral-bonuses';
@@ -197,6 +203,8 @@ export class BookingsService {
     private readonly seatStream: SeatStream,
     private readonly reminders: RemindersClient,
     private readonly pricing: PricingClient,
+    // уровни «Киномана» (этап 38): tier в квот при создании брони
+    private readonly loyalty: LoyaltyService,
     // будильник Курьера: записи закоммичены — доставка без poll-типа
     private readonly outboxRelay: OutboxRelayClient,
     // конверсия эксперимента checkout.new_flow: успешный чекаут — то самое
@@ -265,6 +273,7 @@ export class BookingsService {
   private async quoteSession(
     session: Session,
     movie: Movie,
+    opts?: { loyaltyTier?: number },
   ): Promise<{ priceRub: number; factors: PriceFactorDto[]; dynamic: boolean }> {
     try {
       const res = await this.pricing.quote({
@@ -272,6 +281,7 @@ export class BookingsService {
         sessionAt: session.startsAt.toISOString(),
         basePriceRub: movie.priceRub,
         capacity: HALL_CAPACITY,
+        loyaltyTier: opts?.loyaltyTier ?? 0,
       });
       const priceRub = Number(res.priceRub ?? Number.NaN);
       if (!Number.isFinite(priceRub) || priceRub <= 0) {
@@ -345,14 +355,26 @@ export class BookingsService {
     const customerName = (dto.customerName ?? user.name).trim();
 
     // квот до транзакции: сетевой вызов не должен держать её открытой;
-    // в чек ложится цена момента брони, факт брони её фиксирует
+    // в чек ложится цена момента брони, факт брони её фиксирует.
+    // Уровень «Киномана» (этап 38) — та же деградация: сбой чтения
+    // трат не отменяет бронь, ценa уйдёт без перка (tier 0)
     const quoteSession = await this.sessions.findOneByOrFail({
       id: dto.sessionId,
     });
     const quoteMovie = await this.movies.findOneByOrFail({
       id: quoteSession.movieId,
     });
-    const quote = await this.quoteSession(quoteSession, quoteMovie);
+    const loyaltyTier = await this.loyalty
+      .tierIndexOfUser(user.id)
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `уровень ${user.id} не прочитан — квот без перка: ${String(err)}`,
+        );
+        return 0;
+      });
+    const quote = await this.quoteSession(quoteSession, quoteMovie, {
+      loyaltyTier,
+    });
 
     let booking: Booking;
     let movie: Movie;
@@ -1119,6 +1141,20 @@ export class BookingsService {
     };
   }
 
+  /**
+   * Траты пользователя для уровня «Киноман» — внутри вердиктной
+   * транзакции: бронь уже сохранена CONFIRMED, сумма включает её.
+   */
+  private async loyaltySpentRub(
+    em: EntityManager,
+    userId: string,
+  ): Promise<number> {
+    const rows = await em.query<{ spent: string | null }[]>(LOYALTY_SPENT_SQL, [
+      userId,
+    ]);
+    return Number(rows[0]?.spent ?? 0);
+  }
+
   /** Callback события booking.processed от Go-воркера */
   async handleProcessed(event: BookingProcessedEvent): Promise<void> {
     // вердикт и бонусный хвост — одной транзакцией: кэшбэк не может
@@ -1150,8 +1186,18 @@ export class BookingsService {
       // orIgnore — uq(booking_id, reason) гасит дубль при ределивери
       if (!booking.userId) return booking;
       if (event.status === 'CONFIRMED') {
-        // кэшбэк: процент от финальной суммы — после промокода и бонусов
-        const amount = cashbackFor(booking.totalRub, cashbackPercent());
+        // кэшбэк: процент от финальной суммы — после промокода и бонусов.
+        // Ставка = базовый env-процент + прибавка уровня «Киноман»
+        // (этап 38): уровень считается от трат, ВКЛЮЧАЯ эту оплату —
+        // покупка, перешагнувшая порог, сразу зарабатывает новую ставку
+        // (бронь уже CONFIRMED в этой транзакции — сумма честная)
+        const spent = await this.loyaltySpentRub(em, booking.userId);
+        const tierBefore = tierIndexForSpent(spent - booking.totalRub);
+        const tierAfter = tierIndexForSpent(spent);
+        const amount = cashbackFor(
+          booking.totalRub,
+          cashbackPercent() + cashbackBonusPercent(tierAfter),
+        );
         if (amount > 0) {
           await this.insertBonus(em, {
             userId: booking.userId,
@@ -1160,6 +1206,29 @@ export class BookingsService {
             reason: 'cashback',
             amount,
           });
+        }
+        // повышение уровня — письмо в той же транзакции, что и вердикт:
+        // «уровень поднялся, а письма нет» не бывает (доставит Курьер).
+        // Ределивери вердикта сюда не доходит (статус уже не PENDING)
+        if (tierAfter > tierBefore) {
+          const tiers = loyaltyTiers();
+          const [user] = await em.query<{ email: string }[]>(
+            'SELECT email FROM users WHERE id = $1',
+            [booking.userId],
+          );
+          await enqueueOutbox(em, 'loyalty.level.up', {
+            email: user?.email ?? '',
+            message:
+              `Новый уровень «${tiers[tierAfter].name}»: кэшбэк ` +
+              `${cashbackPercent() + tiers[tierAfter].cashbackBonusPercent}%, ` +
+              `скидка кинобара ${tiers[tierAfter].barDiscountPercent}%` +
+              (tiers[tierAfter].demandMarkupWaived
+                ? ', надбавки спроса больше не действуют'
+                : ''),
+          });
+          this.logger.log(
+            `уровень ${booking.userId}: «${tiers[tierBefore].name}» → «${tiers[tierAfter].name}» (траты ${spent} ₽)`,
+          );
         }
       }
 

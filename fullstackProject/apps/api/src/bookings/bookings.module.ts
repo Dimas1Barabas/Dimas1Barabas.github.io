@@ -8,6 +8,7 @@ import { FraudModule } from '../fraud/fraud.module';
 import { Promo } from '../promos/promo.entity';
 import { Session } from '../movies/session.entity';
 import { PricingClient } from '../pricing/pricing.client';
+import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { rabbitMqModule } from '../rabbit/rabbitmq.config';
 import { RatelimiterModule } from '../ratelimiter/ratelimiter.module';
 import { RemindersClient } from '../reminders/reminders.client';
@@ -53,6 +54,8 @@ import { SeatStream } from './seat-stream';
     FlagsModule,
     // FraudModule — скоринг чекаута у «Детектива» (gRPC-клиент общий)
     FraudModule,
+    // LoyaltyModule — уровень «Киномана» в квот при создании брони (этап 38)
+    LoyaltyModule,
     // OutboxModule — будильник Курьера после коммита outbox-записей
     OutboxModule,
     rabbitMqModule,

@@ -171,6 +171,8 @@ describe('BookingsService: создание брони и цена сеанса 
         sessionAt: sessionFixture.startsAt.toISOString(),
         basePriceRub: 400,
         capacity: 80,
+        // harness по умолчанию — Новичок: квот уходит с tier 0 (этап 38)
+        loyaltyTier: 0,
       });
       expect(result.totalRub).toBe(960); // 480 × 2
       // спрос Тарификатора: wait-событие несёт сеанс и число мест

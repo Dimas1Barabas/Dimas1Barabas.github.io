@@ -13,6 +13,7 @@ import { OutboxMessage } from '../outbox/outbox-message.entity';
 import { Movie } from '../movies/movie.entity';
 import { Promo } from '../promos/promo.entity';
 import { PricingClient } from '../pricing/pricing.client';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 import { RemindersClient } from '../reminders/reminders.client';
 import { DetectiveClient } from '../fraud/detective.client';
 import { FlagsEvaluator } from '../flags/flags.evaluator';
@@ -111,6 +112,11 @@ export interface BookingsHarness {
   reminders: { schedule: jest.Mock; cancel: jest.Mock };
   /** gRPC-клиент Тарификатора: по умолчанию отвечает базовой ценой */
   pricing: { quote: jest.Mock };
+  /** уровни «Киномана» (этап 38): по умолчанию Новичок (tier 0) —
+   *  кейсы кэшбэка/квот переключают мок точечно */
+  loyalty: { tierIndexOfUser: jest.Mock };
+  /** траты «Киномана» (этап 38) для вердиктного цикла: userId → ₽ */
+  loyaltySpent: Record<string, number>;
   /** gRPC-клиент «Детектива»: по умолчанию вердикт allow — спеки
    *  чекаута переключают на review/block точечно */
   detective: { score: jest.Mock; resolve: jest.Mock };
@@ -157,6 +163,8 @@ export interface BookingsHarness {
     id: string;
     referredBy: string | null;
     referralRewardedAt: Date | null;
+    /** адрес письма о новом уровне «Киномана» (этап 38) */
+    email?: string;
   }>;
 }
 
@@ -228,6 +236,11 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
       capacity: 80,
     })),
   };
+  // уровень «Киномана» по умолчанию Новичок: квот без перка, кэшбэк
+  // базовый (сумма трат в вердиктном цикле читается em-фейком: 0)
+  const loyalty: BookingsHarness['loyalty'] = {
+    tierIndexOfUser: jest.fn(async () => 0),
+  };
   // Детектив по умолчанию всё разрешает: скоринг не должен мешать
   // остальным кейсам чекаута; fraud-спеки переключают мок точечно
   const detective: BookingsHarness['detective'] = {
@@ -249,6 +262,10 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
   // сырой SQL по содержимому: баланс/строки ledger'а считаются от
   // фейковых bonusRows (SUM в pg — bigint, драйвер отдаёт строкой),
   // UPDATE … RETURNING промокода — кортеж [строки, число затронутых]
+  // траты «Киномана» по юзеру для вердиктного цикла (этап 38):
+  // спеки кэшбэка уровня наполняют перед handleProcessed
+  const loyaltySpent: Record<string, number> = {};
+
   const emQuery = jest.fn(async (sql: string, params: unknown[]) => {
     // срез истории для скоринга: пустая выборка → спокойный дефолт
     // (fraud-спеки наполняют точечно, остальным достаточно дефолта);
@@ -285,6 +302,20 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
       if (!friend) return [[], 0];
       friend.referralRewardedAt = new Date();
       return [[{ referred_by: friend.referredBy }], 1];
+    }
+    // траты уровня «Киноман»: SUM(total_rub) CONFIRMED-броней —
+    // loyalty-спеки наполняют карту, остальным достаточно нуля
+    if (/FROM bookings/.test(sql) && /'CONFIRMED'/.test(sql)) {
+      return [{ spent: String(loyaltySpent[params[0] as string] ?? 0) }];
+    }
+    // адрес письма о новом уровне: есть в usersRows или пусто
+    if (/SELECT email FROM users/.test(sql)) {
+      return [
+        {
+          email:
+            usersRows.find((r) => r.id === params[0])?.email ?? 'user@test.local',
+        },
+      ];
     }
     return [[], 0];
   });
@@ -381,6 +412,7 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
       { provide: getRepositoryToken(User), useValue: usersRepo },
       { provide: RemindersClient, useValue: reminders },
       { provide: PricingClient, useValue: pricing },
+      { provide: LoyaltyService, useValue: loyalty },
       { provide: DetectiveClient, useValue: detective },
       { provide: OutboxRelayClient, useValue: { poke: outboxPoke } },
       { provide: BookingStream, useValue: stream },
@@ -399,6 +431,8 @@ export async function buildBookingsHarness(): Promise<BookingsHarness> {
     promosRepo,
     waitlistRepo,
     usersRepo,
+    loyalty,
+    loyaltySpent,
     reminders,
     pricing,
     detective,
