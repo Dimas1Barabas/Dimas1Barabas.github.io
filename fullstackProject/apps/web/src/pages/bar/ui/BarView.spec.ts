@@ -5,6 +5,8 @@ import { nextTick } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { useAppStore } from '@/shared/api/app-mode';
 import { useBarStore } from '@/entities/bar/model/store';
+import { demoEngine } from '@/shared/api/demo-engine';
+import { firstFreeSeats, seatPriceOf, firstSession } from '@/shared/api/demo-spec-helpers';
 import BarView from '@/pages/bar/ui/BarView.vue';
 
 const router = createRouter({
@@ -34,11 +36,28 @@ async function flush(): Promise<void> {
 beforeEach(() => {
   localStorage.clear();
   vi.useFakeTimers();
+  demoEngine.reset();
 });
 
 afterEach(() => {
   vi.useRealTimers();
 });
+
+/** CONFIRMED-бронь на count мест — траты гостя переваливают порог Зрителя */
+async function confirmBigBooking(seatsCount: number): Promise<void> {
+  const spy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
+  const { session } = firstSession();
+  const seats = firstFreeSeats(demoEngine.seatMap(session.id), seatsCount);
+  const booking = demoEngine.create({
+    sessionId: session.id,
+    customerName: 'Тест',
+    seats,
+  });
+  demoEngine.pay(booking.id);
+  await vi.advanceTimersByTimeAsync(3000);
+  spy.mockRestore();
+  expect(seatPriceOf(session.id) * seatsCount).toBeGreaterThanOrEqual(3000);
+}
 
 describe('BarView: страница «Кинобар»', () => {
   it('демо: каталог по категориям, дефицит воды виден бейджем', async () => {
@@ -68,6 +87,9 @@ describe('BarView: страница «Кинобар»', () => {
 
     expect(wrapper.find('[data-testid="bar-qty-popcorn-salted"]').text()).toBe('2');
     expect(wrapper.find('[data-testid="bar-cart-total"]').text()).toBe('860 ₽');
+    // Новичок: скидки нет — строки про уровень и пересчёта не появляется
+    expect(wrapper.find('[data-testid="bar-cart-discount"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="bar-submit"]').text()).toContain('860 ₽');
 
     await wrapper.find('[data-testid="bar-submit"]').trigger('click');
     await flush();
@@ -120,5 +142,36 @@ describe('BarView: страница «Кинобар»', () => {
     expect(wrapper.text()).not.toContain('Корзина');
     expect(wrapper.text()).not.toContain('Мои заказы');
     vi.unstubAllGlobals();
+  });
+
+  it('скидка уровня Зрителя: корзина пересчитана floor, заказ с бейджем 5%', async () => {
+    await confirmBigBooking(8); // 0 → Зритель: бар −5%
+
+    const { wrapper, bar } = mountView('demo');
+    await router.isReady();
+    await flush();
+    await flush();
+
+    await wrapper.find('[data-testid="bar-inc-combo-family"]').trigger('click');
+    await wrapper.find('[data-testid="bar-inc-combo-family"]').trigger('click');
+
+    // gross 1780, скидка floor(1780 × 5%) = 89 → к оплате 1691
+    expect(wrapper.find('[data-testid="bar-cart-total"]').text()).toBe('1780 ₽');
+    const discount = wrapper.find('[data-testid="bar-cart-discount"]');
+    expect(discount.exists()).toBe(true);
+    expect(discount.text()).toContain('−5%');
+    expect(discount.text()).toContain('1691 ₽');
+    expect(wrapper.find('[data-testid="bar-submit"]').text()).toContain('1691 ₽');
+
+    await wrapper.find('[data-testid="bar-submit"]').trigger('click');
+    await flush();
+    await flush();
+
+    expect(bar.orders[0].loyaltyDiscountPercent).toBe(5);
+    expect(bar.orders[0].totalRub).toBe(1691);
+    expect(
+      wrapper.find(`[data-testid="bar-order-discount-${bar.orders[0].id}"]`).text(),
+    ).toContain('5%');
+    bar.stopWatching();
   });
 });

@@ -4,12 +4,14 @@ import { useAppStore } from '@/shared/api/app-mode';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
 import { useBarStore, BAR_STATUS_LABELS } from '@/entities/bar/model/store';
+import { useLoyaltyStore } from '@/entities/loyalty/model/store';
 import type { BarOrder, BarOrderStatus } from '@/shared/api/types';
 
 const appStore = useAppStore();
 const authStore = useAuthStore();
 const movies = useMoviesStore();
 const bar = useBarStore();
+const loyalty = useLoyaltyStore();
 
 /** каталог и «мои заказы» — всем; оформление в live — за сессией */
 const orderAllowed = computed(() => appStore.mode === 'demo' || authStore.isAuthed);
@@ -57,6 +59,20 @@ const sessionId = computed({
   },
 });
 
+/** скидка уровня «Киноман» на заказ бара (этап 38): 0 — Новичок/нет данных */
+const barDiscountPercent = computed(
+  () => loyalty.status?.perks.barDiscountPercent ?? 0,
+);
+
+/** итог к оплате: floor до рубля, как barDiscountRub в API; live итог
+ *  считает сервер на оформлении — витрина показывает ту же арифметику */
+const cartPayable = computed(() => {
+  const gross = bar.cartTotal;
+  const percent = barDiscountPercent.value;
+  if (percent <= 0) return gross;
+  return gross - Math.floor((gross * percent) / 100);
+});
+
 function qtyOf(itemId: string): number {
   return bar.cart[itemId] ?? 0;
 }
@@ -97,6 +113,7 @@ async function cancelOrder(id: string): Promise<void> {
 onMounted(() => {
   void bar.refreshMenu();
   void bar.refreshOrders();
+  void loyalty.refresh();
   if (movies.movies.length === 0) void movies.load();
   bar.ensureWatching();
 });
@@ -189,6 +206,14 @@ onUnmounted(() => {
           {{ line.item.name }} × {{ line.qty }} — {{ line.item.priceRub * line.qty }} ₽
         </li>
       </ul>
+      <p
+        v-if="barDiscountPercent > 0 && loyalty.status"
+        class="bar-cart__discount"
+        data-testid="bar-cart-discount"
+      >
+        Скидка уровня «{{ loyalty.status.name }}» −{{ barDiscountPercent }}% →
+        к оплате {{ cartPayable }} ₽
+      </p>
       <label class="bar-cart__session">
         Выдать к сеансу
         <select v-model="sessionId" data-testid="bar-session">
@@ -203,7 +228,7 @@ onUnmounted(() => {
         data-testid="bar-submit"
         @click="submitOrder"
       >
-        {{ bar.submitting ? 'Оформляем…' : `Оформить предзаказ — ${bar.cartTotal} ₽` }}
+        {{ bar.submitting ? 'Оформляем…' : `Оформить предзаказ — ${cartPayable} ₽` }}
       </button>
     </div>
 
@@ -229,6 +254,13 @@ onUnmounted(() => {
           <div class="bar-order__items">
             {{ order.items.map((i) => `${i.name}×${i.qty}`).join(', ') }} —
             {{ order.totalRub }} ₽
+            <span
+              v-if="order.loyaltyDiscountPercent > 0"
+              class="bar-order__discount"
+              :data-testid="`bar-order-discount-${order.id}`"
+            >
+              со скидкой уровня {{ order.loyaltyDiscountPercent }}%
+            </span>
           </div>
           <div class="bar-order__foot">
             <span class="bar-order__session">{{ sessionLabel(order) }}</span>
@@ -372,6 +404,12 @@ onUnmounted(() => {
   font-size: 0.9rem;
 }
 
+.bar-cart__discount {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #4ade80;
+}
+
 .bar-cart__session {
   display: grid;
   gap: 6px;
@@ -452,6 +490,16 @@ onUnmounted(() => {
 
 .bar-order__items {
   font-size: 0.9rem;
+}
+
+.bar-order__discount {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  white-space: nowrap;
+  background: rgba(74, 222, 128, 0.14);
+  color: #4ade80;
 }
 
 .bar-order__foot {
