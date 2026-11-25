@@ -21,6 +21,7 @@ import type {
   Gift,
   GiftsMy,
   LoginResult,
+  LoyaltyMy,
   Movie,
   SearchEnvelope,
   MovieSession,
@@ -146,6 +147,60 @@ const REFUND_MAX_MS = 1600;
 export const DEMO_PAYMENT_TIMEOUT_MS = 120_000;
 /** кэшбэк демо — как дефолт BONUS_CASHBACK_PERCENT у API */
 const DEMO_CASHBACK_PERCENT = 5;
+/**
+ * Лестница «Киномана» демо — зеркало loyalty.levels.ts API: продовые
+ * пороги и перки. Траты — CONFIRMED-брони гостя демо (userId null),
+ * сид-«другие зрители» не в счёте.
+ */
+const DEMO_LOYALTY_TIERS = [
+  {
+    code: 'newcomer',
+    name: 'Новичок',
+    minSpentRub: 0,
+    cashbackBonusPercent: 0,
+    barDiscountPercent: 0,
+    demandMarkupWaived: false,
+  },
+  {
+    code: 'viewer',
+    name: 'Зритель',
+    minSpentRub: 3000,
+    cashbackBonusPercent: 2,
+    barDiscountPercent: 5,
+    demandMarkupWaived: false,
+  },
+  {
+    code: 'cinephile',
+    name: 'Киноман',
+    minSpentRub: 10000,
+    cashbackBonusPercent: 5,
+    barDiscountPercent: 10,
+    demandMarkupWaived: true,
+  },
+  {
+    code: 'legend',
+    name: 'Легенда экрана',
+    minSpentRub: 30000,
+    cashbackBonusPercent: 10,
+    barDiscountPercent: 15,
+    demandMarkupWaived: true,
+  },
+] as const;
+
+/** ступень по тратам — ровно на пороге уже новый уровень (как в API) */
+function loyaltyTierOf(spentRub: number): (typeof DEMO_LOYALTY_TIERS)[number] {
+  let tier: (typeof DEMO_LOYALTY_TIERS)[number] = DEMO_LOYALTY_TIERS[0];
+  for (const step of DEMO_LOYALTY_TIERS) {
+    if (spentRub >= step.minSpentRub) tier = step;
+  }
+  return tier;
+}
+
+/** скидка уровня в рублях — floor до рубля, как barDiscountRub в API */
+function barDiscountRub(totalRub: number, discountPercent: number): number {
+  if (discountPercent <= 0) return 0;
+  return Math.floor((totalRub * discountPercent) / 100);
+}
 /** реферальное зеркало: системный код демо и размеры бонусов (как API) */
 const DEMO_REFERRAL_CODE = 'DEM0C0DE';
 const DEMO_REFERRAL_BONUS_INVITER = 300;
@@ -1945,8 +2000,15 @@ class DemoEngine {
       booking.processedBy = 'go-worker (демо)';
       booking.processedAt = new Date().toISOString();
       if (ok) {
-        // кэшбэк: процент от финальной суммы — как handleProcessed в API
-        const cashback = cashbackFor(booking.totalRub, DEMO_CASHBACK_PERCENT);
+        // кэшбэк: базовый процент + прибавка уровня «Киноман» — ставка
+        // считается от трат, ВКЛЮЧАЯ эту оплату (бронь уже CONFIRMED),
+        // покупка на пороге сразу зарабатывает новую ставку — как
+        // handleProcessed в API
+        const tier = loyaltyTierOf(this.loyaltySpentRub());
+        const cashback = cashbackFor(
+          booking.totalRub,
+          DEMO_CASHBACK_PERCENT + tier.cashbackBonusPercent,
+        );
         if (cashback > 0) {
           this.pushBonus({
             kind: 'accrual',
@@ -2240,6 +2302,44 @@ class DemoEngine {
     };
   }
 
+  /** пожизненные траты «Киномана» — CONFIRMED-брони гостя демо; возврат
+   *  понижает сумму сменой статуса, как LOYALTY_SPENT_SQL в API */
+  private loyaltySpentRub(): number {
+    return this.bookings
+      .filter((b) => b.userId === null && b.status === 'CONFIRMED')
+      .reduce((s, b) => s + b.totalRub, 0);
+  }
+
+  /** витрина уровня — зеркало LoyaltyService.my: перки и прогресс */
+  myLoyalty(): LoyaltyMy {
+    const spent = this.loyaltySpentRub();
+    const index = DEMO_LOYALTY_TIERS.indexOf(loyaltyTierOf(spent));
+    const tier = DEMO_LOYALTY_TIERS[index];
+    const next = DEMO_LOYALTY_TIERS[index + 1] ?? null;
+    const span = next ? next.minSpentRub - tier.minSpentRub : 0;
+    return {
+      code: tier.code,
+      name: tier.name,
+      lifetimeSpentRub: spent,
+      perks: {
+        cashbackPercent: DEMO_CASHBACK_PERCENT + tier.cashbackBonusPercent,
+        barDiscountPercent: tier.barDiscountPercent,
+        demandMarkupWaived: tier.demandMarkupWaived,
+      },
+      next: next
+        ? {
+            name: next.name,
+            toNextRub: next.minSpentRub - spent,
+            // floor, не round: 99,5% при нехватке 1 ₽ — не «100%»
+            progressPercent: Math.min(
+              100,
+              Math.max(0, Math.floor(((spent - tier.minSpentRub) / span) * 100)),
+            ),
+          }
+        : null,
+    };
+  }
+
   // ── Гифт-сертификаты: зеркала GiftsService в миниатюре ───────────────
 
   /** покупка: те же границы номинала и срок, что в API (400 при отказе) */
@@ -2433,13 +2533,18 @@ class DemoEngine {
       return { itemId: item.id, name: item.name, priceRub: item.priceRub, qty: line.qty };
     });
 
+    // скидка уровня «Киноман» — снимок перка на момент оформления,
+    // как BarService.create: позиции с полными ценами, итог за вычетом
+    const gross = items.reduce((s, i) => s + i.priceRub * i.qty, 0);
+    const discountPercent = loyaltyTierOf(this.loyaltySpentRub()).barDiscountPercent;
     const order: BarOrder = {
       id: `demo-bar-${++this.barSeq}`,
       status: 'NEW',
       sessionId,
       hall,
       sessionAt,
-      totalRub: items.reduce((s, i) => s + i.priceRub * i.qty, 0),
+      totalRub: gross - barDiscountRub(gross, discountPercent),
+      loyaltyDiscountPercent: discountPercent,
       items,
       createdAt: new Date().toISOString(),
     };

@@ -7,6 +7,7 @@ import type {
   BookingStats,
   BonusAccount,
   ReferralMy,
+  LoyaltyMy,
   ChangePasswordPayload,
   CheckoutPayload,
   CreateBarOrderPayload,
@@ -286,6 +287,8 @@ export const api = {
   myBonuses: () => request<BonusAccount>('/bonuses/my'),
   /** реферальный счёт: код приглашения + статистика приглашений */
   myReferrals: () => request<ReferralMy>('/referrals/my'),
+  /** уровень «Киномана»: перки и прогресс до следующей ступени */
+  myLoyalty: () => request<LoyaltyMy>('/loyalty/my'),
   /** купить гифт-сертификат (400 — номинал вне границ или не кратен 100) */
   buyGift: (nominalRub: number) =>
     request<Gift>('/gifts', {

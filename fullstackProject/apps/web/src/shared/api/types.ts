@@ -616,6 +616,28 @@ export interface ReferralMy {
   invited: ReferralInvited[];
 }
 
+/** перки уровня одним блоком — что получает зритель прямо сейчас */
+export interface LoyaltyPerks {
+  /** кэшбэк с этой покупки, %: базовый env-процент + прибавка уровня */
+  cashbackPercent: number;
+  /** скидка на заказ кинобара, % */
+  barDiscountPercent: number;
+  /** надбавки спроса (demand_high/full) не действуют — цена без наценки */
+  demandMarkupWaived: boolean;
+}
+
+/** уровень «Киномана» — GET /api/loyalty/my (этап 38): пожизненные траты
+ *  CONFIRMED-броней → Новичок → Зритель → Киноман → Легенда экрана */
+export interface LoyaltyMy {
+  /** slug: newcomer | viewer | cinephile | legend */
+  code: string;
+  name: string;
+  lifetimeSpentRub: number;
+  perks: LoyaltyPerks;
+  /** следующая ступень; null — уже вершина лестницы */
+  next: { name: string; toNextRub: number; progressPercent: number } | null;
+}
+
 /** жизненный цикл карты: ждёт активации → можно тратить → потрачена */
 export type GiftStatus = 'purchased' | 'active' | 'exhausted';
 
@@ -716,6 +738,9 @@ export interface BarOrder {
   hall: string | null;
   sessionAt: string | null;
   totalRub: number;
+  /** скидка уровня «Киноман», снимок на момент оформления, % (0 — Новичок);
+   *  позиции хранят полные цены: сумма позиций − скидка = totalRub */
+  loyaltyDiscountPercent: number;
   items: BarOrderItem[];
   createdAt: string;
 }
