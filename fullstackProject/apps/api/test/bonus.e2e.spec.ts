@@ -208,9 +208,19 @@ describe('бонусная программа', () => {
       throw new Error('воркер не подтвердил ни одну из 5 броней');
     }
 
-    // первая бронь копит кэшбэк: floor(total × 5%)
+    // первая бронь копит кэшбэк: ставка = базовый процент + прибавка
+    // уровня «Киноман» (этап 38). Стенду пороги копеечные (100/300/900) —
+    // первая же бронь переводит уровень, вердикт считал кэшбэк по tierAfter
+    // (траты, включая эту оплату). Витрина после вердикта видит тот же
+    // уровень — спрашиваем фактическую ставку у API, а не хардкодим 5%
     const first = await confirmedBooking();
-    const cashback = Math.floor(first.totalRub * 0.05);
+    const tierAfter = await as<{ perks: { cashbackPercent: number } }>(
+      jwt,
+      '/loyalty/my',
+    );
+    const cashback = Math.floor(
+      (first.totalRub * tierAfter.perks.cashbackPercent) / 100,
+    );
     expect(cashback).toBeGreaterThan(0);
     const afterFirst = await as<{ balance: number; transactions: { reason: string }[] }>(
       jwt,
@@ -247,9 +257,18 @@ describe('бонусная программа', () => {
 
     const final = await as<{ balance: number }>(jwt, '/bonuses/my');
     if (verdict2 === 'CONFIRMED') {
-      // кэшбэк с фактически оплаченной суммы
+      // кэшбэк с фактически оплаченной суммы; ставка — уровень от трат,
+      // включая вторую оплату (вторая бронь могла поднять уровень дальше)
+      const tierAfter2 = await as<{ perks: { cashbackPercent: number } }>(
+        jwt,
+        '/loyalty/my',
+      );
       expect(final.balance).toBe(
-        cashback - spend + Math.floor((second.totalRub - spend) * 0.05),
+        cashback -
+          spend +
+          Math.floor(
+            ((second.totalRub - spend) * tierAfter2.perks.cashbackPercent) / 100,
+          ),
       );
     } else {
       // FAILED или финализированная отменой вернули списанное на счёт
