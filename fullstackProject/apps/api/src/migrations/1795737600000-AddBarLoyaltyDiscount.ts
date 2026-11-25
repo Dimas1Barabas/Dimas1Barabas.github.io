@@ -7,7 +7,6 @@ import { MigrationInterface, QueryRunner } from "typeorm";
  * живёт в тратах броней (ledger), здесь — только факт применённого
  * перка; 0 — Новичок (до этапа 38 все заказы были «нулевыми»).
  */
- */
 export class AddBarLoyaltyDiscount1795737600000
   implements MigrationInterface
 {
