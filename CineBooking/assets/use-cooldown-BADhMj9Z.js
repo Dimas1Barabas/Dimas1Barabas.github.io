@@ -1,0 +1,1 @@
+import{K as e,et as t}from"./index-Cd6iCIGX.js";function n(){let n=t(0),r=null;function i(){r&&clearInterval(r),r=null}function a(e){i(),n.value=Math.max(1,Math.ceil(e)),r=setInterval(()=>{--n.value,n.value<=0&&(n.value=0,i())},1e3)}return e(i),{cooldownSec:n,startCooldown:a}}export{n as t};
