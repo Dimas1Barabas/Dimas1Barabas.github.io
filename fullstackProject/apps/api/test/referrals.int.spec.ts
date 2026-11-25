@@ -144,12 +144,17 @@ describe('Рефералы: HTTP-интеграция витрины «Приг�
       referredBy: 'host-1',
       referralCode: 'BBBBBBBB',
       referralRewardedAt: new Date(),
+      // витрина сортирует invited по createdAt DESC: Боб регистрировался
+      // позже Кэрол — он первый; явные времена, иначе одинаковые new Date()
+      // в beforeAll дают нестабильный порядок на границе миллисекунды
+      createdAt: new Date('2026-11-01T12:00:00Z'),
     });
     seedUser({
       email: 'carol@example.com',
       name: 'Кэрол',
       referredBy: 'host-1',
       referralCode: 'CCCCCCCC',
+      createdAt: new Date('2026-11-01T11:00:00Z'),
     });
     // чужой юзер — не должен попасть в витрину
     seedUser({ email: 'stranger@example.com', name: 'Чужак' });

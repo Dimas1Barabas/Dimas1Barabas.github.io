@@ -50,6 +50,7 @@ import { PricingClient } from '../src/pricing/pricing.client';
 import { DetectiveClient } from '../src/fraud/detective.client';
 import { RateLimiterClient } from '../src/ratelimiter/ratelimiter.client';
 import { RemindersClient } from '../src/reminders/reminders.client';
+import { LoyaltyService } from '../src/loyalty/loyalty.service';
 import { PostersService } from '../src/posters/posters.service';
 import { SearchService } from '../src/search/search.service';
 import { setupHelmet } from '../src/security/helmet';
@@ -625,6 +626,18 @@ export async function buildHttpIntApp(): Promise<IntAppContext> {
           spendInTx: jest.fn(),
           findByCode: jest.fn(async () => null),
           reverseForBooking: jest.fn(async () => undefined),
+        },
+      },
+      // уровни «Киномана» (этап 38): BookingsService инжектит
+      // LoyaltyService (квот берёт tier), Бар — перк скидки; int-стенд
+      // без модуля loyalty и без трат — все Новички: tier 0 / 0%.
+      // Лестница уровней — loyalty.levels.spec, живые запросы трат —
+      // bookings.live-int и bar.e2e
+      {
+        provide: LoyaltyService,
+        useValue: {
+          tierIndexOfUser: jest.fn(async () => 0),
+          barDiscountPercent: jest.fn(async () => 0),
         },
       },
       { provide: RateLimiterClient, useValue: { check: jest.fn(async () => ({ allowed: true })) } },

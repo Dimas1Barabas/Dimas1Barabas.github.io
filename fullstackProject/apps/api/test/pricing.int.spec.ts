@@ -13,6 +13,7 @@ import { FeatureFlagGuard } from '../src/flags/feature-flag.guard';
 import { FlagsEvaluator } from '../src/flags/flags.evaluator';
 import { BookingsService } from '../src/bookings/bookings.service';
 import { GiftsService } from '../src/gifts/gifts.service';
+import { LoyaltyService } from '../src/loyalty/loyalty.service';
 import { SessionPriceController } from '../src/bookings/session-price.controller';
 import { SeatStream } from '../src/bookings/seat-stream';
 import { SeatOccupancy } from '../src/bookings/seat-occupancy.entity';
@@ -135,6 +136,8 @@ describe('Pricing (integration)', () => {
         // GiftsService (этап 33): спек платит без giftCode — сервис не звать,
         // цикл траты/возврата гифта — gifts.int/gifts.e2e
         { provide: GiftsService, useValue: { spendInTx: jest.fn(), findByCode: jest.fn(async () => null), reverseForBooking: jest.fn(async () => undefined) } },
+        // LoyaltyService (этап 38): спек платит Новичком — tier 0 без перков
+        { provide: LoyaltyService, useValue: { tierIndexOfUser: jest.fn(async () => 0), barDiscountPercent: jest.fn(async () => 0) } },
         { provide: PricingClient, useValue: pricing },
         // Детектив (этап 36): чекауту хватает вердикта allow по умолчанию
         { provide: DetectiveClient, useValue: { score: jest.fn(async () => ({ verdict: 'allow', score: 0, reasons: [] })), resolve: jest.fn(async () => ({ resolved: true, status: 'approved' })) } },
