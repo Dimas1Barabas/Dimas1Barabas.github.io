@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { ApiError } from '@/shared/api/client';
 import { useAuthStore } from '@/entities/viewer/model/store';
 import TwoFactorSection from './TwoFactorSection.vue';
+import LoyaltySection from './LoyaltySection.vue';
 
 const authStore = useAuthStore();
 const allowed = computed(() => authStore.isAuthed);
@@ -179,6 +180,8 @@ async function changePassword(): Promise<void> {
           {{ changingPassword ? 'Меняем…' : 'Сменить пароль' }}
         </button>
       </form>
+      <LoyaltySection />
+
       <section class="profile-referral">
         <h2 class="profile-subtitle">Реферальная программа</h2>
         <p class="auth-note">
