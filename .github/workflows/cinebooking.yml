@@ -284,12 +284,11 @@ jobs:
             dir: detective-service
             threshold: 45
           # Почтальон (этап 39, вебхуки): домен/use-cases/память/витрина/
-          # HMAC-клиент под тестами; локально без PG 44.6, live-PG адаптер
-          # раскроет CI — порог стартует консервативно, поднимем по факту
-          # первого прогона (правило round(факт)-1)
+          # HMAC-клиент под тестами; live-PG адаптер раскрывает CI —
+          # факт run 429: 60.8, порог по правилу round(факт)-1
           - name: postman
             dir: postman-service
-            threshold: 40
+            threshold: 60
     defaults:
       run:
         working-directory: fullstackProject/services/${{ matrix.dir }}
