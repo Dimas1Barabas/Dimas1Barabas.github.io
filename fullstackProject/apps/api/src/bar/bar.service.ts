@@ -31,7 +31,8 @@ import { BarOutOfStockError, barDiscountRub, barTotal, statusRank, validateBarOr
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { CreateBarOrderDto } from './dto/create-bar-order.dto';
 
-/** строка UPDATE … RETURNING атомарного списания */
+/** строка UPDATE … RETURNING атомарного списания; сам запрос у
+ *  postgres-драйвера возвращает кортеж [строки, число затронутых] */
 type DecrementRow = { name: string; price_rub: number | string };
 
 /**
@@ -110,7 +111,12 @@ export class BarService implements OnModuleInit {
           qty: number;
         }[] = [];
         for (const line of dto.items) {
-          const rows: DecrementRow[] = await em.query(
+          // postgres-драйвер TypeORM для UPDATE возвращает кортеж
+          // [строки RETURNING, число затронутых] — даже при нуле строк
+          // длина 2, пустоту видим по распакованным строкам (урок run 422:
+          // чтение кортежа как массива строк отдавало undefined/NaN и
+          // ронило INSERT заказа 500-м)
+          const [rows] = await em.query<[DecrementRow[], number]>(
             `UPDATE bar_items
                SET stock = stock - $1, updated_at = now()
              WHERE id = $2 AND active AND stock >= $1
