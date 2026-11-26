@@ -11,10 +11,11 @@
 #                 миграции, uq-констрейнты, настоящий брокер и кэш.
 #                 Живой прогон делает робот, локально спеки скипаются —
 #                 как у Go-сервисов
-#   go           — matrix по девяти Go-сервисам: build + vet + lint + test -race
+#   go           — matrix по двенадцати Go-сервисам: build + vet + lint + test -race
 #                 с порогом покрытия per-service
 #                 (ticket-worker, notification, recommendation, reminder,
-#                  pricing, ratelimiter, flags, analytics, outbox-relay); live-PG адаптеры сервисов —
+#                  pricing, ratelimiter, flags, analytics, outbox-relay,
+#                  barman, detective, postman); live-PG адаптеры сервисов —
 #                 против одноразовых Postgres (testcontainers, TESTCONTAINERS=1):
 #                 живой прогон делает робот, локально тесты честно скипаются
 #   proto        — buf lint (STANDARD) + buf breaking (дрейф gRPC-контрактов)
@@ -282,6 +283,13 @@ jobs:
           - name: detective
             dir: detective-service
             threshold: 45
+          # Почтальон (этап 39, вебхуки): домен/use-cases/память/витрина/
+          # HMAC-клиент под тестами; локально без PG 44.6, live-PG адаптер
+          # раскроет CI — порог стартует консервативно, поднимем по факту
+          # первого прогона (правило round(факт)-1)
+          - name: postman
+            dir: postman-service
+            threshold: 40
     defaults:
       run:
         working-directory: fullstackProject/services/${{ matrix.dir }}
@@ -378,12 +386,15 @@ jobs:
       # --wait-timeout: страховка от вечного ожидания
       # kinoapi — мок внешнего кино-справочника (этап 37): e2e синкает
       # метаданные и доказывает breaker через его chaos-ручки (:18100)
+      # postman+partnerhooks — Почтальон вебхуков и мок партнёра (этап 39):
+      # e2e подписывается, ловит конверт с HMAC-подписью и гоняет DLQ/перепосылку
       - name: docker compose up --wait
         run: |
           docker compose up --build --wait --wait-timeout 300 -d \
             postgres redis rabbitmq \
             worker notification recommendation reminder pricing ratelimiter flags analytics \
-            outbox-relay meilisearch detective kinoapi api
+            outbox-relay meilisearch detective kinoapi api \
+            postman partnerhooks
         working-directory: fullstackProject
 
       # страховка на случай, если --wait пропустил (healthcheck-флейк):
@@ -469,7 +480,7 @@ jobs:
             encoded=$(printf '%s' "$msg" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' | head -c 3500)
             echo "::error::title=kinoapi diagnose (compose-e2e)::$encoded"
           fi
-          docker compose logs --tail 300 api worker notification recommendation reminder pricing ratelimiter flags outbox-relay meilisearch kinoapi
+          docker compose logs --tail 300 api worker notification recommendation reminder pricing ratelimiter flags outbox-relay meilisearch kinoapi postman partnerhooks
         working-directory: fullstackProject
 
   # Хаос-уровень (этап 24): событийный контур стенда, но между клиентами
