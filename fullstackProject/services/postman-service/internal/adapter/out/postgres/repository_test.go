@@ -226,20 +226,21 @@ func TestDueOrderAndSave(t *testing.T) {
 		t.Fatalf("Due берёт не тех/не в порядке: %+v", due)
 	}
 
-	// фиксация доставки
-	d := due[0]
-	d.Status = domain.StatusDelivered
-	at := base.Add(5 * time.Second)
-	d.DeliveredAt = &at
-	if err := repo.Deliveries.Save(ctx, d); err != nil {
-		t.Fatalf("Save: %v", err)
+	// фиксация обеих настоевших (тикер доставляет всё, что взял)
+	for _, d := range due {
+		d.Status = domain.StatusDelivered
+		at := base.Add(5 * time.Second)
+		d.DeliveredAt = &at
+		if err := repo.Deliveries.Save(ctx, d); err != nil {
+			t.Fatalf("Save %s: %v", d.ID, err)
+		}
 	}
-	saved, _ := repo.Deliveries.Get(ctx, d.ID)
+	saved, _ := repo.Deliveries.Get(ctx, due[0].ID)
 	if saved.Status != domain.StatusDelivered || saved.DeliveredAt == nil {
 		t.Fatalf("доставка не зафиксирована: %+v", saved)
 	}
 
-	// очередь тикера больше её не видит
+	// очередь тикера видит только будущую
 	due, _ = repo.Deliveries.Due(ctx, base.Add(time.Hour), 10)
 	if len(due) != 1 || due[0].ID != "whdl_late" {
 		t.Fatalf("очередь после доставки: %+v", due)
