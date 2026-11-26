@@ -25,7 +25,9 @@ import { User } from '../src/users/user.entity';
  * Интеграционный тест кинобара: реальный HTTP-стек Nest (роутинг,
  * ValidationPipe, JWT-гвард → контроллер → сервис) на in-memory фейках
  * каталога/заказов. em.query эмулирует атомарный UPDATE … WHERE
- * stock >= qty RETURNING условием по строке — гонка за последнюю порцию
+ * stock >= qty RETURNING условием по строке — в формате драйвера,
+ * кортежем [rows, affected]: фейк, отдающий голый массив строк, не
+ * ловит неверную распаковку в сервисе. Гонка за последнюю порцию
  * воспроизводится последовательными заказами: второму строка не
  * отдаётся, транзакция (со snapshot-откатом, как в int-harness)
  * возвращает всё списанное.
@@ -201,18 +203,21 @@ describe('Кинобар: HTTP-интеграция каталога и зака
         throw new Error(`unexpected insert ${String(entity)}`);
       },
       query: jest.fn(async (sql: string, params: unknown[]) => {
+        // формат PostgresQueryRunner: UPDATE возвращает кортеж
+        // [rows, affected] (даже при нуле строк длина 2) — фейк с голым
+        // массивом строк прятал граблю распаковки (run 422, e2e 500)
         if (sql.includes('stock = stock -')) {
           const [qty, id] = params as [number, string];
           const item = itemsRepo.rows.find((r) => r.id === id);
-          if (!item || !item.active || item.stock < qty) return [];
+          if (!item || !item.active || item.stock < qty) return [[], 0];
           item.stock -= qty;
-          return [{ name: item.name, price_rub: item.priceRub }];
+          return [[{ name: item.name, price_rub: item.priceRub }], 1];
         }
         if (sql.includes('stock = stock +')) {
           const [qty, id] = params as [number, string];
           const item = itemsRepo.rows.find((r) => r.id === id);
           if (item) item.stock += qty;
-          return [];
+          return [[], item ? 1 : 0];
         }
         throw new Error(`unexpected query: ${sql}`);
       }),
