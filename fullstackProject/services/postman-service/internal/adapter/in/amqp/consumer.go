@@ -23,13 +23,8 @@ import (
 	"postman-service/internal/tracing"
 )
 
-// События обмена «cinema», на которые подписан Почтальон.
-const (
-	keyCreated   = "booking.created"   // NestJS API: бронь оплачена и создана
-	keyProcessed = "booking.processed" // Go-воркер: вердикт CONFIRMED/FAILED
-	keyExpired   = "booking.expired"   // Go-воркер: резерв истёк без оплаты
-	keyRefunded  = "booking.refunded"  // Go-воркер: вердикт возврата
-)
+// События обмена «cinema», на которые подписан Почтальон, перечислены
+// в domain.EventTypes — топология и фильтры ходят по нему одному.
 
 const (
 	retryHeader = "x-retry-count"

@@ -68,7 +68,7 @@ func TestSubscriptionLifecycle(t *testing.T) {
 		Events []string `json:"events"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&created)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if created.ID == "" || len(created.Secret) < 20 {
 		t.Fatalf("создание без id/секрета: %+v", created)
 	}
@@ -85,7 +85,7 @@ func TestSubscriptionLifecycle(t *testing.T) {
 		} `json:"subscriptions"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&list)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if len(list.Subscriptions) != 1 {
 		t.Fatalf("в списке %d подписок", len(list.Subscriptions))
 	}
@@ -98,7 +98,7 @@ func TestSubscriptionLifecycle(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("мусорный URL: %d, want 400", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// удалить
 	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/subscriptions/"+created.ID, nil)
@@ -106,14 +106,14 @@ func TestSubscriptionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("удаление: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("удаление: %d", resp.StatusCode)
 	}
 
 	// повторное удаление — 404
 	resp, _ = http.DefaultClient.Do(req)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("повторное удаление: %d, want 404", resp.StatusCode)
 	}
@@ -161,7 +161,7 @@ func TestDeliveriesShowcaseAndReplay(t *testing.T) {
 		Counts map[string]int `json:"counts"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&page)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if len(page.Deliveries) != 1 || page.Deliveries[0].ID != "whdl_dead" {
 		t.Fatalf("фильтр dead не работает: %+v", page.Deliveries)
 	}
@@ -179,21 +179,21 @@ func TestDeliveriesShowcaseAndReplay(t *testing.T) {
 		Attempts int    `json:"attempts"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&revived)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if revived.Status != "queued" || revived.Attempts != 0 {
 		t.Fatalf("после replay ждём queued/0: %+v", revived)
 	}
 
 	// перепосылка той же (уже queued) — 409
 	resp = postJSON(t, srv.URL+"/deliveries/whdl_dead/replay", nil)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
 		t.Errorf("повторный replay: %d, want 409", resp.StatusCode)
 	}
 
 	// несуществующей — 404
 	resp = postJSON(t, srv.URL+"/deliveries/whdl_netu/replay", nil)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("чужой id: %d, want 404", resp.StatusCode)
 	}
@@ -211,6 +211,6 @@ func subscribeDirect(t *testing.T, srv *httptest.Server) (domain.Subscription, e
 	}
 	var sub domain.Subscription
 	_ = json.NewDecoder(resp.Body).Decode(&sub)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return sub, nil
 }
