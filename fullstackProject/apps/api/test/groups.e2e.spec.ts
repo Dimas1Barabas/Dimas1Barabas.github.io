@@ -176,14 +176,17 @@ describe('«Идём вместе»: REST + WS-комната групп', () =>
       expect(aliceView.seats).toEqual([aliceSeat]);
       expect(aliceView.color).toMatch(/^#/);
 
-      // оба готовы с непересекающимися выборами → фиксация
+      // оба готовы с непересекающимися выборами → фиксация.
+      // Гонка слушателей: кадр готовности Алисы (picking) и кадр фиксации
+      // приходят друг за другом — «фиксационные» слушатели вешаем только
+      // ПОСЛЕ того, как кадр Алисы съеден отдельным await
       const borisSeat = freeSeat(borisJoined, [aliceSeat]);
       boris.send(JSON.stringify({ type: 'select', seats: [borisSeat] }));
       await nextState(boris);
+      alice.send(JSON.stringify({ type: 'ready', value: true }));
+      await nextState(alice); // кадр «Алиса готова» (ещё picking) съеден
       const aliceFixed = nextState(alice);
       const borisFixed = nextState(boris);
-      alice.send(JSON.stringify({ type: 'ready', value: true }));
-      await nextState(alice);
       boris.send(JSON.stringify({ type: 'ready', value: true }));
       expect((await aliceFixed).status).toBe('fixed');
       expect((await borisFixed).status).toBe('fixed');
@@ -279,8 +282,18 @@ describe('«Идём вместе»: REST + WS-комната групп', () =>
         }),
       );
       const state = await nextState(socket);
-      // стенд: GROUP_IDLE_TIMEOUT_MS=45 c — ждём финальный кадр с запасом
-      const waitMs = Math.max(5_000, state.expiresAt - Date.now() + 5_000);
+      const windowMs = state.expiresAt - Date.now();
+      if (windowMs > 120_000) {
+        // стенд с продовыми окнами (k8s: 15/10 минут) — распад не переждать
+        // в разумный таймаут прогона; механика распада покрыта юнитами
+        // eslint-disable-next-line no-console
+        console.warn(
+          `\n⚠️  Окно группы ${Math.round(windowMs / 1000)} с — распад не ждём (стенд без GROUP_*_TIMEOUT_MS)\n`,
+        );
+        return;
+      }
+      // дедлайн истекает лениво/тиком sweep раз в 15 c — запас на гранулярность
+      const waitMs = windowMs + 15_000 + 10_000;
       const disbanded = await nextState(socket, waitMs);
       expect(disbanded.status).toBe('disbanded');
 
@@ -293,5 +306,5 @@ describe('«Идём вместе»: REST + WS-комната групп', () =>
     } finally {
       socket.close();
     }
-  }, 120_000);
+  }, 150_000);
 });
