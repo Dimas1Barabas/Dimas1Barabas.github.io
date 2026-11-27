@@ -3,6 +3,8 @@ import { createPinia, setActivePinia } from 'pinia';
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '@/shared/api/client';
+import { demoEngine } from '@/shared/api/demo-engine';
+import { useAppStore } from '@/shared/api/app-mode';
 import type { GroupRoomState } from '@/shared/api/types';
 import { useGroupStore } from '@/entities/group/model/store';
 
@@ -250,5 +252,74 @@ describe('group store — live-комната по WebSocket', () => {
     expect(socket.closed).toBe(true);
     socket.serverFrame({ type: 'state', data: room() }); // поздний кадр
     expect(store.room).toBeNull();
+  });
+});
+
+describe('group store — демо-комната движком', () => {
+  let store: ReturnType<typeof useGroupStore>;
+  let sessionId: string;
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    useAppStore().mode = 'demo';
+    store = useGroupStore();
+    demoEngine.reset();
+    sessionId = demoEngine.movies().data[0]!.sessions[0]!.id;
+    sessionStorage.clear();
+  });
+
+  it('loadPreview/create через движок', async () => {
+    const code = await store.create(sessionId, 'Алиса');
+    expect(code).toMatch(/^[2-9A-HJKMNP-Z]{6}$/);
+    await store.loadPreview(code!);
+    expect(store.preview?.participants[0]!.name).toBe('Алиса');
+
+    await store.loadPreview('ZZZZZZ');
+    expect(store.previewError).toContain('Группа не найдена');
+  });
+
+  it('enter демо: комната открывается, мутации идут через движок', () => {
+    const created = demoEngine.createGroup(sessionId, 'Алиса');
+    sessionStorage.setItem(`cine.group.${created.code}`, created.participantId);
+
+    store.enter(created.code, '');
+    expect(store.phase).toBe('room');
+    expect(store.me?.name).toBe('Алиса');
+
+    store.selectSeats(['5-7', '5-8']);
+    expect(store.mySeats).toEqual(['5-7', '5-8']);
+    expect(demoEngine.groupPreview(created.code).participants[0]!.seats).toEqual([
+      '5-7',
+      '5-8',
+    ]);
+
+    store.toggleReady(true);
+    expect(demoEngine.groupPreview(created.code).status).toBe('fixed');
+    expect(store.room?.status).toBe('fixed');
+  });
+
+  it('шаг «Ани» прилетает подпиской на движок', () => {
+    const created = demoEngine.createGroup(sessionId, 'Алиса');
+    sessionStorage.setItem(`cine.group.${created.code}`, created.participantId);
+    store.enter(created.code, '');
+    store.selectSeats(['1-1']);
+
+    demoEngine.groupFriendStep(created.code, ['1-1']);
+    const names = store.room?.participants.map((p) => p.name) ?? [];
+    expect(names).toContain('Аня');
+    // чужой выбор виден цветной пометкой
+    const anya = store.room?.participants.find((p) => p.name === 'Аня')!;
+    expect(store.marks).toEqual(
+      Object.fromEntries(anya.seats.map((seat) => [seat, anya.color])),
+    );
+  });
+
+  it('leave демо: распад последним', () => {
+    const created = demoEngine.createGroup(sessionId, 'Алиса');
+    sessionStorage.setItem(`cine.group.${created.code}`, created.participantId);
+    store.enter(created.code, '');
+    store.leave();
+    expect(store.phase).toBe('disbanded');
+    expect(() => demoEngine.groupPreview(created.code)).toThrow();
   });
 });

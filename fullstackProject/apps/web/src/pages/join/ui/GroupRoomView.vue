@@ -127,7 +127,6 @@ function storedParticipant(groupCode: string): string | null {
 }
 
 onMounted(() => {
-  if (appStore.mode === 'demo') return; // демо-паритет подключается движком
   void moviesStore.load();
   void groupStore.loadPreview(code.value).then(autoEnter);
   tickTimer = setInterval(() => {
@@ -144,13 +143,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="group-room">
     <!-- ссылка умерла -->
-    <div v-if="appStore.mode === 'demo'" class="group-room__placeholder">
-      <h1>Идём вместе</h1>
-      <p>В демо-режиме комнаты группы soon: живая синхронизация мест требует бэкенда.</p>
-      <RouterLink to="/" class="btn">В афишу</RouterLink>
-    </div>
-
-    <div v-else-if="groupStore.previewError" class="group-room__placeholder">
+    <div v-if="groupStore.previewError" class="group-room__placeholder">
       <h1>Ссылка не работает</h1>
       <p>{{ groupStore.previewError }}</p>
       <button type="button" class="btn" @click="goHome">В афишу</button>

@@ -14,6 +14,9 @@ import type {
   BonusTransaction,
   CheckoutPayload,
   CreateBookingPayload,
+  CreateGroupResult,
+  GroupRoomState,
+  GroupState,
   CreatePromoPayload,
   CreateReviewPayload,
   ExternalMovieInfo,
@@ -71,6 +74,15 @@ import {
   compareSeats,
   isValidSeat,
 } from '@/shared/lib/hall';
+import {
+  MAX_PARTICIPANTS,
+  colorFor,
+  everyoneReady,
+  generateGroupCode,
+  isValidSelection,
+  normalizeName,
+  selectionConflicts,
+} from '@/shared/lib/group';
 import { BONUS_SPEND_LIMIT, cashbackFor } from '@/shared/lib/bonus';
 import { quoteSession } from '@/shared/lib/pricing';
 import {
@@ -681,6 +693,26 @@ function seedPromos(): Promo[] {
 
 type Listener = () => void;
 
+/** участник демо-группы «Идём вместе» (личность переживает реконнект по id) */
+interface DemoParticipant {
+  id: string;
+  name: string;
+  colorIndex: number;
+  seats: string[];
+  ready: boolean;
+  booked: boolean;
+}
+
+/** демо-группа: та же статус-машина, что у GroupsService API */
+interface DemoGroup {
+  code: string;
+  sessionId: string;
+  status: 'picking' | 'fixed' | 'disbanded';
+  participants: Map<string, DemoParticipant>;
+  activityDeadline: number;
+  fixedAt: number | null;
+}
+
 /** запись листа ожидания в состоянии движка (как waitlist_entries в Postgres) */
 interface DemoWaitlistEntry {
   id: string;
@@ -741,6 +773,11 @@ class DemoEngine {
   /** sessionId → места, занятые симулянтом «других зрителей» живой карты
    *  (освобождать можно только их — сиды и брони пользователя неприкосновенны) */
   private viewerSeats = new Map<string, Set<string>>();
+  /** группы «Идём вместе»: код → комната (в памяти, как у API; распад ленивый) */
+  private groups = new Map<string, DemoGroup>();
+  /** окна жизни демо-групп — поля, чтобы спеки не ждали настоящих минут */
+  groupIdleMs = 15 * 60_000;
+  groupFixedMs = 10 * 60_000;
   /** bookingId → таймер экспирации неоплаченной брони (wait-очередь демо) */
   private expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** «Redis-кэш» аналитики: значение + время расчёта (TTL как у API) */
@@ -895,6 +932,7 @@ class DemoEngine {
     this.remindersSent = [];
     this.occupied.clear();
     this.viewerSeats.clear();
+    this.groups.clear();
     this.rateBuckets.clear();
     this.reviews = seedReviews();
     this.account = null;
@@ -1438,6 +1476,266 @@ class DemoEngine {
     this.viewerSeats.set(sessionId, mine);
     this.notify();
     return 'taken';
+  }
+
+  // ── «Идём вместе»: группы в памяти, зеркало GroupsService API ──────
+  // Те же правила: выбор ≤ 8 мест, смена выбора снимает готовность,
+  // все-готовы без конфликтов → fixed (снятие готовности размораживает),
+  // таймаут распадает группу лениво — при следующем обращении.
+
+  /** создать группу на сеанс: создатель — первый участник */
+  createGroup(sessionId: string, rawName: unknown): CreateGroupResult {
+    if (!this.findSession(sessionId)) {
+      throw new ApiError('HTTP 404', 404, '');
+    }
+    const name = normalizeName(rawName);
+    if (name === null) throw new ApiError('HTTP 400', 400, '');
+    const code = generateGroupCode();
+    const participant: DemoParticipant = {
+      id: uuid(),
+      name,
+      colorIndex: 0,
+      seats: [],
+      ready: false,
+      booked: false,
+    };
+    const group: DemoGroup = {
+      code,
+      sessionId,
+      status: 'picking',
+      participants: new Map([[participant.id, participant]]),
+      activityDeadline: Date.now() + this.groupIdleMs,
+      fixedAt: null,
+      friendStage: 'join',
+    };
+    this.groups.set(code, group);
+    this.notify();
+    return { code, participantId: participant.id, state: this.groupState(group) };
+  }
+
+  /** превью по коду (страница приглашения); распавшаяся — ApiError 404 */
+  groupPreview(code: string): GroupState {
+    const group = this.liveGroup(code);
+    if (!group) throw new ApiError('HTTP 404', 404, '');
+    return this.groupState(group);
+  }
+
+  /** вход по коду: знакомый participantId — та же личность (реконнект) */
+  groupJoin(code: string, rawName: unknown, participantId?: string): CreateGroupResult {
+    const group = this.liveGroup(code);
+    if (!group) throw new ApiError('HTTP 404', 404, '');
+    if (participantId && group.participants.has(participantId)) {
+      return { code, participantId, state: this.groupState(group) };
+    }
+    if (group.participants.size >= MAX_PARTICIPANTS) {
+      throw new ApiError('HTTP 403', 403, '');
+    }
+    const name = normalizeName(rawName);
+    if (name === null) throw new ApiError('HTTP 400', 400, '');
+    const participant: DemoParticipant = {
+      id: uuid(),
+      name,
+      colorIndex: group.participants.size,
+      seats: [],
+      ready: false,
+      booked: false,
+    };
+    group.participants.set(participant.id, participant);
+    this.touchGroup(group);
+    this.notify();
+    return { code, participantId: participant.id, state: this.groupState(group) };
+  }
+
+  /** заменить выбор целиком (только в picking; смена снимает готовность) */
+  groupSelect(code: string, participantId: string, seats: string[]): GroupRoomState {
+    const group = this.mutateGroup(code, participantId, (p, g) => {
+      if (g.status === 'fixed') throw new ApiError('HTTP 409', 409, '');
+      if (!isValidSelection(seats)) throw new ApiError('HTTP 400', 400, '');
+      const changed = p.seats.join('|') !== seats.join('|');
+      p.seats = [...seats];
+      if (changed && p.ready) p.ready = false;
+    });
+    return this.roomStateOf(group, participantId);
+  }
+
+  /** готовность: true требует выбор; все готовы без конфликтов → fixed */
+  groupReady(code: string, participantId: string, value: boolean): GroupRoomState {
+    const group = this.mutateGroup(code, participantId, (p) => {
+      if (value && p.seats.length === 0) throw new ApiError('HTTP 409', 409, '');
+      p.ready = value;
+    });
+    return this.roomStateOf(group, participantId);
+  }
+
+  /** бейдж «забронировал» после оформления своих мест */
+  groupBooked(code: string, participantId: string): GroupRoomState {
+    const group = this.mutateGroup(code, participantId, (p) => {
+      p.booked = true;
+    });
+    return this.roomStateOf(group, participantId);
+  }
+
+  /** выйти совсем; последним — распад (null) */
+  groupLeave(code: string, participantId: string): GroupRoomState | null {
+    const group = this.liveGroup(code);
+    if (!group || !group.participants.has(participantId)) {
+      throw new ApiError('HTTP 404', 404, '');
+    }
+    group.participants.delete(participantId);
+    if (group.participants.size === 0) {
+      this.groups.delete(code);
+      this.notify();
+      return null;
+    }
+    this.recomputeGroup(group);
+    this.touchGroup(group);
+    this.notify();
+    return this.roomStateOf(group, participantId);
+  }
+
+  /** комнатное состояние для сокета-«участника» (демо: занятость из карты) */
+  groupRoomState(code: string, participantId: string): GroupRoomState {
+    const group = this.liveGroup(code);
+    if (!group) throw new ApiError('HTTP 404', 404, '');
+    return this.roomStateOf(group, participantId);
+  }
+
+  /**
+   * Шаг симулированного друга «Ани» — по одному действию на вызов,
+   * чтобы витрина и Playwright водили сценарий темпом страницы:
+   * join → выбор двух мест (не моих и не занятых) → готовность.
+   * avoid — места локального пользователя, их друг не оспаривает.
+   */
+  groupFriendStep(code: string, avoid: string[]): 'join' | 'select' | 'ready' | 'none' {
+    const group = this.liveGroup(code);
+    if (!group) return 'none';
+    const friend = [...group.participants.values()].find((p) => p.id.startsWith('demo-friend'));
+    if (!friend) {
+      if (group.status === 'fixed') return 'none';
+      const participant: DemoParticipant = {
+        id: `demo-friend-${uuid()}`,
+        name: 'Аня',
+        colorIndex: group.participants.size,
+        seats: [],
+        ready: false,
+        booked: false,
+      };
+      group.participants.set(participant.id, participant);
+      this.touchGroup(group);
+      this.notify();
+      return 'join';
+    }
+    if (friend.seats.length === 0) {
+      const taken = this.occupiedFor(group.sessionId);
+      const avoidSet = new Set([...avoid, ...friend.seats]);
+      const free = allSeatCodes().filter(
+        (code2) => !taken.has(code2) && !avoidSet.has(code2),
+      );
+      const pick = free.slice(0, 2);
+      if (pick.length === 0) return 'none';
+      friend.seats = pick;
+      this.touchGroup(group);
+      this.notify();
+      return 'select';
+    }
+    if (!friend.ready) {
+      friend.ready = true;
+      this.recomputeGroup(group);
+      this.touchGroup(group);
+      this.notify();
+      return 'ready';
+    }
+    return 'none';
+  }
+
+  /** живая группа с ленивой экспирацией по таймауту */
+  private liveGroup(code: string): DemoGroup | null {
+    const group = this.groups.get(code);
+    if (!group) return null;
+    const deadline =
+      group.status === 'fixed' && group.fixedAt !== null
+        ? group.fixedAt + this.groupFixedMs
+        : group.activityDeadline;
+    if (Date.now() >= deadline) {
+      this.groups.delete(code);
+      this.notify();
+      return null;
+    }
+    return group;
+  }
+
+  /** мутация участника с пересчётом статуса и тачем активности */
+  private mutateGroup(
+    code: string,
+    participantId: string,
+    op: (participant: DemoParticipant, group: DemoGroup) => void,
+  ): DemoGroup {
+    const group = this.liveGroup(code);
+    if (!group) throw new ApiError('HTTP 404', 404, '');
+    const participant = group.participants.get(participantId);
+    if (!participant) throw new ApiError('HTTP 404', 404, '');
+    op(participant, group);
+    this.recomputeGroup(group);
+    this.touchGroup(group);
+    this.notify();
+    return group;
+  }
+
+  /** статус-машина: все готовы без конфликтов → fixed, иначе picking */
+  private recomputeGroup(group: DemoGroup): void {
+    const participants = [...group.participants.values()];
+    if (everyoneReady(participants) && selectionConflicts(participants).size === 0) {
+      if (group.status !== 'fixed') group.fixedAt = Date.now();
+      group.status = 'fixed';
+    } else {
+      group.status = 'picking';
+      group.fixedAt = null;
+    }
+  }
+
+  /** активность продлевает только picking-окно */
+  private touchGroup(group: DemoGroup): void {
+    if (group.status === 'picking') {
+      group.activityDeadline = Date.now() + this.groupIdleMs;
+    }
+  }
+
+  private groupState(group: DemoGroup): GroupState {
+    const participants = [...group.participants.values()];
+    const deadline =
+      group.status === 'fixed' && group.fixedAt !== null
+        ? group.fixedAt + this.groupFixedMs
+        : group.activityDeadline;
+    return {
+      code: group.code,
+      sessionId: group.sessionId,
+      status: group.status,
+      expiresAt: deadline,
+      conflicts: [...selectionConflicts(participants).keys()],
+      participants: participants.map((p) => ({
+        id: p.id,
+        name: p.name,
+        color: colorFor(p.colorIndex),
+        seats: [...p.seats],
+        ready: p.ready,
+        booked: p.booked,
+      })),
+    };
+  }
+
+  /** комнатное состояние: + занятость сеанса, + онлайн (в демо все живы) */
+  private roomStateOf(group: DemoGroup, participantId: string): GroupRoomState {
+    const base = this.groupState(group);
+    const occupied = [...this.occupiedFor(group.sessionId)].sort(compareSeats);
+    return {
+      ...base,
+      occupied,
+      you: group.participants.has(participantId) ? participantId : null,
+      participants: base.participants.map((p) => ({
+        ...p,
+        online: true,
+      })),
+    };
   }
 
   list(): Booking[] {

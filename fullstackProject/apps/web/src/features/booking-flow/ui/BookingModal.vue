@@ -767,9 +767,9 @@ watch(
                   </button>
                 </div>
                 <!-- «Идём вместе» (этап 40): группа выбирает места синхронно;
-                     в демо оживёт вместе с движком групп -->
+                     демо — движок группы в памяти страницы -->
                 <div
-                  v-if="!sessionFull && seatMap && appStore.mode !== 'demo'"
+                  v-if="!sessionFull && seatMap"
                   class="modal__together"
                 >
                   <template v-if="!groupInvite">
