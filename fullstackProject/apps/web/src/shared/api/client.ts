@@ -22,6 +22,8 @@ import type {
   HealthResponse,
   LoginResult,
   Movie,
+  CreateGroupResult,
+  GroupState,
   Promo,
   PromoPreview,
   RecommendationsDto,
@@ -224,6 +226,17 @@ export const api = {
   /** цена места сеанса с раскладкой факторов (dynamic=false — базовая) */
   sessionQuote: (sessionId: string) =>
     request<SessionQuote>(`/sessions/${sessionId}/price`),
+  /** «Идём вместе»: создать группу на сеанс — код-приглашение в ответе
+   *  (404 — сеанса нет); дальне́е — WS /api/groups */
+  createGroup: (payload: { sessionId: string; name: string }) =>
+    request<CreateGroupResult>('/groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  /** превью группы по коду из ссылки (404 — распалась/не существует) */
+  groupPreview: (code: string) =>
+    request<GroupState>(`/groups/${encodeURIComponent(code)}`),
   createBooking: (payload: CreateBookingPayload) =>
     request<Booking>('/bookings', {
       method: 'POST',

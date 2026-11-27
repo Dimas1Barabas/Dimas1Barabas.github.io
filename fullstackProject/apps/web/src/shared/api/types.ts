@@ -103,6 +103,48 @@ export interface SeatErrorFrame {
 
 export type SeatFrame = SeatSnapshotFrame | SeatErrorFrame;
 
+/** участник группы «Идём вместе»: цвет — пометки его выбора на карте */
+export interface GroupParticipant {
+  id: string;
+  name: string;
+  color: string;
+  seats: string[];
+  ready: boolean;
+  booked: boolean;
+}
+
+/** состояние группы — REST GET /groups/:code и основа WS-кадров */
+export interface GroupState {
+  code: string;
+  sessionId: string;
+  status: 'picking' | 'fixed' | 'disbanded';
+  /** дедлайн распада (эпоха, мс): активность в picking, фиксация в fixed */
+  expiresAt: number;
+  /** места, оспариваемые несколькими участниками */
+  conflicts: string[];
+  participants: GroupParticipant[];
+}
+
+/** комнатный кадр WS /api/groups: + занятость сеанса внешними бронями,
+ *  + онлайн-состав, + «кто я» в этом сокете */
+export interface GroupRoomState extends GroupState {
+  occupied: string[];
+  you: string | null;
+  participants: (GroupParticipant & { online: boolean })[];
+}
+
+/** кадр ws-канала комнаты группы */
+export type GroupFrame =
+  | { type: 'state'; data: GroupRoomState }
+  | { type: 'error'; message: string };
+
+/** ответ POST /groups: код-приглашение + личность создателя */
+export interface CreateGroupResult {
+  code: string;
+  participantId: string;
+  state: GroupState;
+}
+
 /** фактор раскладки цены — как PriceFactor Тарификатора (gRPC) */
 export interface SessionPriceFactor {
   code: string;

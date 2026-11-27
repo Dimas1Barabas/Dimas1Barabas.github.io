@@ -5,6 +5,10 @@ import { compareSeats, seatCode } from '@/shared/lib/hall';
 /**
  * Карта зала: сетка «ряд × место» с занятыми местами и выбором (v-model).
  * Занятое место заблокировано — как строка в seat_occupancy на бэкенде.
+ *
+ * marks — цветные пометки чужих выборов группы «Идём вместе»:
+ * место остаётся кликабельным (оспорить можно, конфликт увидят все),
+ * но подсвечено цветом участника.
  */
 const props = withDefaults(
   defineProps<{
@@ -13,8 +17,9 @@ const props = withDefaults(
     occupied: string[];
     modelValue: string[];
     max?: number;
+    marks?: Record<string, string>;
   }>(),
-  { max: 8 },
+  { max: 8, marks: () => ({}) },
 );
 
 const emit = defineEmits<{ 'update:modelValue': [seats: string[]] }>();
@@ -35,6 +40,12 @@ function isState(row: number, num: number): 'taken' | 'selected' | 'free' {
   if (occupiedSet.value.has(code)) return 'taken';
   if (selectedSet.value.has(code)) return 'selected';
   return 'free';
+}
+
+/** стиль пометки чужого выбора: CSS-переменная с цветом участника */
+function markStyle(row: number, num: number): Record<string, string> | undefined {
+  const color = props.marks[seatCode(row, num)];
+  return color ? { '--mark': color } : undefined;
 }
 
 function toggle(row: number, num: number): void {
@@ -59,6 +70,7 @@ function toggle(row: number, num: number): void {
         type="button"
         class="hall__seat"
         :class="`hall__seat--${isState(r.row, num)}`"
+        :style="markStyle(r.row, num)"
         :disabled="isState(r.row, num) === 'taken'"
         :aria-label="`Ряд ${r.row}, место ${num}`"
         :title="`Ряд ${r.row}, место ${num}`"
@@ -74,3 +86,11 @@ function toggle(row: number, num: number): void {
     </p>
   </div>
 </template>
+
+<style scoped>
+/* пометка чужого выбора: рамка цвета участника + мягкая заливка */
+.hall__seat[style*='--mark'] {
+  border-color: var(--mark);
+  box-shadow: inset 0 0 0 1px var(--mark);
+}
+</style>

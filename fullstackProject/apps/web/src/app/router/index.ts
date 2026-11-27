@@ -70,6 +70,13 @@ const router = createRouter({
       component: () => import('@/pages/gift/ui/GiftsView.vue'),
     },
     {
+      // «Идём вместе»: комната группового выбора мест по коду-приглашению
+      // (этап 40) — инвайт-ссылка строится как /#/join/<код>
+      path: '/join/:code',
+      name: 'group-join',
+      component: () => import('@/pages/join/ui/GroupRoomView.vue'),
+    },
+    {
       path: '/admin',
       name: 'admin',
       component: () => import('@/pages/admin/ui/AdminView.vue'),
