@@ -1,0 +1,1 @@
+import{T as e,g as t,m as n,r,x as i}from"./index-B_G37xkl.js";var a=e(`loyalty`,{state:()=>({status:null,loading:!1}),actions:{async refresh(){let e=n();this.loading=!0;try{this.status=e.mode===`demo`?r.myLoyalty():i()?await t.myLoyalty():null}catch{this.status=null}finally{this.loading=!1}}}});export{a as t};
