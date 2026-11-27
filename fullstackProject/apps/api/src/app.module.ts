@@ -31,6 +31,7 @@ import { FlagsModule } from './flags/flags.module';
 import { FraudModule } from './fraud/fraud.module';
 import { GiftsModule } from './gifts/gifts.module';
 import { TwoFactorModule } from './twofactor/twofactor.module';
+import { GroupsModule } from './groups/groups.module';
 
 @Module({
   imports: [
@@ -77,6 +78,9 @@ import { TwoFactorModule } from './twofactor/twofactor.module';
     // двухфакторная аутентификация: TOTP, backup-коды, доверенные
     // устройства; настройки в профиле, второй шаг — в AuthModule (этап 34)
     TwoFactorModule,
+    // «Идём вместе»: групповой выбор мест — инвайт-ссылка, общая live-карта,
+    // цветные пометки участников, фиксация по готовности всех (этап 40)
+    GroupsModule,
     AdminModule,
     PromosModule,
     WaitlistModule,

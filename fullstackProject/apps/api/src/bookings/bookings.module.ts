@@ -68,7 +68,9 @@ import { SeatStream } from './seat-stream';
   // второй канал событий — см. waitlist.module; RemindersClient —
   // вердиктным хукам (schedule/cancel), а RemindersModule импортирует
   // нас однонаправленно: цикл модулей не возникает; BookingsService —
-  // системные пути антифрода (payReviewed/cancelReviewed) для админки
-  exports: [BookingStream, RemindersClient, BookingsService],
+  // системные пути антифрода (payReviewed/cancelReviewed) для админки;
+  // SeatStream — группам «Идём вместе»: занятость сеанса в комнатных
+  // кадрах из того же источника, что и живая карта мест
+  exports: [BookingStream, RemindersClient, BookingsService, SeatStream],
 })
 export class BookingsModule {}
