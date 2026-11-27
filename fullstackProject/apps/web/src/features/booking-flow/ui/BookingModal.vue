@@ -25,6 +25,7 @@ import { useBookingsStore } from '@/entities/booking/model/store';
 import { useBonusStore } from '@/entities/bonus/model/store';
 import { useMoviesStore } from '@/entities/movie/model/movies.store';
 import { useWaitlistStore } from '@/entities/waitlist/model/store';
+import { useGroupStore } from '@/entities/group/model/store';
 import SeatPicker from '@/features/booking-flow/ui/SeatPicker.vue';
 
 const props = defineProps<{ movie: Movie | null }>();
@@ -36,6 +37,7 @@ const bookingsStore = useBookingsStore();
 const bonuses = useBonusStore();
 const moviesStore = useMoviesStore();
 const waitlistStore = useWaitlistStore();
+const groupStore = useGroupStore();
 
 const customerName = ref('');
 const selected = ref<string[]>([]);
@@ -198,6 +200,56 @@ async function joinQueue(): Promise<void> {
 async function leaveQueue(): Promise<void> {
   if (!selectedSessionId.value) return;
   await waitlistStore.leave(selectedSessionId.value);
+}
+
+/** «Идём вместе»: инвайт-ссылка группы этого сеанса (после создания) */
+const groupInvite = ref<string | null>(null);
+const groupCode = ref<string | null>(null);
+const groupCreating = ref(false);
+const groupError = ref<string | null>(null);
+const groupCopied = ref(false);
+
+/** имя организатора группы: в live — из профиля, в демо — из поля имени */
+const groupName = computed(() =>
+  askName.value ? customerName.value.trim() : (authStore.user?.name ?? ''),
+);
+
+async function createGroup(): Promise<void> {
+  if (!selectedSessionId.value || groupCreating.value) return;
+  if (needLogin.value) {
+    groupError.value = 'Войдите, чтобы собрать группу';
+    return;
+  }
+  if (groupName.value.length < 2) {
+    groupError.value = 'Введите имя (минимум 2 символа)';
+    return;
+  }
+  groupCreating.value = true;
+  groupError.value = null;
+  try {
+    const code = await groupStore.create(selectedSessionId.value, groupName.value);
+    if (!code) {
+      groupError.value = 'Группа не собралась — попробуйте ещё раз';
+      return;
+    }
+    groupCode.value = code;
+    groupInvite.value = `${location.origin}${location.pathname}#/join/${code}`;
+  } finally {
+    groupCreating.value = false;
+  }
+}
+
+async function copyGroupInvite(): Promise<void> {
+  if (!groupInvite.value) return;
+  try {
+    await navigator.clipboard.writeText(groupInvite.value);
+    groupCopied.value = true;
+    setTimeout(() => {
+      groupCopied.value = false;
+    }, 2500);
+  } catch {
+    /* буфер недоступен — ссылку скопируют руками из адреса комнаты */
+  }
 }
 
 /** общие проверки оформления (оба потока): null — можно отправлять */
@@ -714,6 +766,43 @@ watch(
                     {{ seat }} <span aria-hidden="true">✕</span>
                   </button>
                 </div>
+                <!-- «Идём вместе» (этап 40): группа выбирает места синхронно;
+                     в демо оживёт вместе с движком групп -->
+                <div
+                  v-if="!sessionFull && seatMap && appStore.mode !== 'demo'"
+                  class="modal__together"
+                >
+                  <template v-if="!groupInvite">
+                    <button
+                      class="btn btn--ghost"
+                      type="button"
+                      :disabled="groupCreating"
+                      @click="createGroup"
+                    >
+                      {{ groupCreating ? 'Собираем группу…' : '👥 Идём вместе' }}
+                    </button>
+                    <span class="modal__together-hint">
+                      соберите друзей ссылкой — выборы видны всем на одной карте
+                    </span>
+                  </template>
+                  <template v-else>
+                    <RouterLink
+                      class="btn"
+                      :to="`/join/${groupCode}`"
+                      @click="emit('close')"
+                    >
+                      Перейти в комнату
+                    </RouterLink>
+                    <button
+                      class="btn btn--ghost"
+                      type="button"
+                      @click="copyGroupInvite"
+                    >
+                      {{ groupCopied ? 'Скопировано ✓' : 'Скопировать ссылку' }}
+                    </button>
+                  </template>
+                  <p v-if="groupError" class="hint hint--error">{{ groupError }}</p>
+                </div>
                 <div v-if="sessionFull" class="waitlist-cta">
                 <p class="waitlist-cta__title">
                   <template v-if="myEntry?.status === 'WAITING'">
@@ -925,6 +1014,20 @@ watch(
 </template>
 
 <style scoped>
+/* «Идём вместе»: создание группы и инвайт-ссылка */
+.modal__together {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.modal__together-hint {
+  color: var(--text-muted, #9aa4b2);
+  font-size: 0.88rem;
+}
+
 /* промо и бонусы мгновенной покупки */
 .modal__pay {
   margin-top: 12px;
