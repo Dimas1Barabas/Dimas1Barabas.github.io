@@ -1506,7 +1506,6 @@ class DemoEngine {
       participants: new Map([[participant.id, participant]]),
       activityDeadline: Date.now() + this.groupIdleMs,
       fixedAt: null,
-      friendStage: 'join',
     };
     this.groups.set(code, group);
     this.notify();
