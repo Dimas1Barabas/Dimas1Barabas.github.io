@@ -70,22 +70,64 @@ describe('«Идём вместе»: REST + WS-комната групп', () =>
 
   /** следующий state-кадр комнаты (error-кадры проваливаются в reject) */
   function nextState(socket: WebSocket, timeoutMs = 10_000): Promise<RoomState> {
+    return nextFrameWhere(
+      socket,
+      (frame) => frame.type === 'state',
+      timeoutMs,
+    ).then((frame) => (frame.type === 'state' ? frame.data : null!));
+  }
+
+  /**
+   * Кадр по предикату, промежуточные — мимо. Протокол рассылает полные
+   * снапшоты на каждую мутацию, а доставка двум независимым сокетам не
+   * синхронизирована с продолжением теста: «следующий кадр» оказывается
+   * чужим промежуточным (run #440/#441 — fixed-слушатель съедал опоздавший
+   * picking-кадр соседа). Ждать нужно СОСТОЯНИЕ, а не порядковый кадр.
+   */
+  function nextFrameWhere(
+    socket: WebSocket,
+    accept: (frame: GroupFrame) => boolean,
+    timeoutMs = 10_000,
+  ): Promise<GroupFrame> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
-        () => reject(new Error('ws-кадр не пришёл')),
+        () => reject(new Error('нужный кадр не пришёл')),
         timeoutMs,
       );
-      socket.once('message', (data) => {
-        clearTimeout(timer);
-        const frame = JSON.parse(data.toString()) as GroupFrame;
-        if (frame.type === 'error') {
-          reject(new Error(`error-кадр: ${frame.message}`));
-          return;
+      const listener = (data: { toString(): string }) => {
+        let frame: GroupFrame;
+        try {
+          frame = JSON.parse(data.toString()) as GroupFrame;
+        } catch {
+          return; // мусорный кадр — ждём дальше
         }
-        resolve(frame.data);
-      });
+        if (!accept(frame)) return; // промежуточный снапшот — мимо
+        clearTimeout(timer);
+        socket.off('message', listener);
+        resolve(frame);
+      };
+      socket.on('message', listener);
     });
   }
+
+  const stateWhere = (
+    socket: WebSocket,
+    accept: (state: RoomState) => boolean,
+    timeoutMs?: number,
+  ): Promise<RoomState> =>
+    nextFrameWhere(
+      socket,
+      (frame) => frame.type === 'state' && accept(frame.data),
+      timeoutMs,
+    ).then((frame) => (frame.type === 'state' ? frame.data : null!));
+
+  /** error-кадр (отказ мутации) */
+  const errorFrame = (socket: WebSocket, timeoutMs?: number) =>
+    nextFrameWhere(
+      socket,
+      (frame) => frame.type === 'error',
+      timeoutMs,
+    ).then((frame) => (frame.type === 'error' ? frame.message : ''));
 
   /** свободное место из карты комнаты (занятые брони + чужие выборы) */
   function freeSeat(state: RoomState, extra: string[] = []): string {
@@ -165,9 +207,16 @@ describe('«Идём вместе»: REST + WS-комната групп', () =>
         new Set(borisJoined.participants.map((p) => p.color)).size,
       );
 
-      // Алиса выбирает — Борис видит её выбор цветной пометкой
+      // Алиса выбирает — Борис видит её выбор цветной пометкой.
+      // Ждём СОСТОЯНИЕ (выбор Алисы в кадре Бориса), а не порядковый кадр:
+      // доставка двум сокетам не синхронизирована (run #440/#441)
       const aliceSeat = freeSeat(borisJoined);
-      const borisSeesSelect = nextState(boris);
+      const borisSeesSelect = stateWhere(
+        boris,
+        (s) =>
+          s.participants.find((p) => p.name === 'Алиса')?.seats.includes(aliceSeat) ===
+          true,
+      );
       alice.send(JSON.stringify({ type: 'select', seats: [aliceSeat] }));
       const borisAfterSelect = await borisSeesSelect;
       const aliceView = borisAfterSelect.participants.find(
@@ -176,41 +225,39 @@ describe('«Идём вместе»: REST + WS-комната групп', () =>
       expect(aliceView.seats).toEqual([aliceSeat]);
       expect(aliceView.color).toMatch(/^#/);
 
-      // оба готовы с непересекающимися выборами → фиксация.
-      // Гонка слушателей: кадр готовности Алисы (picking) и кадр фиксации
-      // приходят друг за другом — «фиксационные» слушатели вешаем только
-      // ПОСЛЕ того, как кадр Алисы съеден отдельным await
+      // оба готовы с непересекающимися выборами → фиксация
       const borisSeat = freeSeat(borisJoined, [aliceSeat]);
       boris.send(JSON.stringify({ type: 'select', seats: [borisSeat] }));
-      await nextState(boris);
-      alice.send(JSON.stringify({ type: 'ready', value: true }));
-      await nextState(alice); // кадр «Алиса готова» (ещё picking) съеден
-      const aliceFixed = nextState(alice);
-      const borisFixed = nextState(boris);
+      const isFixed = (s: RoomState) => s.status === 'fixed';
+      const aliceFixed = stateWhere(alice, isFixed);
+      const borisFixed = stateWhere(boris, isFixed);
+      // Борис готовится первым; готовность Алисы фиксирует выборы всех
+      // (промежуточные picking-кадры фильтруются предикатом)
       boris.send(JSON.stringify({ type: 'ready', value: true }));
+      alice.send(JSON.stringify({ type: 'ready', value: true }));
       expect((await aliceFixed).status).toBe('fixed');
       expect((await borisFixed).status).toBe('fixed');
 
-      // в fixed выбор менять нельзя
-      const refused = nextState(alice);
+      // в fixed выбор менять нельзя — error-кадр
+      const refused = errorFrame(alice);
       alice.send(JSON.stringify({ type: 'select', seats: [aliceSeat, borisSeat] }));
-      await expect(refused).rejects.toThrow(/зафиксирован/);
+      await expect(refused).resolves.toMatch(/зафиксирован/);
 
       // снятие готовности размораживает
-      const unfrozen = nextState(boris);
+      const unfrozen = stateWhere(boris, (s) => s.status === 'picking');
       alice.send(JSON.stringify({ type: 'ready', value: false }));
       expect((await unfrozen).status).toBe('picking');
 
       // обратно к готовности + бейдж брони
-      const retranslated = nextState(boris);
+      const refixed = stateWhere(boris, isFixed);
       alice.send(JSON.stringify({ type: 'ready', value: true }));
-      await retranslated;
-      const booked = nextState(alice);
+      await refixed;
+      const booked = stateWhere(
+        alice,
+        (s) => s.participants.find((p) => p.name === 'Борис')?.booked === true,
+      );
       boris.send(JSON.stringify({ type: 'booked' }));
-      const afterBooked = await booked;
-      expect(
-        afterBooked.participants.find((p) => p.name === 'Борис')!.booked,
-      ).toBe(true);
+      await booked;
     } finally {
       alice.close();
       boris.close();
@@ -242,19 +289,23 @@ describe('«Идём вместе»: REST + WS-комната групп', () =>
       const both = await nextState(second);
       const seat = freeSeat(both);
 
+      // оба выбирают и готовы — ждём кадр, где готовы все (место общее)
+      const bothReady = stateWhere(
+        second,
+        (s) => s.participants.length === 2 && s.participants.every((p) => p.ready),
+      );
       first.send(JSON.stringify({ type: 'select', seats: [seat] }));
-      await nextState(first);
       second.send(JSON.stringify({ type: 'select', seats: [seat] }));
-      await nextState(second);
       first.send(JSON.stringify({ type: 'ready', value: true }));
-      await nextState(first);
       second.send(JSON.stringify({ type: 'ready', value: true }));
-      await nextState(second);
+      const stuck = await bothReady;
+      // оба готовы, но место оспаривается — фиксации нет
+      expect(stuck.status).toBe('picking');
+      expect(stuck.conflicts).toEqual([seat]);
 
       const preview = await api<GroupApiResult['state']>(
         `/groups/${created.code}`,
       );
-      // оба готовы, но место оспаривается — фиксации нет
       expect(preview.status).toBe('picking');
       expect(preview.conflicts).toEqual([seat]);
       expect(preview.participants.every((p) => p.ready)).toBe(true);
@@ -294,7 +345,11 @@ describe('«Идём вместе»: REST + WS-комната групп', () =>
       }
       // дедлайн истекает лениво/тиком sweep раз в 15 c — запас на гранулярность
       const waitMs = windowMs + 15_000 + 10_000;
-      const disbanded = await nextState(socket, waitMs);
+      const disbanded = await stateWhere(
+        socket,
+        (s) => s.status === 'disbanded',
+        waitMs,
+      );
       expect(disbanded.status).toBe('disbanded');
 
       const closed = new Promise<number>((resolve) =>
